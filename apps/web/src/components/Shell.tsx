@@ -1,7 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { CommandPalette } from './CommandPalette.js'
+import { MobileShell } from './MobileShell.js'
 import { useAuth } from '../lib/auth.js'
+import { isNative } from '../lib/capacitor.js'
 import { readSessionDock, sessionDockEventName, type SessionDockEntry } from '../lib/sessions.js'
 
 function tenantColor(id?: string): string {
@@ -118,6 +120,8 @@ function NavSections() {
 }
 
 export function Shell({ children }: { children: ReactNode }) {
+  // Auto-switch to mobile shell on native platforms
+  if (isNative()) return <MobileShell>{children}</MobileShell>
   const auth = useAuth()
   const navigate = useNavigate()
   const [navOpen, setNavOpen] = useState(false)

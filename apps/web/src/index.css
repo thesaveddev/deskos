@@ -4884,6 +4884,144 @@ select.field-input {
   }
 }
 
+/* ---- mobile app shell ---- */
+
+.mobile-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  background: var(--bg-0);
+}
+
+.mobile-topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 52px;
+  padding: 0 16px;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--line-1);
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.mobile-topbar-spacer {
+  flex: 1;
+}
+
+.mobile-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #1b1408;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.mobile-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  padding-bottom: 80px; /* space for tab bar */
+  -webkit-overflow-scrolling: touch;
+}
+
+.mobile-tabbar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  height: 64px;
+  background: var(--bg-1);
+  border-top: 1px solid var(--line-1);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+  z-index: 10;
+}
+
+.mobile-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  text-decoration: none;
+  color: var(--text-3);
+  font-size: 10px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  transition: color 120ms ease;
+}
+
+.mobile-tab:hover {
+  text-decoration: none;
+}
+
+.mobile-tab.active {
+  color: var(--accent);
+}
+
+.mobile-tab-icon {
+  font-size: 20px;
+}
+
+.mobile-tab-label {
+  font-weight: 500;
+}
+
+/* ---- mobile cards ---- */
+
+.mobile-card {
+  background: var(--bg-1);
+  border: 1px solid var(--line-1);
+  border-radius: 10px;
+  padding: 14px;
+  margin-bottom: 10px;
+}
+
+.mobile-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.mobile-card-meta {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.mobile-stat-row {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.mobile-stat-card {
+  background: var(--bg-1);
+  border: 1px solid var(--line-1);
+  border-radius: 10px;
+  padding: 14px;
+  text-align: center;
+}
+
+.mobile-stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.mobile-stat-label {
+  font-size: 11px;
+  color: var(--text-3);
+  margin-top: 2px;
+}
+
 /* ---- landing nav brand link ---- */
 
 .landing-nav-brand-link {
