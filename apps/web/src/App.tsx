@@ -22,6 +22,7 @@ import PrivacyPage from './pages/PrivacyPage.js'
 import TermsPage from './pages/TermsPage.js'
 import AboutPage from './pages/AboutPage.js'
 import MonitoringPage from './pages/MonitoringPage.js'
+import MarketplacePage from './pages/MarketplacePage.js'
 import MspPage from './pages/MspPage.js'
 import NewTicketPage from './pages/NewTicketPage.js'
 import PatchPage from './pages/PatchPage.js'
@@ -115,6 +116,7 @@ export default function App() {
       <Route path="/developer" element={<Protected><DeveloperPage /></Protected>} />
       <Route path="/settings/api" element={<Protected><OauthSettingsPage /></Protected>} />
       <Route path="/rmm" element={<Protected><RmmPage /></Protected>} />
+      <Route path="/marketplace" element={<Protected><MarketplacePage /></Protected>} />
       <Route path="/ai-agent" element={<Protected><AiAgentPage /></Protected>} />
       <Route path="/sessions" element={<Protected><SessionsPage /></Protected>} />
       <Route path="/sessions/:id" element={<Protected><SessionConsolePage /></Protected>} />

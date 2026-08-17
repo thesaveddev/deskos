@@ -83,6 +83,7 @@ function NavSections() {
         { to: '/ai-agent', label: 'AI agent', show: can('ai_agent.read') },
         { to: '/integrations', label: 'Integrations', show: can('integration.read') },
         { to: '/developer', label: 'Developer API', show: can('integration.read') },
+        { to: '/marketplace', label: 'Marketplace', show: can('marketplace.read') },
       ],
     },
     {
