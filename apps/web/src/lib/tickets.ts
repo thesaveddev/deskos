@@ -204,3 +204,66 @@ export function formatWhen(iso: string): string {
     ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     : d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
+
+// ── Escalation, forwarding, merge, bulk ──
+
+export interface Escalation {
+  id: number
+  ticket_id: string
+  level: number
+  from_team_id: string | null
+  to_team_id: string | null
+  from_assignee_id: string | null
+  to_assignee_id: string | null
+  reason: string
+  escalated_by: string | null
+  escalated_by_name?: string
+  created_at: string
+}
+
+export interface TicketActivityEntry {
+  id: number
+  ticket_id: string
+  actor_id: string | null
+  actor_name?: string
+  action: string
+  detail: Record<string, unknown>
+  created_at: string
+}
+
+export interface Team {
+  id: string
+  name: string
+}
+
+export function escalateTicket(id: string, data: { to_team_id?: string; to_assignee_id?: string; reason: string }): Promise<{ escalation: Escalation }> {
+  return api(`/tickets/${id}/escalate`, { method: 'POST', body: data })
+}
+
+export function getTicketEscalations(id: string): Promise<{ escalations: Escalation[] }> {
+  return api(`/tickets/${id}/escalations`)
+}
+
+export function forwardTicket(id: string, data: { to_team_id?: string; to_assignee_id?: string; note?: string }): Promise<{ ok: boolean }> {
+  return api(`/tickets/${id}/forward`, { method: 'POST', body: data })
+}
+
+export function mergeTickets(primaryId: string, duplicateIds: string[]): Promise<{ ok: boolean }> {
+  return api('/tickets/merge', { method: 'POST', body: { primary_id: primaryId, duplicate_ids: duplicateIds } })
+}
+
+export function bulkUpdateTickets(ticketIds: string[], updates: { status?: string; assignee_id?: string; team_id?: string; priority?: string }): Promise<{ updated: number }> {
+  return api('/tickets/bulk', { method: 'POST', body: { ticket_ids: ticketIds, ...updates } })
+}
+
+export function getTicketActivity(id: string): Promise<{ activity: TicketActivityEntry[] }> {
+  return api(`/tickets/${id}/activity`)
+}
+
+export function listTeams(): Promise<{ teams: Team[] }> {
+  return api('/teams')
+}
+
+export function listTeamMembers(teamId: string): Promise<{ members: Array<{ id: string; name: string; email: string }> }> {
+  return api(`/teams/${teamId}/members`)
+}

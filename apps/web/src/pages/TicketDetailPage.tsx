@@ -7,7 +7,9 @@ import { useAuth } from '../lib/auth.js'
 import {
   addTicketLink, assignTicket, getTicket, listTicketLinks, removeTicketLink, replyTicket, setTicketStatus,
   downloadAttachment, listAttachments, updateTicket, uploadAttachment,
+  escalateTicket, getTicketEscalations, forwardTicket, listTeams, listTeamMembers,
   slaSummary, STATUS_LABELS, formatWhen, type Attachment, type Thread, type Ticket, type TicketDevice, type TicketLink,
+  type Escalation, type Team,
 } from '../lib/tickets.js'
 import { listCannedResponses, type CannedResponse } from '../lib/canned.js'
 import { listDevices, type Device } from '../lib/devices.js'
@@ -45,6 +47,18 @@ export default function TicketDetailPage() {
   const [aiDraft, setAiDraft] = useState<KbDraftArticle | null>(null)
   const [aiDraftBusy, setAiDraftBusy] = useState(false)
 
+  // Escalation & forward
+  const [escalations, setEscalations] = useState<Escalation[]>([])
+  const [teams, setTeams] = useState<Team[]>([])
+  const [escTeam, setEscTeam] = useState('')
+  const [escReason, setEscReason] = useState('')
+  const [escBusy, setEscBusy] = useState(false)
+  const [fwdTeam, setFwdTeam] = useState('')
+  const [fwdNote, setFwdNote] = useState('')
+  const [fwdBusy, setFwdBusy] = useState(false)
+  const [showEscalate, setShowEscalate] = useState(false)
+  const [showForward, setShowForward] = useState(false)
+
   const load = useCallback(async () => {
     if (!id) return
     try {
@@ -74,7 +88,11 @@ export default function TicketDetailPage() {
     listDevices()
       .then((r) => setDevices(r.devices))
       .catch(() => setDevices([]))
-  }, [])
+    listTeams().then((r) => setTeams(r.teams)).catch(() => {})
+    if (id) {
+      getTicketEscalations(id).then((r) => setEscalations(r.escalations)).catch(() => {})
+    }
+  }, [id])
 
   if (error) {
     return (
@@ -130,6 +148,38 @@ export default function TicketDetailPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Assign failed')
     }
+  }
+
+  const handleEscalate = async () => {
+    if (!ticket || !escReason.trim()) return
+    setEscBusy(true)
+    try {
+      await escalateTicket(ticket.id, { to_team_id: escTeam || undefined, reason: escReason })
+      setEscReason('')
+      setEscTeam('')
+      setShowEscalate(false)
+      await load()
+      const r = await getTicketEscalations(ticket.id)
+      setEscalations(r.escalations)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Escalation failed')
+    }
+    setEscBusy(false)
+  }
+
+  const handleForward = async () => {
+    if (!ticket || !fwdTeam) return
+    setFwdBusy(true)
+    try {
+      await forwardTicket(ticket.id, { to_team_id: fwdTeam, note: fwdNote })
+      setFwdNote('')
+      setFwdTeam('')
+      setShowForward(false)
+      await load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Forward failed')
+    }
+    setFwdBusy(false)
   }
 
   const changeDevice = async (deviceId: string) => {
@@ -268,7 +318,63 @@ export default function TicketDetailPage() {
               <option key={s} value={s}>{STATUS_LABELS[s]}</option>
             ))}
           </select>
+          <button className="btn btn-ghost btn-sm" onClick={() => { setShowEscalate(!showEscalate); setShowForward(false) }}>
+            ⬆ Escalate
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={() => { setShowForward(!showForward); setShowEscalate(false) }}>
+            ➤ Forward
+          </button>
         </div>
+
+        {/* Escalation form */}
+        {showEscalate && (
+          <div className="ticket-escalate-form">
+            <h4 className="ticket-escalate-title">Escalate ticket</h4>
+            <select className="field-input select-sm" value={escTeam} onChange={(e) => setEscTeam(e.target.value)}>
+              <option value="">Keep current team</option>
+              {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+            <textarea className="field-input" placeholder="Reason for escalation (required)" value={escReason} onChange={(e) => setEscReason(e.target.value)} rows={2} />
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button className="btn btn-primary btn-sm" onClick={() => void handleEscalate()} disabled={escBusy || !escReason.trim()}>
+                {escBusy ? 'Escalating…' : 'Escalate'}
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowEscalate(false)}>Cancel</button>
+            </div>
+          </div>
+        )}
+
+        {/* Forward form */}
+        {showForward && (
+          <div className="ticket-escalate-form">
+            <h4 className="ticket-escalate-title">Forward to team</h4>
+            <select className="field-input select-sm" value={fwdTeam} onChange={(e) => setFwdTeam(e.target.value)}>
+              <option value="">Select a team…</option>
+              {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+            <textarea className="field-input" placeholder="Note (optional)" value={fwdNote} onChange={(e) => setFwdNote(e.target.value)} rows={2} />
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button className="btn btn-primary btn-sm" onClick={() => void handleForward()} disabled={fwdBusy || !fwdTeam}>
+                {fwdBusy ? 'Forwarding…' : 'Forward'}
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowForward(false)}>Cancel</button>
+            </div>
+          </div>
+        )}
+
+        {/* Escalation history */}
+        {escalations.length > 0 && (
+          <div className="ticket-escalation-history">
+            <span className="etch">Escalation history</span>
+            {escalations.map((e) => (
+              <div key={e.id} className="ticket-escalation-entry">
+                <span className="ticket-esc-level">Level {e.level}</span>
+                <span className="ticket-esc-reason">{e.reason}</span>
+                <span className="ticket-esc-meta">by {e.escalated_by_name || 'Unknown'} · {formatWhen(e.created_at)}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {error ? <Alert kind="error">{error}</Alert> : null}

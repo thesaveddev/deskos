@@ -151,6 +151,22 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
         values.push(q.status)
         clauses.push(`t.status = $${values.length}`)
       }
+      if (q.priority) {
+        values.push(q.priority)
+        clauses.push(`t.priority = $${values.length}`)
+      }
+      if (q.type) {
+        values.push(q.type)
+        clauses.push(`t.type = $${values.length}`)
+      }
+      if (q.team) {
+        values.push(q.team)
+        clauses.push(`t.team_id = $${values.length}`)
+      }
+      if (q.requester) {
+        values.push(q.requester)
+        clauses.push(`t.requester_id = $${values.length}`)
+      }
       if (q.assignee === 'me') {
         values.push(request.user!.id)
         clauses.push(`t.assignee_id = $${values.length}`)
@@ -165,11 +181,24 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
         clauses.push(`(t.subject ILIKE $${values.length} OR t.number::text = $${values.length + 1})`)
         values.push(q.q.replace(/^#/, ''))
       }
+      if (q.date_from) {
+        values.push(q.date_from)
+        clauses.push(`t.created_at >= $${values.length}`)
+      }
+      if (q.date_to) {
+        values.push(q.date_to)
+        clauses.push(`t.created_at <= $${values.length}`)
+      }
       if (q.cursor) {
         values.push(q.cursor)
         clauses.push(`t.created_at < (SELECT created_at FROM tickets WHERE id = $${values.length})`)
       }
       const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''
+
+      // Sort
+      const sortField = q.sort === 'priority' ? 't.priority' : q.sort === 'updated' ? 't.updated_at' : q.sort === 'number' ? 't.number' : 't.created_at'
+      const sortDir = q.dir === 'asc' ? 'ASC' : 'DESC'
+
       values.push(limit + 1)
       const { rows } = await client.query(
         `SELECT t.*, ru.name AS requester_name, au.name AS assignee_name, tm.name AS team_name
@@ -178,7 +207,7 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
            LEFT JOIN users au ON au.id = t.assignee_id
            LEFT JOIN teams tm ON tm.id = t.team_id
            ${where}
-          ORDER BY t.created_at DESC
+          ORDER BY ${sortField} ${sortDir}, t.number DESC
           LIMIT $${values.length}`,
         values,
       )

@@ -67,6 +67,7 @@ import { searchRoutes, teamRoutes } from './modules/teams/teams.routes.js'
 import { tenantRoutes } from './modules/tenants/tenants.routes.js'
 import { ticketRoutes } from './modules/tickets/tickets.routes.js'
 import { ticketLinkRoutes } from './modules/tickets/links.routes.js'
+import { escalationRoutes } from './modules/tickets/escalation.routes.js'
 import './types.js'
 
 export async function buildApp(config: AppConfig): Promise<FastifyInstance> {
@@ -227,6 +228,7 @@ export async function buildApp(config: AppConfig): Promise<FastifyInstance> {
     await v1.register(notificationPreferenceRoutes)
     await v1.register(ticketRoutes)
     await v1.register(ticketLinkRoutes)
+    await v1.register(escalationRoutes)
     await v1.register(attachmentRoutes)
     await v1.register(teamRoutes)
     await v1.register(searchRoutes)
