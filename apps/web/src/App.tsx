@@ -19,6 +19,8 @@ import LandingPage from './pages/LandingPage.js'
 import FeaturesPage from './pages/FeaturesPage.js'
 import UseCasesPage from './pages/UseCasesPage.js'
 import LoginPage from './pages/LoginPage.js'
+import ForgotPasswordPage from './pages/ForgotPasswordPage.js'
+import ResetPasswordPage from './pages/ResetPasswordPage.js'
 import PricingPage from './pages/PricingPage.js'
 import PrivacyPage from './pages/PrivacyPage.js'
 import TermsPage from './pages/TermsPage.js'
@@ -91,6 +93,8 @@ export default function App() {
     <Routes>
       {/* Public marketing pages */}
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/signup" element={<SignupPage />} />
       <Route path="/connect/:code" element={<ConnectPage />} />
       <Route path="/features" element={<FeaturesPage />} />

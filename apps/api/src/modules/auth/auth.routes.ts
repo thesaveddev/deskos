@@ -5,6 +5,7 @@ import { recordAudit } from '../../core/audit.js'
 import { signAccessToken, verifyAccessToken } from '../../core/auth/jwt.js'
 import { hashPassword, verifyPassword } from '../../core/auth/password.js'
 import { generateTotpSecret, otpauthUrl, verifyTotp } from '../../core/auth/totp.js'
+import { isAccountLocked, recordFailedLogin, resetFailedLoginCount } from './auth.password-reset.js'
 import { AppError } from '../../core/errors.js'
 import { permissionsForRole, isOrgRole } from '../../core/permissions.js'
 import { withTenant } from '../../db/pool.js'
@@ -144,7 +145,14 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const passwordOk = user?.password_hash ? await verifyPassword(body.password, user.password_hash) : false
     if (!user || user.status !== 'active' || !passwordOk) {
       await recordAuthAttempt(app, body.email, request.ip, false, 'invalid_credentials')
+      if (user) await recordFailedLogin(app.db, user.id)
       throw AppError.unauthorized('Invalid email or password', 'invalid_credentials')
+    }
+
+    // Check account lockout
+    if (await isAccountLocked(app.db, user.id)) {
+      await recordAuthAttempt(app, body.email, request.ip, false, 'account_locked')
+      throw AppError.unauthorized('Account temporarily locked due to too many failed attempts. Try again in 15 minutes.', 'account_locked')
     }
 
     if (user.mfa_enabled) {
@@ -159,6 +167,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     }
 
     await app.db.query('UPDATE users SET last_login_at = now() WHERE id = $1', [user.id])
+    await resetFailedLoginCount(app.db, user.id)
     await recordAuthAttempt(app, body.email, request.ip, true)
     await auditLoginAcrossTenants(app, user.id, request.ip, request.headers['user-agent'])
 

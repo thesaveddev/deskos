@@ -19,6 +19,7 @@ import { attachmentRoutes } from './modules/attachments/attachments.routes.js'
 import { auditRoutes } from './modules/audit/audit.routes.js'
 import { automationRoutes } from './modules/automation/automation.routes.js'
 import { authRoutes } from './modules/auth/auth.routes.js'
+import { authHardeningRoutes } from './modules/auth/auth.hardening.routes.js'
 import { webauthnRoutes } from './modules/auth/webauthn.routes.js'
 import { cannedRoutes } from './modules/canned/canned.routes.js'
 import { catalogueRoutes } from './modules/catalogue/catalogue.routes.js'
@@ -34,6 +35,7 @@ import { webhookRoutes } from './modules/webhooks/webhooks.routes.js'
 import { createEmailRoutes } from './modules/email/email.routes.js'
 import { EmailWorker } from './modules/email/email.worker.js'
 import { Mailer } from './modules/email/mailer.js'
+import { EmailQueue } from './modules/email/email.queue.js'
 import { entraRoutes } from './modules/entra/entra.routes.js'
 import { grantRoutes } from './modules/grants/grants.routes.js'
 import { incidentRoutes } from './modules/incidents/incidents.routes.js'
@@ -76,12 +78,14 @@ export async function buildApp(config: AppConfig): Promise<FastifyInstance> {
   const pool = createPool(config.databaseUrl, { max: config.dbPoolMax })
   const emailWorker: EmailWorker = new EmailWorker(config.imap, config.emailKey, pool)
   const mailer: Mailer = new Mailer(config.smtp)
+  const emailQueue: EmailQueue = new EmailQueue(mailer)
   const metrics = new MetricsRegistry()
   const otel = new OtelTraceExporter(config.otel)
 
   app.decorate('config', config)
   app.decorate('db', pool)
   app.decorate('emailWorker', emailWorker)
+  app.decorate('emailQueue', emailQueue)
   app.decorate('mailer', mailer)
   app.decorate('metrics', metrics)
   app.decorate('otel', otel)
@@ -210,6 +214,7 @@ export async function buildApp(config: AppConfig): Promise<FastifyInstance> {
 
   await app.register(async (v1) => {
     await v1.register(authRoutes)
+    await v1.register(authHardeningRoutes)
     await v1.register(webauthnRoutes)
     await v1.register(tenantRoutes)
     await v1.register(memberRoutes)
