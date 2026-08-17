@@ -59,6 +59,7 @@ import { probeRoutes } from './modules/remote/probe.routes.js'
 import { marketplaceRoutes } from './modules/marketplace/marketplace.routes.js'
 import { supportRoutes } from './modules/support/support.routes.js'
 import { notesRoutes } from './modules/notes/notes.routes.js'
+import { billingRoutes } from './modules/billing/billing.routes.js'
 import { recordingRoutes } from './modules/remote/recording.routes.js'
 import { remoteRoutes } from './modules/remote/remote.routes.js'
 import { scriptRoutes } from './modules/scripts/scripts.routes.js'
@@ -262,6 +263,7 @@ export async function buildApp(config: AppConfig): Promise<FastifyInstance> {
     await v1.register(marketplaceRoutes)
     await v1.register(supportRoutes)
     await v1.register(notesRoutes)
+    await v1.register(billingRoutes)
   }, { prefix: '/api/v1' })
 
   // Public, unauthenticated connect flow for ad-hoc (unmanaged) support links.

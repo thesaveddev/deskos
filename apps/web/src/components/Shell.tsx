@@ -90,8 +90,11 @@ function NavSections() {
       ],
     },
     {
-      label: 'Settings',
-      items: [{ to: '/settings', label: 'Settings', show: true }],
+      label: 'Account',
+      items: [
+        { to: '/billing', label: 'Billing', show: true },
+        { to: '/settings', label: 'Settings', show: true },
+      ],
     },
   ]
 

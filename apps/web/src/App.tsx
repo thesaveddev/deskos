@@ -34,6 +34,7 @@ import SupportPage from './pages/SupportPage.js'
 import AdminDashboardPage from './pages/AdminDashboardPage.js'
 import StaffPage from './pages/StaffPage.js'
 import NotesPage from './pages/NotesPage.js'
+import BillingPage from './pages/BillingPage.js'
 import ProfilePage from './pages/ProfilePage.js'
 import MonitoringPage from './pages/MonitoringPage.js'
 import MarketplacePage from './pages/MarketplacePage.js'
@@ -134,6 +135,7 @@ export default function App() {
       <Route path="/staff" element={<Protected><StaffPage /></Protected>} />
       <Route path="/profile" element={<Protected><ProfilePage /></Protected>} />
       <Route path="/notes" element={<Protected><NotesPage /></Protected>} />
+      <Route path="/billing" element={<Protected><BillingPage /></Protected>} />
       <Route path="/" element={<HomeRoute />} />
 
       {/* Protected console pages */}
