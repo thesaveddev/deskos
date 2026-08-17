@@ -7291,3 +7291,25 @@ select.field-input {
   font-size: 0.8rem;
   margin-left: auto;
 }
+
+/* Ticket detail: fixed composer layout */
+.ticket-detail-layout {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 56px); /* minus topbar */
+  overflow: hidden;
+}
+.ticket-detail-scroll {
+  flex: 1 1 0;
+  overflow-y: auto;
+  padding-bottom: 0;
+}
+.ticket-composer-fixed {
+  flex-shrink: 0;
+  position: sticky;
+  bottom: 0;
+  border-top: 1px solid var(--border);
+  background: var(--bg-primary);
+  z-index: 10;
+  box-shadow: 0 -2px 8px rgba(0,0,0,0.08);
+}

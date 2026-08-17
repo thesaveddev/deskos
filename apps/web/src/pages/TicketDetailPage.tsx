@@ -365,6 +365,8 @@ export default function TicketDetailPage() {
 
   return (
     <Shell>
+      <div className="ticket-detail-layout">
+      <div className="ticket-detail-scroll">
       <div className="ticket-head">
         <div className="ticket-head-main">
           <div className="ticket-id-row">
@@ -670,8 +672,9 @@ export default function TicketDetailPage() {
           </ul>
         )}
       </div>
+      </div>{/* end ticket-detail-scroll */}
 
-      <div className="composer">
+      <div className="composer ticket-composer-fixed">
         <div className="composer-tabs">
           <button
             className={`composer-tab${composerMode === 'public' ? ' active' : ''}`}
@@ -751,6 +754,7 @@ export default function TicketDetailPage() {
           </button>
         </div>
       </div>
+      </div>{/* end ticket-detail-layout */}
     </Shell>
   )
 }
