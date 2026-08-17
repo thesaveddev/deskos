@@ -131,6 +131,9 @@ export default function SettingsPage() {
   return (
     <Shell>
       <div className="page-head">
+        <button className="btn btn-ghost btn-sm" onClick={() => window.history.back()} style={{ marginRight: 8 }}>
+          ← Back
+        </button>
         <h1 className="page-title">Settings</h1>
       </div>
       <div className="settings-tabs">

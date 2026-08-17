@@ -162,20 +162,21 @@ export default function App() {
       <Route path="/patches" element={<Protected><PatchPage /></Protected>} />
       <Route path="/integrations" element={<Protected><WebhooksPage /></Protected>} />
       <Route path="/developer" element={<Protected><DeveloperPage /></Protected>} />
-      <Route path="/settings/api" element={<Protected><OauthSettingsPage /></Protected>} />
       <Route path="/rmm" element={<Protected><RmmPage /></Protected>} />
       <Route path="/marketplace" element={<Protected><MarketplacePage /></Protected>} />
       <Route path="/ai-agent" element={<Protected><AiAgentPage /></Protected>} />
       <Route path="/sessions" element={<Protected><SessionsPage /></Protected>} />
       <Route path="/sessions/:id" element={<Protected><SessionConsolePage /></Protected>} />
-      <Route path="/settings" element={<Protected><SettingsPage /></Protected>}>
-        <Route path="email" element={<EmailSettingsPage />} />
-        <Route path="integrations" element={<EntraSettingsPage />} />
-        <Route path="canned" element={<CannedResponsesPage />} />
-        <Route path="notifications" element={<NotificationSettingsPage />} />
-        <Route path="security" element={<SecuritySettingsPage />} />
-        <Route path="active-directory" element={<AdSettingsPage />} />
-      </Route>
+      <Route path="/settings" element={<Protected><SettingsPage /></Protected>} />
+      <Route path="/settings/preferences" element={<Protected><SettingsPage /></Protected>} />
+      <Route path="/settings/tickets" element={<Protected><SettingsPage /></Protected>} />
+      <Route path="/settings/email" element={<Protected><SettingsPage /></Protected>} />
+      <Route path="/settings/integrations" element={<Protected><SettingsPage /></Protected>} />
+      <Route path="/settings/canned" element={<Protected><SettingsPage /></Protected>} />
+      <Route path="/settings/notifications" element={<Protected><SettingsPage /></Protected>} />
+      <Route path="/settings/security" element={<Protected><SettingsPage /></Protected>} />
+      <Route path="/settings/active-directory" element={<Protected><SettingsPage /></Protected>} />
+      <Route path="/settings/api" element={<Protected><OauthSettingsPage /></Protected>} />
       <Route path="/portal" element={<Protected><PortalHomePage /></Protected>} />
       <Route path="/portal/new" element={<Protected><PortalNewTicketPage /></Protected>} />
       <Route path="/portal/tickets/:number" element={<Protected><PortalTicketPage /></Protected>} />
