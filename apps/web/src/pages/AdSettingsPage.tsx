@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Alert, Field } from '../components/ui.js'
+import { PasswordField } from '../components/PasswordField.js'
 import {
   createAdConnection,
   deleteAdConnection,
@@ -188,15 +189,7 @@ export default function AdSettingsPage() {
         <Field label="Bind DN" hint="e.g. CN=DeskOS Service,OU=Service Accounts,DC=corp,DC=local">
           <input className="field-input" value={form.bindDn} onChange={(e) => setField('bindDn', e.target.value)} required />
         </Field>
-        <Field label="Bind password" hint={editing ? 'Leave blank to keep the existing password' : undefined}>
-          <input
-            className="field-input"
-            type="password"
-            value={form.bindPassword}
-            onChange={(e) => setField('bindPassword', e.target.value)}
-            required={!editing}
-          />
-        </Field>
+        <PasswordField label="Bind password" hint={editing ? 'Leave blank to keep the existing password' : undefined} className="field-input" value={form.bindPassword} onChange={(e) => setField('bindPassword', e.target.value)} required={!editing} />
         <div className="form-row">
           <label className="field checkbox-field">
             <input type="checkbox" checked={form.useSsl} onChange={(e) => setField('useSsl', e.target.checked)} />

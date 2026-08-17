@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { Alert, BrandRow, Field, SubmitButton } from '../components/ui.js'
+import { PasswordField } from '../components/PasswordField.js'
 import { api } from '../lib/api.js'
 import { useAuth } from '../lib/auth.js'
 
@@ -85,17 +86,16 @@ export default function SignupPage() {
               required
             />
           </Field>
-          <Field label="Password" hint="At least 10 characters.">
-            <input
-              className="field-input"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="new-password"
-              minLength={10}
-              required
-            />
-          </Field>
+          <PasswordField
+            label="Password"
+            hint="At least 10 characters."
+            className="field-input"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="new-password"
+            minLength={10}
+            required
+          />
           <SubmitButton busy={busy}>Create workspace</SubmitButton>
         </form>
 

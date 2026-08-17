@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { api } from '../lib/api.js'
+import { PasswordField } from '../components/PasswordField.js'
 
 export default function ResetPasswordPage() {
   const [searchParams] = useSearchParams()
@@ -75,34 +76,28 @@ export default function ResetPasswordPage() {
             {error && <div className="alert alert-error">{error}</div>}
 
             <form onSubmit={handleSubmit}>
-              <div className="field">
-                <label className="field-label" htmlFor="reset-password">New password</label>
-                <input
-                  className="field-input"
-                  id="reset-password"
-                  type="password"
-                  required
-                  minLength={10}
-                  maxLength={256}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  autoFocus
-                />
-                <span className="field-hint">At least 10 characters</span>
-              </div>
-              <div className="field">
-                <label className="field-label" htmlFor="reset-confirm">Confirm password</label>
-                <input
-                  className="field-input"
-                  id="reset-confirm"
-                  type="password"
-                  required
-                  minLength={10}
-                  maxLength={256}
-                  value={confirm}
-                  onChange={(e) => setConfirm(e.target.value)}
-                />
-              </div>
+              <PasswordField
+                label="New password"
+                hint="At least 10 characters"
+                className="field-input"
+                id="reset-password"
+                required
+                minLength={10}
+                maxLength={256}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoFocus
+              />
+              <PasswordField
+                label="Confirm password"
+                className="field-input"
+                id="reset-confirm"
+                required
+                minLength={10}
+                maxLength={256}
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+              />
               <button className="btn btn-primary btn-block" type="submit" disabled={loading}>
                 {loading ? 'Updating…' : 'Reset password'}
               </button>

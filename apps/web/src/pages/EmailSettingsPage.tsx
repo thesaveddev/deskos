@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Alert, Field } from '../components/ui.js'
+import { PasswordField } from '../components/PasswordField.js'
 import {
   createEmailChannel,
   deleteEmailChannel,
@@ -283,9 +284,7 @@ export default function EmailSettingsPage() {
             <Field label="IMAP username">
               <input className="field-input" value={form.imapUser} onChange={(e) => setField('imapUser', e.target.value)} required />
             </Field>
-            <Field label="Password" hint={editing ? 'Leave blank to keep the current one' : undefined}>
-              <input className="field-input" type="password" value={form.imapPass} onChange={(e) => setField('imapPass', e.target.value)} required={!editing} />
-            </Field>
+            <PasswordField label="Password" hint={editing ? 'Leave blank to keep the current one' : undefined} className="field-input" value={form.imapPass} onChange={(e) => setField('imapPass', e.target.value)} required={!editing} />
           </div>
           <label className="field checkbox-field">
             <span className="field-label">Use SSL/TLS (port 993)</span>

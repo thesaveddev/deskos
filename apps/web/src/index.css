@@ -6778,3 +6778,48 @@ select.field-input {
   padding-top: 1rem;
   border-top: 1px solid var(--line-1);
 }
+
+/* ── Password field with eye toggle ─────────────────────────── */
+
+.password-field-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.password-field-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.password-field-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-field-input {
+  width: 100%;
+  padding-right: 2.5rem;
+}
+
+.password-toggle-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-3);
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s;
+}
+.password-toggle-btn:hover {
+  color: var(--text-1);
+}

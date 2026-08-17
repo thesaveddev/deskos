@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Shell } from '../components/Shell.js'
 import { Alert, PageHeader } from '../components/ui.js'
+import { PasswordField } from '../components/PasswordField.js'
 import { api } from '../lib/api.js'
 import { useAuth } from '../lib/auth.js'
 
@@ -157,42 +158,33 @@ export default function ProfilePage() {
             {pwError && <Alert kind="error">{pwError}</Alert>}
             {pwNotice && <Alert kind="info">{pwNotice}</Alert>}
             <form onSubmit={handlePasswordChange}>
-              <div className="field">
-                <label className="field-label" htmlFor="pw-current">Current password</label>
-                <input
-                  className="field-input"
-                  id="pw-current"
-                  type="password"
-                  required
-                  value={currentPw}
-                  onChange={(e) => setCurrentPw(e.target.value)}
-                />
-              </div>
-              <div className="field">
-                <label className="field-label" htmlFor="pw-new">New password</label>
-                <input
-                  className="field-input"
-                  id="pw-new"
-                  type="password"
-                  required
-                  minLength={10}
-                  value={newPw}
-                  onChange={(e) => setNewPw(e.target.value)}
-                />
-                <span className="field-hint">At least 10 characters</span>
-              </div>
-              <div className="field">
-                <label className="field-label" htmlFor="pw-confirm">Confirm new password</label>
-                <input
-                  className="field-input"
-                  id="pw-confirm"
-                  type="password"
-                  required
-                  minLength={10}
-                  value={confirmPw}
-                  onChange={(e) => setConfirmPw(e.target.value)}
-                />
-              </div>
+              <PasswordField
+                label="Current password"
+                className="field-input"
+                id="pw-current"
+                required
+                value={currentPw}
+                onChange={(e) => setCurrentPw(e.target.value)}
+              />
+              <PasswordField
+                label="New password"
+                hint="At least 10 characters"
+                className="field-input"
+                id="pw-new"
+                required
+                minLength={10}
+                value={newPw}
+                onChange={(e) => setNewPw(e.target.value)}
+              />
+              <PasswordField
+                label="Confirm new password"
+                className="field-input"
+                id="pw-confirm"
+                required
+                minLength={10}
+                value={confirmPw}
+                onChange={(e) => setConfirmPw(e.target.value)}
+              />
               <div className="form-actions">
                 <button className="btn btn-primary" type="submit" disabled={pwSaving}>
                   {pwSaving ? 'Changing…' : 'Change password'}

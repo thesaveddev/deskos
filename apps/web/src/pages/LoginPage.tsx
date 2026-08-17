@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { Alert, BrandRow, Field, SubmitButton } from '../components/ui.js'
+import { PasswordField } from '../components/PasswordField.js'
 import { ApiError } from '../lib/api.js'
 import { useAuth } from '../lib/auth.js'
 import { api } from '../lib/api.js'
@@ -103,19 +104,17 @@ export default function LoginPage() {
                   autoFocus
                 />
               </Field>
-              <Field label="Password">
-                <input
-                  className="field-input"
-                  type="password"
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
-                <div style={{ textAlign: 'right', marginTop: 4 }}>
-                  <Link to="/forgot-password" style={{ fontSize: 12, color: 'var(--info)' }}>Forgot password?</Link>
-                </div>
-              </Field>
+              <PasswordField
+                label="Password"
+                className="field-input"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+              <div style={{ textAlign: 'right', marginTop: 4 }}>
+                <Link to="/forgot-password" style={{ fontSize: 12, color: 'var(--info)' }}>Forgot password?</Link>
+              </div>
             </>
           ) : (
             <Field label="Authentication code">

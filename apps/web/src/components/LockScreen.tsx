@@ -1,6 +1,7 @@
 import { useState, type FormEvent, useEffect } from 'react'
 import { useAuth } from '../lib/auth.js'
 import { api } from '../lib/api.js'
+import { PasswordField } from './PasswordField.js'
 
 interface Props {
   onUnlock: () => void
@@ -55,20 +56,17 @@ export function LockScreen({ onUnlock }: Props) {
 
         <form onSubmit={handleSubmit} className="lock-screen-form">
           {error && <div className="lock-screen-error">{error}</div>}
-          <div className="lock-screen-input-wrap">
-            <input
-              className="lock-screen-input"
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoFocus
-              disabled={loading}
-            />
-            <button className="lock-screen-submit" type="submit" disabled={loading || !password}>
-              →
-            </button>
-          </div>
+          <PasswordField
+            className="lock-screen-input"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoFocus
+            disabled={loading}
+          />
+          <button className="lock-screen-submit" type="submit" disabled={loading || !password}>
+            →
+          </button>
           <div className="lock-screen-hint">
             Welcome back, {name.split(' ')[0]}. Please enter your password to continue.
           </div>

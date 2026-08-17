@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Alert, Field } from '../components/ui.js'
+import { PasswordField } from '../components/PasswordField.js'
 import {
   createEntraConnection,
   deleteEntraConnection,
@@ -141,15 +142,7 @@ export default function EntraSettingsPage() {
         <Field label="Client ID">
           <input className="field-input" value={form.clientId} onChange={(e) => setField('clientId', e.target.value)} required />
         </Field>
-        <Field label="Client secret" hint={editing ? 'Leave blank to keep the existing secret' : undefined}>
-          <input
-            className="field-input"
-            type="password"
-            value={form.clientSecret}
-            onChange={(e) => setField('clientSecret', e.target.value)}
-            required={!editing}
-          />
-        </Field>
+        <PasswordField label="Client secret" hint={editing ? 'Leave blank to keep the existing secret' : undefined} className="field-input" value={form.clientSecret} onChange={(e) => setField('clientSecret', e.target.value)} required={!editing} />
         <label className="field checkbox-field">
           <input type="checkbox" checked={form.enabled} onChange={(e) => setField('enabled', e.target.checked)} />
           Enabled
