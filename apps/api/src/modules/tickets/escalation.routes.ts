@@ -119,18 +119,5 @@ export async function escalationRoutes(app: FastifyInstance) {
     return reply.send({ activity })
   })
 
-  // ── Teams list (for forwarding/escalation UI) ──
-
-  app.get('/teams', { preHandler: requirePermission('ticket.read') }, async (req, reply) => {
-    const ctx = (req as any).tenantCtx
-    const teams = await listTeams(app.db, ctx.tenantId)
-    return reply.send({ teams })
-  })
-
-  app.get('/teams/:id/members', { preHandler: requirePermission('ticket.read') }, async (req, reply) => {
-    const ctx = (req as any).tenantCtx
-    const { id } = req.params as { id: string }
-    const members = await listTeamMembers(app.db, ctx.tenantId, id)
-    return reply.send({ members })
-  })
+  // Note: /teams and /teams/:id/members routes are in teams.routes.ts
 }

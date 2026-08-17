@@ -1,8 +1,6 @@
 import type { DbPool } from '../../db/pool.js'
 import { withTenant } from '../../db/pool.js'
 
-const LOCK_TTL_MINUTES = 5
-
 export interface TicketLock {
   id: number
   ticket_id: string
@@ -38,8 +36,8 @@ export async function autoLockOnAssign(
     // Create new lock
     await client.query(
       `INSERT INTO ticket_locks (tenant_id, ticket_id, locked_by, expires_at)
-       VALUES ($1, $2, $3, now() + make_interval(mins => $4))`,
-      [tenantId, ticketId, userId, LOCK_TTL_MINUTES],
+       VALUES ($1, $2, $3, now() + interval '5 minutes')`,
+      [tenantId, ticketId, userId],
     )
   })
 }
@@ -91,9 +89,9 @@ export async function heartbeatLock(
   return withTenant(db, tenantId, async (client) => {
     const result = await client.query(
       `UPDATE ticket_locks
-       SET heartbeat_at = now(), expires_at = now() + make_interval(mins => $3)
+       SET heartbeat_at = now(), expires_at = now() + interval '5 minutes'
        WHERE ticket_id = $1 AND locked_by = $2 AND expires_at > now()`,
-      [ticketId, userId, LOCK_TTL_MINUTES],
+      [ticketId, userId],
     )
     return (result.rowCount ?? 0) > 0
   })
