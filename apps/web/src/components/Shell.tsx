@@ -36,7 +36,7 @@ function NavSections() {
     {
       label: 'Service desk',
       items: [
-        { to: '/', end: true, label: 'Home', show: true },
+        { to: '/', end: true, label: 'Dashboard', show: true },
         { to: '/tickets', label: 'Tickets', show: true },
         { to: '/approvals', label: 'Approvals', show: true },
       ],
