@@ -1,18 +1,7 @@
 import { Link } from 'react-router-dom'
-import { useEffect } from 'react'
+import LandingLayout from '../components/LandingLayout'
 
-/* ---------- SEO: set meta tags on mount ---------- */
-const SEO = {
-  title: 'DeskOS — IT Support OS | Remote Support, RMM & ITSM in One Console',
-  description:
-    'DeskOS unifies remote control, endpoint management, and IT service management in one consent-first, AI-assisted platform. Deploy in minutes, not months.',
-  url: 'https://www.deskos.com',
-  ogImage: '/og-deskos.png',
-}
-
-/* ---------- data ---------- */
-
-const FEATURES = [
+const HIGHLIGHTS = [
   {
     icon: '🖥️',
     title: 'Remote support, AnyDesk-class',
@@ -45,43 +34,11 @@ const FEATURES = [
   },
 ]
 
-const USE_CASES = [
-  {
-    title: 'MSPs & IT service providers',
-    body: 'Manage multiple customer tenants from one cross-tenant console. Per-customer branding, SLA tracking, and a customer-facing portal — all without switching tools.',
-  },
-  {
-    title: 'Internal IT departments',
-    body: 'One console for your helpdesk, endpoint fleet, and compliance audits. SLA tracking, automation rules, and a knowledge base keep resolution times short.',
-  },
-  {
-    title: 'Education & healthcare',
-    body: 'Consent-first remote support with full audit trails. Deploy silently with Group Policy. Web Push alerts reach technicians even when they are away from the console.',
-  },
-  {
-    title: 'SaaS & software companies',
-    body: 'Customer-assisted support without pre-installed agents. Generate a code, walk the user through it, and take control in seconds — no account required on their end.',
-  },
-]
-
-const COMPARISON = [
-  { feature: 'Native remote control', deskos: '✅ built-in', teamviewer: '✅ built-in', splashtop: '✅ built-in', anydesk: '✅ built-in' },
-  { feature: 'Endpoint management', deskos: '✅ built-in', teamviewer: '⚠️ separate product', splashtop: '⚠️ separate product', anydesk: '⚠️ remote only' },
-  { feature: 'ITSM ticketing', deskos: '✅ built-in', teamviewer: '❌', splashtop: '❌', anydesk: '❌' },
-  { feature: 'AI assistant', deskos: '✅ built-in', teamviewer: '❌', splashtop: '❌', anydesk: '❌' },
-  { feature: 'Consent-first design', deskos: '✅ enforced', teamviewer: '⚠️', splashtop: '⚠️', anydesk: '⚠️' },
-  { feature: 'Hash-chained audit', deskos: '✅ built-in', teamviewer: '❌', splashtop: '❌', anydesk: '❌' },
-  { feature: 'Multi-tenant MSP', deskos: '✅ first-class', teamviewer: '⚠️ add-on', splashtop: '❌', anydesk: '❌' },
-  { feature: 'Web Push notifications', deskos: '✅ built-in', teamviewer: '❌', splashtop: '❌', anydesk: '❌' },
-  { feature: 'OpenAPI / OAuth2', deskos: '✅ built-in', teamviewer: '⚠️', splashtop: '❌', anydesk: '❌' },
-  { feature: 'Self-hosted option', deskos: '✅ VPS deploy', teamviewer: '❌', splashtop: '❌', anydesk: '❌' },
-]
-
 const DEPLOYMENTS = [
   {
     tag: 'Customer-assisted',
     title: 'Send the MSI and a code',
-    body: 'The user installs the agent, opens Enroll DeskOS Agent, and enters one six-to-eight-digit code. No terminal, no credentials.',
+    body: 'The user installs the agent, opens Enroll DeskOS Agent, and enters one eight-digit code. No terminal, no credentials.',
   },
   {
     tag: 'Technician-assisted',
@@ -95,78 +52,12 @@ const DEPLOYMENTS = [
   },
 ]
 
-const FAQ = [
-  {
-    q: 'What does "consent-first" mean?',
-    a: 'Every remote session requires explicit user consent. There is no way to bypass this — the agent enforces it at the protocol level, and every consent event is recorded in the audit log.',
-  },
-  {
-    q: 'Is DeskOS self-hosted or cloud?',
-    a: 'Both. DeskOS runs on a single VPS (PostgreSQL + Redis co-located) for small deployments and scales horizontally. A Docker Compose stack is included. You own your data.',
-  },
-  {
-    q: 'Do I need Rust on the managed devices?',
-    a: 'No. The agent is a compiled Windows binary — you distribute the MSI. The Rust toolchain is only needed to build the agent from source.',
-  },
-  {
-    q: 'How does the AI agent work?',
-    a: 'The Level-1 agent proposes bounded remediations (restart, collect inventory, add ticket note) from a fixed tool catalog. Nothing runs until a human approves it. The AI provider is optional — deterministic fallback when disabled.',
-  },
-  {
-    q: 'Can I connect from my phone?',
-    a: 'Yes. DeskOS has a responsive web console that works on any browser. Web Push notifications alert you to new sessions and alerts even when the app is closed.',
-  },
-  {
-    q: 'What about data privacy?',
-    a: 'Every table is tenant-isolated at the database level (Row-Level Security). Audit logs are hash-chained and tamper-evident. Remote sessions are end-to-end encrypted. See our Privacy Policy for details.',
-  },
-]
-
-/* ---------- component ---------- */
-
 export default function LandingPage() {
-  useEffect(() => {
-    document.title = SEO.title
-    const meta = (name: string, content: string) => {
-      let el = document.querySelector(`meta[name="${name}"]`) as HTMLMetaElement | null
-      if (!el) {
-        el = document.createElement('meta')
-        el.setAttribute('name', name)
-        document.head.appendChild(el)
-      }
-      el.setAttribute('content', content)
-    }
-    meta('description', SEO.description)
-    meta('og:title', SEO.title)
-    meta('og:description', SEO.description)
-    meta('og:image', SEO.ogImage)
-    meta('og:url', SEO.url)
-    meta('twitter:card', 'summary_large_image')
-    meta('twitter:title', SEO.title)
-    meta('twitter:description', SEO.description)
-    meta('twitter:image', SEO.ogImage)
-    return () => {
-      document.title = 'DeskOS'
-    }
-  }, [])
-
   return (
-    <div className="landing">
-      {/* ---- nav ---- */}
-      <header className="landing-nav">
-        <div className="landing-nav-inner">
-          <span className="brand">DeskOS</span>
-          <span className="etch">IT SUPPORT OS</span>
-          <div className="landing-nav-spacer" />
-          <a className="landing-nav-link" href="#features">Features</a>
-          <a className="landing-nav-link" href="#use-cases">Use cases</a>
-          <a className="landing-nav-link" href="/pricing">Pricing</a>
-          <a className="landing-nav-link" href="#faq">FAQ</a>
-          <Link className="btn btn-ghost btn-sm" to="/login">Sign in</Link>
-          <Link className="btn btn-primary btn-sm" to="/signup">Get started</Link>
-        </div>
-      </header>
-
+    <LandingLayout
+      title="DeskOS — IT Support OS | Remote Support, RMM & ITSM in One Console"
+      description="DeskOS unifies remote control, endpoint management, and IT service management in one consent-first, AI-assisted platform. Deploy in minutes, not months."
+    >
       {/* ---- hero ---- */}
       <section className="landing-hero">
         <div className="landing-hero-inner">
@@ -221,7 +112,7 @@ export default function LandingPage() {
       {/* ---- social proof ---- */}
       <section className="landing-proof">
         <div className="landing-proof-inner">
-          <span className="landing-proof-stat"><strong>345+</strong> API tests</span>
+          <span className="landing-proof-stat"><strong>365</strong> API tests</span>
           <span className="landing-proof-sep">·</span>
           <span className="landing-proof-stat"><strong>100%</strong> consent-enforced</span>
           <span className="landing-proof-sep">·</span>
@@ -241,7 +132,7 @@ export default function LandingPage() {
           </p>
         </div>
         <div className="landing-features">
-          {FEATURES.map((f) => (
+          {HIGHLIGHTS.map((f) => (
             <article key={f.title} className="landing-feature">
               <span className="landing-feature-icon" aria-hidden="true">{f.icon}</span>
               <h3>{f.title}</h3>
@@ -249,21 +140,37 @@ export default function LandingPage() {
             </article>
           ))}
         </div>
+        <div style={{ textAlign: 'center', marginTop: 28 }}>
+          <Link className="btn btn-ghost" to="/features">See all features →</Link>
+        </div>
       </section>
 
       {/* ---- use cases ---- */}
-      <section className="landing-section" id="use-cases">
+      <section className="landing-section">
         <div className="landing-section-head">
           <span className="landing-kicker">Who it's for</span>
           <h2 className="landing-h2">DeskOS fits every IT team.</h2>
         </div>
-        <div className="landing-features">
-          {USE_CASES.map((u) => (
-            <article key={u.title} className="landing-feature">
-              <h3>{u.title}</h3>
-              <p>{u.body}</p>
-            </article>
-          ))}
+        <div className="landing-use-case-grid">
+          <article className="landing-use-case-card">
+            <h3>MSPs & IT service providers</h3>
+            <p>Manage multiple customer tenants from one cross-tenant console with per-customer branding, SLA tracking, and a customer-facing portal.</p>
+          </article>
+          <article className="landing-use-case-card">
+            <h3>Internal IT departments</h3>
+            <p>One console for your helpdesk, endpoint fleet, and compliance audits. SLA tracking, automation rules, and a knowledge base keep resolution times short.</p>
+          </article>
+          <article className="landing-use-case-card">
+            <h3>Education & healthcare</h3>
+            <p>Consent-first remote support with full audit trails. Deploy silently with Group Policy. Web Push alerts reach technicians even when they are away from the console.</p>
+          </article>
+          <article className="landing-use-case-card">
+            <h3>SaaS & software companies</h3>
+            <p>Customer-assisted support without pre-installed agents. Generate a code, walk the user through it, and take control in seconds — no account required.</p>
+          </article>
+        </div>
+        <div style={{ textAlign: 'center', marginTop: 28 }}>
+          <Link className="btn btn-ghost" to="/use-cases">See all use cases →</Link>
         </div>
       </section>
 
@@ -287,54 +194,31 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ---- comparison ---- */}
-      <section className="landing-section" id="comparison">
+      {/* ---- pricing preview ---- */}
+      <section className="landing-section">
         <div className="landing-section-head">
-          <span className="landing-kicker">Why DeskOS</span>
-          <h2 className="landing-h2">How it stacks up.</h2>
+          <span className="landing-kicker">Pricing</span>
+          <h2 className="landing-h2">Simple, transparent pricing.</h2>
           <p className="landing-section-sub">
-            Most IT teams stitch together 3–4 tools. DeskOS replaces them with one.
+            Start free for up to 3 technicians. Scale to unlimited with the Pro plan.
           </p>
         </div>
-        <div className="landing-table-wrap">
-          <table className="comparison-table">
-            <thead>
-              <tr>
-                <th>Feature</th>
-                <th>DeskOS</th>
-                <th>TeamViewer</th>
-                <th>Splashtop</th>
-                <th>AnyDesk</th>
-              </tr>
-            </thead>
-            <tbody>
-              {COMPARISON.map((row) => (
-                <tr key={row.feature}>
-                  <td>{row.feature}</td>
-                  <td className="mono">{row.deskos}</td>
-                  <td className="mono">{row.teamviewer}</td>
-                  <td className="mono">{row.splashtop}</td>
-                  <td className="mono">{row.anydesk}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="pricing-preview-grid">
+          <article className="landing-feature">
+            <h3>Starter — $29/tech/mo</h3>
+            <p>Up to 3 technicians, 100 devices, remote support, ticketing, KB, and customer portal.</p>
+          </article>
+          <article className="landing-feature" style={{ borderColor: 'var(--accent)' }}>
+            <h3>Pro — $79/tech/mo</h3>
+            <p>Unlimited technicians, 500 devices, full RMM, AI assistant, patch management, and automations.</p>
+          </article>
+          <article className="landing-feature">
+            <h3>Enterprise — Custom</h3>
+            <p>Multi-tenant MSP, SSO, on-premises, JIT privileged access, and dedicated support.</p>
+          </article>
         </div>
-      </section>
-
-      {/* ---- FAQ ---- */}
-      <section className="landing-section" id="faq">
-        <div className="landing-section-head">
-          <span className="landing-kicker">Questions</span>
-          <h2 className="landing-h2">Frequently asked questions.</h2>
-        </div>
-        <div className="landing-faq">
-          {FAQ.map((item) => (
-            <details key={item.q} className="landing-faq-item">
-              <summary className="landing-faq-q">{item.q}</summary>
-              <p className="landing-faq-a">{item.a}</p>
-            </details>
-          ))}
+        <div style={{ textAlign: 'center', marginTop: 28 }}>
+          <Link className="btn btn-ghost" to="/pricing">See full pricing comparison →</Link>
         </div>
       </section>
 
@@ -346,42 +230,9 @@ export default function LandingPage() {
         </p>
         <div className="landing-cta">
           <Link className="btn btn-primary" to="/signup">Create your workspace</Link>
+          <Link className="btn btn-ghost" to="/features">Explore features</Link>
         </div>
       </section>
-
-      {/* ---- footer ---- */}
-      <footer className="landing-footer">
-        <div className="landing-footer-grid">
-          <div className="landing-footer-brand">
-            <span className="brand">DeskOS</span>
-            <p className="landing-footer-tagline">IT Support OS — remote support, RMM, and ITSM in one console.</p>
-          </div>
-          <div className="landing-footer-col">
-            <h4>Product</h4>
-            <a href="#features">Features</a>
-            <a href="#use-cases">Use cases</a>
-            <a href="/pricing">Pricing</a>
-            <a href="#comparison">Compare</a>
-            <Link to="/login">Sign in</Link>
-            <Link to="/signup">Get started</Link>
-          </div>
-          <div className="landing-footer-col">
-            <h4>Resources</h4>
-            <a href="#faq">FAQ</a>
-            <Link to="/login">Customer portal</Link>
-            <a href="/api/v1/openapi.json">API docs (OpenAPI)</a>
-          </div>
-          <div className="landing-footer-col">
-            <h4>Legal</h4>
-            <Link to="/privacy">Privacy Policy</Link>
-            <Link to="/terms">Terms of Service</Link>
-            <Link to="/about">About us</Link>
-          </div>
-        </div>
-        <div className="landing-footer-bottom">
-          <span className="muted">&copy; {new Date().getFullYear()} DeskOS. All rights reserved.</span>
-        </div>
-      </footer>
 
       {/* JSON-LD structured data for SEO */}
       <script
@@ -392,17 +243,18 @@ export default function LandingPage() {
             '@type': 'SoftwareApplication',
             name: 'DeskOS',
             applicationCategory: 'BusinessApplication',
-            description: SEO.description,
-            url: SEO.url,
+            description: 'DeskOS unifies remote control, endpoint management, and IT service management in one consent-first, AI-assisted platform.',
+            url: 'https://www.deskos.com',
             offers: {
-              '@type': 'Offer',
-              price: '0',
+              '@type': 'AggregateOffer',
+              lowPrice: '0',
+              highPrice: '79',
               priceCurrency: 'USD',
-              description: 'Free for up to 3 technicians',
+              offerCount: '3',
             },
           }),
         }}
       />
-    </div>
+    </LandingLayout>
   )
 }

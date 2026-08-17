@@ -1,29 +1,11 @@
-import { Link } from 'react-router-dom'
-import { useEffect } from 'react'
+import LandingLayout from '../components/LandingLayout'
 
 export default function TermsPage() {
-  useEffect(() => {
-    document.title = 'Terms of Service — DeskOS'
-    const meta = (name: string, content: string) => {
-      let el = document.querySelector(`meta[name="${name}"]`) as HTMLMetaElement | null
-      if (!el) { el = document.createElement('meta'); el.setAttribute('name', name); document.head.appendChild(el) }
-      el.setAttribute('content', content)
-    }
-    meta('description', 'DeskOS Terms of Service — the rules governing your use of the DeskOS IT support platform.')
-    return () => { document.title = 'DeskOS' }
-  }, [])
-
   return (
-    <div className="landing">
-      <header className="landing-nav">
-        <div className="landing-nav-inner">
-          <Link className="brand" to="/" style={{ textDecoration: 'none' }}>DeskOS</Link>
-          <div className="landing-nav-spacer" />
-          <Link className="btn btn-ghost btn-sm" to="/">Home</Link>
-          <Link className="btn btn-primary btn-sm" to="/signup">Get started</Link>
-        </div>
-      </header>
-
+    <LandingLayout
+      title="Terms of Service — DeskOS"
+      description="DeskOS Terms of Service — the rules governing your use of the DeskOS IT support platform."
+    >
       <section className="landing-section legal-page">
         <div className="legal-content">
           <h1>Terms of Service</h1>
@@ -75,7 +57,8 @@ export default function TermsPage() {
           <h2>8. Fees and billing</h2>
           <ul>
             <li>Free tier: no fees for up to 3 technicians and 100 devices.</li>
-            <li>Business tier: $49 per technician per month, billed monthly.</li>
+            <li>Starter tier: $29 per technician per month (billed annually).</li>
+            <li>Pro tier: $79 per technician per month (billed annually).</li>
             <li>Enterprise tier: custom pricing negotiated individually.</li>
             <li>All fees are non-refundable except as required by applicable law.</li>
           </ul>
@@ -117,30 +100,6 @@ export default function TermsPage() {
           </p>
         </div>
       </section>
-
-      <footer className="landing-footer">
-        <div className="landing-footer-grid">
-          <div className="landing-footer-brand">
-            <span className="brand">DeskOS</span>
-            <p className="landing-footer-tagline">IT Support OS</p>
-          </div>
-          <div className="landing-footer-col">
-            <h4>Product</h4>
-            <a href="/#features">Features</a>
-            <Link to="/pricing">Pricing</Link>
-            <Link to="/login">Sign in</Link>
-          </div>
-          <div className="landing-footer-col">
-            <h4>Legal</h4>
-            <Link to="/privacy">Privacy Policy</Link>
-            <Link to="/terms">Terms of Service</Link>
-            <Link to="/about">About</Link>
-          </div>
-        </div>
-        <div className="landing-footer-bottom">
-          <span className="muted">&copy; {new Date().getFullYear()} DeskOS. All rights reserved.</span>
-        </div>
-      </footer>
-    </div>
+    </LandingLayout>
   )
 }

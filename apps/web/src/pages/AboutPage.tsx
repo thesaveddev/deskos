@@ -1,29 +1,12 @@
 import { Link } from 'react-router-dom'
-import { useEffect } from 'react'
+import LandingLayout from '../components/LandingLayout'
 
 export default function AboutPage() {
-  useEffect(() => {
-    document.title = 'About — DeskOS'
-    const meta = (name: string, content: string) => {
-      let el = document.querySelector(`meta[name="${name}"]`) as HTMLMetaElement | null
-      if (!el) { el = document.createElement('meta'); el.setAttribute('name', name); document.head.appendChild(el) }
-      el.setAttribute('content', content)
-    }
-    meta('description', 'About DeskOS — the IT support platform built by Clean IT Ltd. Our mission: one console for every IT task.')
-    return () => { document.title = 'DeskOS' }
-  }, [])
-
   return (
-    <div className="landing">
-      <header className="landing-nav">
-        <div className="landing-nav-inner">
-          <Link className="brand" to="/" style={{ textDecoration: 'none' }}>DeskOS</Link>
-          <div className="landing-nav-spacer" />
-          <Link className="btn btn-ghost btn-sm" to="/">Home</Link>
-          <Link className="btn btn-primary btn-sm" to="/signup">Get started</Link>
-        </div>
-      </header>
-
+    <LandingLayout
+      title="About — DeskOS | The IT Support OS"
+      description="About DeskOS — the IT support platform built by Clean IT Ltd. Our mission: one console for every IT task."
+    >
       <section className="landing-hero">
         <div className="landing-hero-inner">
           <span className="landing-kicker">About us</span>
@@ -73,6 +56,29 @@ export default function AboutPage() {
         </div>
       </section>
 
+      <section className="landing-section">
+        <div className="landing-section-head">
+          <h2 className="landing-h2">By the numbers</h2>
+        </div>
+        <div className="landing-features">
+          <article className="landing-feature">
+            <span className="landing-feature-icon">365</span>
+            <h3>API tests</h3>
+            <p>Every endpoint is tested. CI runs the full suite on every push.</p>
+          </article>
+          <article className="landing-feature">
+            <span className="landing-feature-icon">38</span>
+            <h3>Database migrations</h3>
+            <p>Schema-versioned with Row-Level Security on every tenant-scoped table.</p>
+          </article>
+          <article className="landing-feature">
+            <span className="landing-feature-icon">100%</span>
+            <h3>Consent-enforced</h3>
+            <p>No remote session can start without explicit user consent. No exceptions.</p>
+          </article>
+        </div>
+      </section>
+
       <section className="landing-cta-band">
         <h2 className="landing-h2">Get in touch</h2>
         <p className="landing-sub">
@@ -80,32 +86,9 @@ export default function AboutPage() {
         </p>
         <div className="landing-cta">
           <a className="btn btn-primary" href="mailto:hello@deskos.com">Email us</a>
+          <Link className="btn btn-ghost" to="/signup">Try it free</Link>
         </div>
       </section>
-
-      <footer className="landing-footer">
-        <div className="landing-footer-grid">
-          <div className="landing-footer-brand">
-            <span className="brand">DeskOS</span>
-            <p className="landing-footer-tagline">IT Support OS</p>
-          </div>
-          <div className="landing-footer-col">
-            <h4>Product</h4>
-            <a href="/#features">Features</a>
-            <Link to="/pricing">Pricing</Link>
-            <Link to="/login">Sign in</Link>
-          </div>
-          <div className="landing-footer-col">
-            <h4>Legal</h4>
-            <Link to="/privacy">Privacy Policy</Link>
-            <Link to="/terms">Terms of Service</Link>
-            <Link to="/about">About</Link>
-          </div>
-        </div>
-        <div className="landing-footer-bottom">
-          <span className="muted">&copy; {new Date().getFullYear()} DeskOS. All rights reserved.</span>
-        </div>
-      </footer>
-    </div>
+    </LandingLayout>
   )
 }

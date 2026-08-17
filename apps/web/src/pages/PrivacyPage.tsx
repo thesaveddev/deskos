@@ -1,29 +1,11 @@
-import { Link } from 'react-router-dom'
-import { useEffect } from 'react'
+import LandingLayout from '../components/LandingLayout'
 
 export default function PrivacyPage() {
-  useEffect(() => {
-    document.title = 'Privacy Policy — DeskOS'
-    const meta = (name: string, content: string) => {
-      let el = document.querySelector(`meta[name="${name}"]`) as HTMLMetaElement | null
-      if (!el) { el = document.createElement('meta'); el.setAttribute('name', name); document.head.appendChild(el) }
-      el.setAttribute('content', content)
-    }
-    meta('description', 'DeskOS Privacy Policy — how we collect, use, protect, and share your data. GDPR and UK GDPR compliant.')
-    return () => { document.title = 'DeskOS' }
-  }, [])
-
   return (
-    <div className="landing">
-      <header className="landing-nav">
-        <div className="landing-nav-inner">
-          <Link className="brand" to="/" style={{ textDecoration: 'none' }}>DeskOS</Link>
-          <div className="landing-nav-spacer" />
-          <Link className="btn btn-ghost btn-sm" to="/">Home</Link>
-          <Link className="btn btn-primary btn-sm" to="/signup">Get started</Link>
-        </div>
-      </header>
-
+    <LandingLayout
+      title="Privacy Policy — DeskOS"
+      description="DeskOS Privacy Policy — how we collect, use, protect, and share your data. GDPR and UK GDPR compliant."
+    >
       <section className="landing-section legal-page">
         <div className="legal-content">
           <h1>Privacy Policy</h1>
@@ -114,30 +96,6 @@ export default function PrivacyPage() {
           </p>
         </div>
       </section>
-
-      <footer className="landing-footer">
-        <div className="landing-footer-grid">
-          <div className="landing-footer-brand">
-            <span className="brand">DeskOS</span>
-            <p className="landing-footer-tagline">IT Support OS</p>
-          </div>
-          <div className="landing-footer-col">
-            <h4>Product</h4>
-            <a href="/#features">Features</a>
-            <Link to="/pricing">Pricing</Link>
-            <Link to="/login">Sign in</Link>
-          </div>
-          <div className="landing-footer-col">
-            <h4>Legal</h4>
-            <Link to="/privacy">Privacy Policy</Link>
-            <Link to="/terms">Terms of Service</Link>
-            <Link to="/about">About</Link>
-          </div>
-        </div>
-        <div className="landing-footer-bottom">
-          <span className="muted">&copy; {new Date().getFullYear()} DeskOS. All rights reserved.</span>
-        </div>
-      </footer>
-    </div>
+    </LandingLayout>
   )
 }

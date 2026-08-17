@@ -3916,3 +3916,139 @@ select.field-input {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---- landing nav brand link ---- */
+
+.landing-nav-brand-link {
+  text-decoration: none;
+  color: inherit;
+}
+
+.landing-nav-brand-link:hover {
+  text-decoration: none;
+}
+
+/* ---- nav link active state ---- */
+
+.landing-nav-link.active {
+  color: var(--accent);
+}
+
+/* ---- use case layout ---- */
+
+.use-case-layout {
+  max-width: 1080px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 40px;
+  align-items: start;
+}
+
+.use-case-text {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.use-case-text .landing-h2 {
+  margin-top: 4px;
+}
+
+.use-case-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 20px;
+  background: var(--bg-1);
+  border: 1px solid var(--line-1);
+  border-radius: 10px;
+}
+
+.use-case-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text-2);
+}
+
+/* ---- use case card grid (home page) ---- */
+
+.landing-use-case-grid {
+  max-width: 1080px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+}
+
+.landing-use-case-card {
+  background: var(--bg-1);
+  border: 1px solid var(--line-1);
+  border-radius: 10px;
+  padding: 20px;
+}
+
+.landing-use-case-card h3 {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.landing-use-case-card p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* ---- pricing preview grid (home page) ---- */
+
+.pricing-preview-grid {
+  max-width: 1080px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+
+/* ---- landing footer social ---- */
+
+.landing-footer-social {
+  display: flex;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.landing-footer-social a {
+  color: var(--text-3);
+  transition: color 120ms ease;
+}
+
+.landing-footer-social a:hover {
+  color: var(--text-1);
+}
+
+/* ---- use case section alt (subtle bg shift) ---- */
+
+.landing-section.alt {
+  background: var(--bg-1);
+}
+
+/* ---- responsive ---- */
+
+@media (max-width: 860px) {
+  .use-case-layout {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  .landing-use-case-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .pricing-preview-grid {
+    grid-template-columns: 1fr;
+  }
+}

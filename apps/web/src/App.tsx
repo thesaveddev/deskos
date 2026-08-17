@@ -16,6 +16,8 @@ import HomePage from './pages/HomePage.js'
 import IncidentsPage from './pages/IncidentsPage.js'
 import KnowledgeBasePage from './pages/KnowledgeBasePage.js'
 import LandingPage from './pages/LandingPage.js'
+import FeaturesPage from './pages/FeaturesPage.js'
+import UseCasesPage from './pages/UseCasesPage.js'
 import LoginPage from './pages/LoginPage.js'
 import PricingPage from './pages/PricingPage.js'
 import PrivacyPage from './pages/PrivacyPage.js'
@@ -83,14 +85,19 @@ export default function App() {
 
   return (
     <Routes>
+      {/* Public marketing pages */}
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
       <Route path="/connect/:code" element={<ConnectPage />} />
+      <Route path="/features" element={<FeaturesPage />} />
+      <Route path="/use-cases" element={<UseCasesPage />} />
       <Route path="/pricing" element={<PricingPage />} />
       <Route path="/privacy" element={<PrivacyPage />} />
       <Route path="/terms" element={<TermsPage />} />
       <Route path="/about" element={<AboutPage />} />
       <Route path="/" element={<HomeRoute />} />
+
+      {/* Protected console pages */}
       <Route path="/tickets" element={<Protected><TicketsPage /></Protected>} />
       <Route path="/tickets/new" element={<Protected><NewTicketPage /></Protected>} />
       <Route path="/tickets/:id" element={<Protected><TicketDetailPage /></Protected>} />
