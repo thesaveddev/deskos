@@ -1,7 +1,30 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 
-/** Default idle timeout: 10 minutes */
-const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000
+const STORAGE_KEY = 'deskos.idleTimeoutMinutes'
+const DEFAULT_MINUTES = 10
+
+/** Read the stored idle timeout (in minutes). Falls back to 10. */
+export function getIdleTimeoutMinutes(): number {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY)
+    if (stored !== null) {
+      const n = Number(stored)
+      if (Number.isFinite(n) && n >= 1 && n <= 120) return n
+    }
+  } catch { /* ignore */ }
+  return DEFAULT_MINUTES
+}
+
+/** Persist the idle timeout (in minutes). Pass 0 to disable. */
+export function setIdleTimeoutMinutes(minutes: number) {
+  try {
+    if (minutes <= 0) {
+      localStorage.removeItem(STORAGE_KEY)
+    } else {
+      localStorage.setItem(STORAGE_KEY, String(minutes))
+    }
+  } catch { /* ignore */ }
+}
 
 /**
  * Detects user inactivity and triggers a lock callback.
@@ -9,18 +32,25 @@ const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000
  */
 export function useIdleTimeout(
   onIdle: () => void,
-  timeoutMs: number = DEFAULT_TIMEOUT_MS,
+  timeoutMs?: number,
 ): { isLocked: boolean; resetTimer: () => void } {
   const [isLocked, setIsLocked] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Resolve timeout: explicit arg > localStorage > default
+  const resolvedMs = timeoutMs ?? getIdleTimeoutMinutes() * 60 * 1000
+
   const resetTimer = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current)
+
+    // If timeout is 0 or negative, disable idle lock entirely
+    if (resolvedMs <= 0) return
+
     timerRef.current = setTimeout(() => {
       setIsLocked(true)
       onIdle()
-    }, timeoutMs)
-  }, [onIdle, timeoutMs])
+    }, resolvedMs)
+  }, [onIdle, resolvedMs])
 
   const handleActivity = useCallback(() => {
     if (!isLocked) resetTimer()

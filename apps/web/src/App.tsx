@@ -82,7 +82,7 @@ function HomeRoute() {
 
 function IdleLockWrapper({ children }: { children: ReactNode }) {
   const [locked, setLocked] = useState(false)
-  const { isLocked } = useIdleTimeout(() => setLocked(true), 10 * 60 * 1000)
+  const { isLocked } = useIdleTimeout(() => setLocked(true))
 
   useEffect(() => {
     if (isLocked) setLocked(true)

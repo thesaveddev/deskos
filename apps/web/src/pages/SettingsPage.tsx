@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { Shell } from '../components/Shell.js'
 import { Alert, Field } from '../components/ui.js'
 import { getTenant, updateTenant } from '../lib/tenant.js'
+import { getIdleTimeoutMinutes, setIdleTimeoutMinutes } from '../lib/idle.js'
 function BasicSettings() {
   const [form, setForm] = useState<{ name: string; slug: string; region: string } | null>(null)
   const [busy, setBusy] = useState(false)
@@ -62,6 +63,48 @@ function BasicSettings() {
   )
 }
 
+function PreferencesSettings() {
+  const [idleMinutes, setIdleMinutes] = useState(getIdleTimeoutMinutes())
+  const [notice, setNotice] = useState<string | null>(null)
+
+  const handleSave = () => {
+    setIdleTimeoutMinutes(idleMinutes)
+    setNotice('Preferences saved.')
+    setTimeout(() => setNotice(null), 2000)
+  }
+
+  return (
+    <div className="form-panel">
+      <h2 className="channel-form-title">Preferences</h2>
+      <p className="muted" style={{ marginBottom: 16 }}>
+        Personal settings that apply to your account across all organizations.
+      </p>
+      {notice ? <Alert kind="info">{notice}</Alert> : null}
+
+      <Field label="Screen lock timeout" hint="Minutes of inactivity before your screen locks (1–120, or 0 to disable)">
+        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+          <input
+            className="field-input"
+            type="number"
+            min={0}
+            max={120}
+            value={idleMinutes}
+            onChange={(e) => setIdleMinutes(Math.max(0, Math.min(120, Number(e.target.value))))}
+            style={{ maxWidth: 100 }}
+          />
+          <span className="muted" style={{ fontSize: '0.8rem' }}>
+            {idleMinutes === 0 ? 'Disabled' : `${idleMinutes} minute${idleMinutes !== 1 ? 's' : ''}`}
+          </span>
+        </div>
+      </Field>
+
+      <div className="form-actions">
+        <button className="btn btn-primary" onClick={handleSave}>Save preferences</button>
+      </div>
+    </div>
+  )
+}
+
 export default function SettingsPage() {
   const location = useLocation()
   const tab = location.pathname.startsWith('/settings/email')
@@ -74,11 +117,13 @@ export default function SettingsPage() {
           ? 'notifications'
         : location.pathname.startsWith('/settings/security')
           ? 'security'
-          : location.pathname.startsWith('/settings/active-directory')
+        : location.pathname.startsWith('/settings/active-directory')
           ? 'active-directory'
           : location.pathname.startsWith('/settings/api')
             ? 'api'
-            : 'basic'
+            : location.pathname.startsWith('/settings/preferences')
+              ? 'preferences'
+              : 'basic'
 
   return (
     <Shell>
@@ -88,6 +133,9 @@ export default function SettingsPage() {
       <div className="settings-tabs">
         <NavLink to="/settings" end className={({ isActive }) => `settings-tab${isActive ? ' active' : ''}`}>
           Basic
+        </NavLink>
+        <NavLink to="/settings/preferences" className={({ isActive }) => `settings-tab${isActive ? ' active' : ''}`}>
+          Preferences
         </NavLink>
         <NavLink to="/settings/email" className={({ isActive }) => `settings-tab${isActive ? ' active' : ''}`}>
           Email
@@ -111,7 +159,7 @@ export default function SettingsPage() {
           Public API
         </NavLink>
       </div>
-      <div className="settings-body">{tab === 'basic' ? <BasicSettings /> : <Outlet />}</div>
+      <div className="settings-body">{tab === 'basic' ? <BasicSettings /> : tab === 'preferences' ? <PreferencesSettings /> : <Outlet />}</div>
     </Shell>
   )
 }
