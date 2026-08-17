@@ -40,6 +40,7 @@ function NavSections() {
         { to: '/', end: true, label: 'Dashboard', show: true },
         { to: '/tickets', label: 'Tickets', show: true },
         { to: '/approvals', label: 'Approvals', show: true },
+        { to: '/notes', label: 'Notes', show: true },
       ],
     },
     {
