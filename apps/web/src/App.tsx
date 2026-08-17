@@ -1,5 +1,7 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
+import { LockScreen } from './components/LockScreen.js'
+import { useIdleTimeout } from './lib/idle.js'
 import AiAgentPage from './pages/AiAgentPage.js'
 import ApprovalsPage from './pages/ApprovalsPage.js'
 import AssetsPage from './pages/AssetsPage.js'
@@ -29,6 +31,8 @@ import ContactPage from './pages/ContactPage.js'
 import ApiDocsPage from './pages/ApiDocsPage.js'
 import SupportPage from './pages/SupportPage.js'
 import AdminDashboardPage from './pages/AdminDashboardPage.js'
+import StaffPage from './pages/StaffPage.js'
+import ProfilePage from './pages/ProfilePage.js'
 import MonitoringPage from './pages/MonitoringPage.js'
 import MarketplacePage from './pages/MarketplacePage.js'
 import MspPage from './pages/MspPage.js'
@@ -73,6 +77,18 @@ function HomeRoute() {
   return <HomePage />
 }
 
+function IdleLockWrapper({ children }: { children: ReactNode }) {
+  const [locked, setLocked] = useState(false)
+  const { isLocked } = useIdleTimeout(() => setLocked(true), 10 * 60 * 1000)
+
+  useEffect(() => {
+    if (isLocked) setLocked(true)
+  }, [isLocked])
+
+  if (locked) return <LockScreen onUnlock={() => setLocked(false)} />
+  return <>{children}</>
+}
+
 export default function App() {
   const status = useAuth((s) => s.status)
   const hydrate = useAuth((s) => s.hydrate)
@@ -90,6 +106,7 @@ export default function App() {
   }
 
   return (
+    <IdleLockWrapper>
     <Routes>
       {/* Public marketing pages */}
       <Route path="/login" element={<LoginPage />} />
@@ -107,6 +124,8 @@ export default function App() {
       <Route path="/api-docs" element={<ApiDocsPage />} />
       <Route path="/support" element={<SupportPage />} />
       <Route path="/admin" element={<Protected><AdminDashboardPage /></Protected>} />
+      <Route path="/staff" element={<Protected><StaffPage /></Protected>} />
+      <Route path="/profile" element={<Protected><ProfilePage /></Protected>} />
       <Route path="/" element={<HomeRoute />} />
 
       {/* Protected console pages */}
@@ -152,5 +171,6 @@ export default function App() {
       <Route path="/portal/tickets/:number" element={<Protected><PortalTicketPage /></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </IdleLockWrapper>
   )
 }
