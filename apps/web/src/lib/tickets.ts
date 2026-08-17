@@ -70,6 +70,12 @@ export function createTicket(body: {
   implementationPlan?: string
   backoutPlan?: string
   scheduledAt?: string
+  requesterName?: string
+  requesterEmail?: string
+  requesterPhone?: string
+  requesterDepartment?: string
+  requesterCompany?: string
+  requesterLocation?: string
 }): Promise<{ ticket: Ticket }> {
   return api('/tickets', { method: 'POST', body })
 }

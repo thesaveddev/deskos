@@ -35,6 +35,13 @@ const createSchema = z.object({
   implementationPlan: z.string().max(20_000).optional(),
   backoutPlan: z.string().max(20_000).optional(),
   scheduledAt: z.string().datetime().optional(),
+  // Requester details (for when ticket is raised on behalf of someone else)
+  requesterName: z.string().max(200).optional(),
+  requesterEmail: z.string().email().optional(),
+  requesterPhone: z.string().max(50).optional(),
+  requesterDepartment: z.string().max(100).optional(),
+  requesterCompany: z.string().max(200).optional(),
+  requesterLocation: z.string().max(200).optional(),
 })
 
 const updateSchema = z.object({
@@ -260,6 +267,13 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
       if (body.implementationPlan !== undefined) ext.implementationPlan = body.implementationPlan
       if (body.backoutPlan !== undefined) ext.backoutPlan = body.backoutPlan
       if (body.scheduledAt !== undefined) ext.scheduledAt = body.scheduledAt
+      // Requester details
+      if (body.requesterName) ext.requesterName = body.requesterName
+      if (body.requesterEmail) ext.requesterEmail = body.requesterEmail
+      if (body.requesterPhone) ext.requesterPhone = body.requesterPhone
+      if (body.requesterDepartment) ext.requesterDepartment = body.requesterDepartment
+      if (body.requesterCompany) ext.requesterCompany = body.requesterCompany
+      if (body.requesterLocation) ext.requesterLocation = body.requesterLocation
 
       const res = await client.query(
         `INSERT INTO tickets

@@ -6388,3 +6388,107 @@ select.field-input {
   font-size: 0.7rem;
   color: var(--text-3);
 }
+
+/* ── Ticket form sections ────────────────────────────────────── */
+
+.ticket-form-section {
+  margin-bottom: 1.5rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--line-1);
+}
+.ticket-form-section:last-of-type {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.ticket-form-section-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-1);
+  margin: 0 0 0.25rem;
+}
+
+.ticket-form-section-hint {
+  font-size: 0.8rem;
+  color: var(--text-3);
+  margin: 0 0 1rem;
+}
+
+/* ── File upload zone ────────────────────────────────────────── */
+
+.ticket-upload-zone {
+  border: 2px dashed var(--line-2);
+  border-radius: var(--radius);
+  padding: 2rem;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+.ticket-upload-zone:hover,
+.ticket-upload-zone.drag-over {
+  border-color: var(--accent);
+  background: rgba(232, 163, 61, 0.04);
+}
+
+.ticket-upload-icon {
+  font-size: 1.5rem;
+  opacity: 0.6;
+}
+
+.ticket-upload-text {
+  font-size: 0.85rem;
+  color: var(--text-2);
+}
+
+.ticket-upload-hint {
+  font-size: 0.7rem;
+  color: var(--text-3);
+}
+
+.ticket-file-list {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.ticket-file-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  background: var(--bg-1);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-sm);
+}
+
+.ticket-file-icon {
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+
+.ticket-file-info {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.ticket-file-name {
+  font-size: 0.8rem;
+  color: var(--text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ticket-file-meta {
+  font-size: 0.7rem;
+  color: var(--text-3);
+  flex-shrink: 0;
+}
