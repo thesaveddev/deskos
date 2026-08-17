@@ -31,7 +31,7 @@ export async function pushRoutes(app: FastifyInstance): Promise<void> {
     })
 
   // Public: the application-server key browsers need before subscribing.
-  app.get('/push/vapid-public-key', async (_request, reply) => {
+  app.get('/push/vapid-public-key', async (_request, _reply) => {
     if (!app.config.push.enabled) {
       throw new AppError(503, 'push_disabled', 'Web Push is not configured (set DESKOS_VAPID_PUBLIC_KEY, DESKOS_VAPID_PRIVATE_KEY, DESKOS_VAPID_SUBJECT)')
     }

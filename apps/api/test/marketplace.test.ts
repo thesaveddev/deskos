@@ -95,7 +95,7 @@ describe('Marketplace', () => {
     })
     expect(res.statusCode).toBe(200)
     const apps = res.json()
-    expect(apps.some((a: any) => a.slug === 'slack-integration')).toBe(true)
+    expect(apps.some((a: Record<string, unknown>) => a.slug === 'slack-integration')).toBe(true)
   })
 
   it('get app by slug', async () => {
@@ -299,7 +299,7 @@ describe('Marketplace', () => {
       headers: h(owner2),
     })
     expect(registryRes.statusCode).toBe(200)
-    expect(registryRes.json().some((a: any) => a.slug === 'isolation-test')).toBe(true)
+    expect(registryRes.json().some((a: Record<string, unknown>) => a.slug === 'isolation-test')).toBe(true)
 
     // Cleanup
     await app.inject({ method: 'DELETE', url: `/api/v1/marketplace/installs/${appId}`, headers: h(owner) })

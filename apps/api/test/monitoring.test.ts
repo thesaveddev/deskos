@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { FastifyInstance } from 'fastify'
 import { authHeaders, createTestApp, seedActiveMember, signupOwner } from './helpers.js'
 import { withTenant } from '../src/db/pool.js'
-import { evaluateMonitoringRules, monitoringConditionMatches } from '../src/modules/monitoring/monitoring.js'
+import { monitoringConditionMatches } from '../src/modules/monitoring/monitoring.js'
 
 describe('endpoint monitoring rules', () => {
   let app: FastifyInstance

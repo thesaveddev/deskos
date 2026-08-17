@@ -6,7 +6,7 @@ import { withTenant } from '../../db/pool.js'
 import { authenticate } from '../../middleware/authenticate.js'
 import { requirePermission } from '../../middleware/requirePermission.js'
 import { requireTenant } from '../../middleware/requireTenant.js'
-import { MONITORING_METRICS, MONITORING_OPERATORS, type MonitoringAction, type MonitoringCondition } from './monitoring.js'
+import { MONITORING_METRICS, MONITORING_OPERATORS, } from './monitoring.js'
 import '../../types.js'
 
 const conditionSchema = z.object({

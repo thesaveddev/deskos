@@ -13,7 +13,7 @@ import { generateEnrolCode, hashToken } from '../devices/device-auth.js'
 import { assertSessionPermission, sessionPermissions } from './remote.routes.js'
 import '../../types.js'
 
-const DEFAULT_CODE_TTL_MS = 30 * 60_000
+const _DEFAULT_CODE_TTL_MS = 30 * 60_000
 
 const createSchema = z.object({
   permissions: z.array(z.enum(sessionPermissions)).min(1).max(10).default(['view_screen']),
