@@ -10,8 +10,35 @@ export interface TicketReport {
   createdDaily: Array<{ day: string; n: number }>
 }
 
+export interface AnalyticsReport {
+  sessions: {
+    total: number; live: number; avg_duration_min: number
+    byType: Array<{ type: string; n: number }>
+    byState: Array<{ state: string; n: number }>
+    perDay: Array<{ day: string; n: number }>
+  }
+  workload: Array<{
+    id: string; name: string; open: number; resolved: number; avg_resolution_min: number
+  }>
+  sla: { resolved: number; breached: number; complianceRate: number }
+}
+
+export interface ComplianceReport {
+  audit: { total: number; last24h: number; integrityOk: boolean; brokenAtId?: number }
+  jit: { total: number; active: number; approved: number; revoked: number }
+  recordings: { sessions: number; video: number; metadata: number }
+}
+
 export function getTicketReport(): Promise<TicketReport> {
   return api('/reports/tickets')
+}
+
+export function getAnalyticsReport(): Promise<AnalyticsReport> {
+  return api('/reports/analytics')
+}
+
+export function getComplianceReport(): Promise<ComplianceReport> {
+  return api('/reports/compliance')
 }
 
 export function formatMinutes(min: number): string {
