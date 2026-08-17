@@ -159,6 +159,22 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       throw AppError.unauthorized('Account temporarily locked due to too many failed attempts. Try again in 15 minutes.', 'account_locked')
     }
 
+    // Check org-level MFA policy
+    const { rows: memberships } = await app.db.query(
+      `SELECT m.org_role, t.settings FROM memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.user_id = $1 AND m.status = 'active'`,
+      [user.id],
+    )
+    const orgMfaPolicy = memberships.find((m: any) => m.settings?.mfa_policy)?.settings?.mfa_policy ?? 'optional'
+    const isAdminOrOwner = memberships.some((m: any) => ['admin', 'owner'].includes(m.org_role))
+
+    const mfaEnforced = orgMfaPolicy === 'required' || (orgMfaPolicy === 'admin_only' && isAdminOrOwner)
+
+    if (mfaEnforced && !user.mfa_enabled) {
+      // Org requires MFA but user hasn't set it up
+      await recordAuthAttempt(app, body.email, request.ip, false, 'mfa_setup_required')
+      throw new AppError(403, 'mfa_setup_required', 'Your organization requires two-factor authentication. Please set up MFA before signing in.')
+    }
+
     if (user.mfa_enabled) {
       if (!body.mfaCode) {
         await recordAuthAttempt(app, body.email, request.ip, false, 'mfa_required')

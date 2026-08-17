@@ -50,7 +50,9 @@ export default function LoginPage() {
       }
       let msg = 'Sign in failed. Please try again.'
       if (err instanceof ApiError) {
-        if (err.code === 'invalid_credentials') msg = 'Incorrect email or password. Please check and try again.'
+        if (err.code === 'mfa_setup_required') {
+          msg = 'Your organization requires two-factor authentication. Please set up MFA in Settings → Security before signing in.'
+        } else if (err.code === 'invalid_credentials') msg = 'Incorrect email or password. Please check and try again.'
         else if (err.code === 'account_locked') msg = 'Account temporarily locked due to too many failed attempts. Try again in 15 minutes.'
         else if (err.code === 'mfa_invalid') msg = 'Invalid MFA code. Please check your authenticator app.'
         else if (err.status === 401) msg = 'Incorrect email or password. Please check and try again.'

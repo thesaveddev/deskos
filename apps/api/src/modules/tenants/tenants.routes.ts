@@ -70,4 +70,62 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
       return { ok: true, tenant: rows[0] }
     },
   )
+
+  // ── MFA Policy ──
+
+  app.get(
+    '/tenant/mfa-policy',
+    { preHandler: [authenticate, requireTenant, requirePermission('tenant.read')] },
+    async (request) => {
+      const ctx = request.tenantCtx!
+      const { rows } = await app.db.query('SELECT settings FROM tenants WHERE id = $1', [ctx.tenantId])
+      const settings = rows[0]?.settings ?? {}
+      return {
+        mfa_policy: settings.mfa_policy ?? 'optional',
+        // Count users with/without MFA
+        users_with_mfa: 0,
+        users_total: 0,
+      }
+    },
+  )
+
+  app.patch(
+    '/tenant/mfa-policy',
+    { preHandler: [authenticate, requireTenant, requirePermission('tenant.manage')] },
+    async (request, reply) => {
+      const ctx = request.tenantCtx!
+      const body = (request.body || {}) as { mfa_policy?: string }
+      const policy = body.mfa_policy
+      if (!policy || !['optional', 'required', 'admin_only'].includes(policy)) {
+        throw new AppError(400, 'invalid_policy', 'mfa_policy must be optional, required, or admin_only')
+      }
+
+      // Merge into existing settings
+      const { rows } = await app.db.query('SELECT settings FROM tenants WHERE id = $1', [ctx.tenantId])
+      const settings = { ...(rows[0]?.settings ?? {}), mfa_policy: policy }
+      await app.db.query('UPDATE tenants SET settings = $2::jsonb WHERE id = $1', [ctx.tenantId, JSON.stringify(settings)])
+
+      // Count affected users
+      const { rows: stats } = await app.db.query(
+        `SELECT
+           count(*) FILTER (WHERE u.mfa_enabled = true) AS with_mfa,
+           count(*) AS total
+         FROM memberships m
+         JOIN users u ON u.id = m.user_id
+         WHERE m.tenant_id = $1 AND m.status = 'active' AND u.status = 'active'`,
+        [ctx.tenantId],
+      )
+
+      reply.code(200)
+      return {
+        ok: true,
+        mfa_policy: policy,
+        users_with_mfa: Number(stats[0]?.with_mfa ?? 0),
+        users_total: Number(stats[0]?.total ?? 0),
+        users_needing_setup: policy === 'required'
+          ? Number(stats[0]?.total ?? 0) - Number(stats[0]?.with_mfa ?? 0)
+          : 0,
+      }
+    },
+  )
 }

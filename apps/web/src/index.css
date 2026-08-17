@@ -7313,3 +7313,75 @@ select.field-input {
   z-index: 10;
   box-shadow: 0 -2px 8px rgba(0,0,0,0.08);
 }
+
+/* MFA policy cards */
+.mfa-policy-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+.mfa-policy-card {
+  display: block;
+  text-align: left;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  width: 100%;
+  font-family: inherit;
+}
+.mfa-policy-card:hover {
+  border-color: var(--accent);
+  background: var(--bg-tertiary);
+}
+.mfa-policy-card.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.mfa-policy-card:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.mfa-policy-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+.mfa-policy-radio {
+  color: var(--accent);
+  font-size: 1.1rem;
+}
+.mfa-policy-name {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.mfa-policy-desc {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+.mfa-policy-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.75rem 1rem;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+.mfa-stat {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+.mfa-stat-num {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.mfa-stat-warn {
+  color: #e07b00;
+}
