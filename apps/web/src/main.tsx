@@ -7,6 +7,7 @@ import '@fontsource/ibm-plex-sans/600.css'
 import '@fontsource/ibm-plex-mono/400.css'
 import '@fontsource/ibm-plex-mono/500.css'
 import App from './App'
+import { ErrorBoundary } from './components/ErrorBoundary.js'
 import './index.css'
 import { registerServiceWorker } from './lib/push.js'
 
@@ -15,8 +16,10 @@ void registerServiceWorker()
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <BrowserRouter>
-      <App />
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
+    </ErrorBoundary>
   </React.StrictMode>,
 )

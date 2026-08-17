@@ -135,8 +135,15 @@ export function Shell({ children }: { children: ReactNode }) {
 
   return (
     <div className="app-frame">
+      <a href="#main-content" className="skip-link" style={{
+        position: 'absolute', left: '-10000px', top: 'auto', width: '1px', height: '1px', overflow: 'hidden',
+        zIndex: '9999', padding: '8px 16px', background: 'var(--accent)', color: '#1b1408',
+        fontWeight: 600, fontSize: 14, borderRadius: 'var(--radius-sm)', textDecoration: 'none',
+      }} onFocus={(e) => { e.currentTarget.style.left = '8px'; e.currentTarget.style.top = '8px'; e.currentTarget.style.width = 'auto'; e.currentTarget.style.height = 'auto' }} onBlur={(e) => { e.currentTarget.style.left = '-10000px'; e.currentTarget.style.width = '1px'; e.currentTarget.style.height = '1px' }}>
+        Skip to content
+      </a>
       {navOpen ? <div className="nav-backdrop" onClick={() => setNavOpen(false)} aria-hidden="true" /> : null}
-      <aside className={`nav-rail${navOpen ? ' open' : ''}`}>
+      <aside className={`nav-rail${navOpen ? ' open' : ''}`} role="navigation" aria-label="Main navigation">
         <div className="nav-brand">
           <span className="brand">DeskOS</span>
         </div>
@@ -144,7 +151,7 @@ export function Shell({ children }: { children: ReactNode }) {
           <NavSections />
         </nav>
         <div className="nav-footer">
-          <span className="etch">Phase 1 · M3</span>
+          <span className="etch">DeskOS IT Support OS</span>
         </div>
       </aside>
       <div className="app-main">
@@ -208,7 +215,7 @@ export function Shell({ children }: { children: ReactNode }) {
             <Link className="btn btn-ghost btn-sm" to={`/sessions/${sessionDock.id}`}>Return</Link>
           </div>
         ) : null}
-        <main className="app-content">{children}</main>
+        <main className="app-content" id="main-content" tabIndex={-1}>{children}</main>
       </div>
     </div>
   )

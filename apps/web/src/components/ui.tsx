@@ -120,12 +120,33 @@ export function Modal({
 
   useEffect(() => {
     if (!open) return
+    const panel = panelRef.current
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') { onClose(); return }
+      // Focus trap: Tab cycles within the modal
+      if (e.key === 'Tab' && panel) {
+        const focusable = panel.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        )
+        if (focusable.length === 0) return
+        const first = focusable[0]
+        const last = focusable[focusable.length - 1]
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault(); last.focus()
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault(); first.focus()
+        }
+      }
     }
     document.addEventListener('keydown', onKey)
-    panelRef.current?.focus()
-    return () => document.removeEventListener('keydown', onKey)
+    panel?.focus()
+    // Prevent body scroll while modal is open
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prev
+    }
   }, [open, onClose])
 
   if (!open) return null
