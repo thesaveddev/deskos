@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { Alert, BrandRow, Field, SubmitButton } from '../components/ui.js'
 import { PasswordField } from '../components/PasswordField.js'
-import { api } from '../lib/api.js'
+import { api, ApiError } from '../lib/api.js'
 import { useAuth } from '../lib/auth.js'
 
 interface SignupResponse {
@@ -42,7 +42,16 @@ export default function SignupPage() {
       await auth.applySession(res)
       navigate('/', { replace: true })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Signup failed')
+      let msg = 'Signup failed. Please try again.'
+      if (err instanceof ApiError) {
+        if (err.code === 'email_taken') msg = 'An account with this email already exists. Try signing in instead.'
+        else if (err.status === 409) msg = 'An account with this email already exists.'
+        else if (err.status === 429) msg = 'Too many attempts. Please wait a moment.'
+        else msg = err.message || msg
+      } else if (err instanceof Error) {
+        msg = err.message || msg
+      }
+      setError(msg)
       setBusy(false)
     }
   }

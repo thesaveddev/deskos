@@ -55,10 +55,14 @@ export async function issueTokens(app: FastifyInstance, userId: string, deviceFp
 }
 
 export async function recordAuthAttempt(app: FastifyInstance, email: string, ip: string | undefined, success: boolean, reason?: string) {
-  await app.db.query(
-    'INSERT INTO auth_attempts (email, ip, success, reason) VALUES ($1, $2, $3, $4)',
-    [email, ip ?? null, success, reason ?? null],
-  )
+  try {
+    await app.db.query(
+      'INSERT INTO auth_attempts (email, ip, success, reason) VALUES ($1, $2, $3, $4)',
+      [email, ip ?? null, success, reason ?? null],
+    )
+  } catch {
+    // Best effort — don't let audit logging break login
+  }
 }
 
 export async function auditLoginAcrossTenants(app: FastifyInstance, userId: string, ip?: string, userAgent?: string) {

@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { api } from '../lib/api.js'
+import { api, ApiError } from '../lib/api.js'
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
@@ -16,7 +16,8 @@ export default function ForgotPasswordPage() {
       await api('/auth/forgot-password', { method: 'POST', body: { email } })
       setSubmitted(true)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong')
+      // Always show success to prevent email enumeration
+      setSubmitted(true)
     }
     setLoading(false)
   }

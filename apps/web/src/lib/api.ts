@@ -57,15 +57,23 @@ async function parseError(res: Response): Promise<ApiError> {
     const body = (await res.json()) as {
       error?: { code?: string; message?: string; denied_reason?: string }
     }
-    return new ApiError(
-      res.status,
-      body.error?.code ?? 'unknown',
-      body.error?.message ?? `Request failed (${res.status})`,
-      body.error?.denied_reason,
-    )
-  } catch {
-    return new ApiError(res.status, 'unknown', `Request failed (${res.status})`)
+    if (body?.error?.message) {
+      return new ApiError(res.status, body.error.code ?? 'unknown', body.error.message, body.error.denied_reason)
+    }
+  } catch { /* not JSON */ }
+  // Friendly defaults instead of raw status codes
+  const friendly: Record<number, string> = {
+    400: 'The request was invalid. Please check your input.',
+    401: 'Incorrect email or password. Please try again.',
+    403: 'You don\'t have permission to do that.',
+    404: 'The resource was not found.',
+    409: 'This conflicts with an existing record.',
+    429: 'Too many requests. Please wait a moment.',
+    500: 'Something went wrong on our end. Please try again.',
+    502: 'The server is temporarily unavailable.',
+    503: 'The service is currently unavailable.',
   }
+  return new ApiError(res.status, 'request_error', friendly[res.status] ?? `Request failed (${res.status})`)
 }
 
 let refreshInFlight: Promise<boolean> | null = null

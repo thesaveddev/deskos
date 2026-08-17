@@ -48,7 +48,21 @@ export default function LoginPage() {
         setBusy(false)
         return
       }
-      setError(err instanceof Error ? err.message : 'Sign in failed')
+      let msg = 'Sign in failed. Please try again.'
+      if (err instanceof ApiError) {
+        if (err.code === 'invalid_credentials') msg = 'Incorrect email or password. Please check and try again.'
+        else if (err.code === 'account_locked') msg = 'Account temporarily locked due to too many failed attempts. Try again in 15 minutes.'
+        else if (err.code === 'mfa_invalid') msg = 'Invalid MFA code. Please check your authenticator app.'
+        else if (err.status === 401) msg = 'Incorrect email or password. Please check and try again.'
+        else if (err.status === 429) msg = 'Too many attempts. Please wait a moment and try again.'
+        else if (err.status === 500) msg = 'Server error. Please try again in a moment.'
+        else if (err.status === 0) msg = 'Cannot reach the server. Check your connection.'
+        else msg = err.message || msg
+      } else if (err instanceof Error) {
+        if (err.message.includes('fetch')) msg = 'Cannot reach the server. Check your connection.'
+        else msg = err.message || msg
+      }
+      setError(msg)
       setBusy(false)
     }
   }

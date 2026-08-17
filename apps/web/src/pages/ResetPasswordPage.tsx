@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { api } from '../lib/api.js'
+import { api, ApiError } from '../lib/api.js'
 import { PasswordField } from '../components/PasswordField.js'
 
 export default function ResetPasswordPage() {
@@ -46,7 +46,15 @@ export default function ResetPasswordPage() {
       await api('/auth/reset-password', { method: 'POST', body: { token, password } })
       setSubmitted(true)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong')
+      let msg = 'Password reset failed. Please try again.'
+      if (err instanceof ApiError) {
+        if (err.status === 401) msg = 'This reset link has expired or is invalid. Request a new one.'
+        else if (err.status === 404) msg = 'This reset link is invalid. Request a new one from the login page.'
+        else msg = err.message || msg
+      } else if (err instanceof Error) {
+        msg = err.message || msg
+      }
+      setError(msg)
     }
     setLoading(false)
   }
