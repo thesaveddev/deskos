@@ -2,10 +2,10 @@ import { Link } from 'react-router-dom'
 import LandingLayout from '../components/LandingLayout'
 
 const STATS = [
-  { number: '39', label: 'database migrations' },
-  { number: '365', label: 'API tests' },
+  { number: '<30s', label: 'to connect to a device' },
+  { number: '3', label: 'technicians free, forever' },
   { number: '100%', label: 'consent-enforced sessions' },
-  { number: '0', label: 'vendor lock-in' },
+  { number: '0', label: 'monthly fees on the free tier' },
 ]
 
 const HIGHLIGHTS = [
