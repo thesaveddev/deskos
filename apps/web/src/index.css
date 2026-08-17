@@ -5744,3 +5744,15 @@ select.field-input {
   color: var(--text-2);
   margin-top: 0.25rem;
 }
+
+/* ── Lock button ──────────────────────────────────────────────── */
+
+.lock-btn {
+  font-size: 0.9rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--radius-sm);
+  transition: background 0.15s;
+}
+.lock-btn:hover {
+  background: var(--bg-2);
+}

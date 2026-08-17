@@ -4,6 +4,7 @@ import { CommandPalette } from './CommandPalette.js'
 import { MobileShell } from './MobileShell.js'
 import { useAuth } from '../lib/auth.js'
 import { isNative } from '../lib/capacitor.js'
+import { lockScreen } from '../lib/lock.js'
 import { readSessionDock, sessionDockEventName, type SessionDockEntry } from '../lib/sessions.js'
 
 function tenantColor(id?: string): string {
@@ -136,6 +137,18 @@ export function Shell({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  // Global Ctrl+L shortcut to lock screen
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'l') {
+        e.preventDefault()
+        lockScreen()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   return (
     <div className="app-frame">
       <a href="#main-content" className="skip-link" style={{
@@ -183,6 +196,14 @@ export function Shell({ children }: { children: ReactNode }) {
           ) : null}
           <div className="topbar-spacer" />
           <CommandPalette />
+          <button
+            className="btn btn-ghost btn-sm lock-btn"
+            onClick={() => lockScreen()}
+            title="Lock screen (Ctrl+L)"
+            aria-label="Lock screen"
+          >
+            🔒
+          </button>
           <div className="topbar-user">
             <span>{auth.user?.name}</span>
             <button

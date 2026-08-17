@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { LockScreen } from './components/LockScreen.js'
 import { useIdleTimeout } from './lib/idle.js'
+import { onLockRequest } from './lib/lock.js'
 import AiAgentPage from './pages/AiAgentPage.js'
 import ApprovalsPage from './pages/ApprovalsPage.js'
 import AssetsPage from './pages/AssetsPage.js'
@@ -84,6 +85,11 @@ function IdleLockWrapper({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (isLocked) setLocked(true)
   }, [isLocked])
+
+  // Listen for manual lock requests (from topbar button)
+  useEffect(() => {
+    return onLockRequest(() => setLocked(true))
+  }, [])
 
   if (locked) return <LockScreen onUnlock={() => setLocked(false)} />
   return <>{children}</>
