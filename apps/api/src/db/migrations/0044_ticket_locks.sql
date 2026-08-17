@@ -1,0 +1,26 @@
+-- DeskOS schema: ticket locks (prevent concurrent editing by multiple agents)
+
+CREATE TABLE ticket_locks (
+  id bigserial PRIMARY KEY,
+  tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  ticket_id uuid NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+  locked_by uuid NOT NULL REFERENCES users(id),
+  locked_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL DEFAULT (now() + interval '30 minutes'),
+  heartbeat_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX idx_ticket_locks_unique ON ticket_locks(ticket_id) WHERE expires_at > now();
+CREATE INDEX idx_ticket_locks_tenant ON ticket_locks(tenant_id, ticket_id);
+
+-- Auto-expire stale locks via a function (called periodically or on read)
+CREATE OR REPLACE FUNCTION expire_stale_ticket_locks() RETURNS void AS $$
+BEGIN
+  DELETE FROM ticket_locks WHERE expires_at < now();
+END;
+$$ LANGUAGE plpgsql;
+
+ALTER TABLE ticket_locks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ticket_locks FORCE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_ticket_locks ON ticket_locks
+  USING (tenant_id = current_setting('app.tenant_id')::uuid);

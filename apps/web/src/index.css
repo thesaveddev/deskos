@@ -6823,3 +6823,42 @@ select.field-input {
 .password-toggle-btn:hover {
   color: var(--text-1);
 }
+
+/* ── Ticket lock banner ─────────────────────────────────────── */
+
+.ticket-lock-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius);
+  margin-bottom: var(--gap);
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  font-size: 0.85rem;
+}
+
+.ticket-lock-mine {
+  background: rgba(63, 178, 127, 0.08);
+  border-color: rgba(63, 178, 127, 0.2);
+}
+
+.ticket-lock-none {
+  background: var(--bg-2);
+  border-color: var(--line-1);
+}
+
+.ticket-lock-icon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.ticket-lock-text {
+  flex: 1;
+  color: var(--text-1);
+}
+
+.ticket-lock-hint {
+  font-size: 0.75rem;
+  color: var(--text-3);
+}

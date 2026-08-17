@@ -8,8 +8,9 @@ import {
   addTicketLink, assignTicket, getTicket, listTicketLinks, removeTicketLink, replyTicket, setTicketStatus,
   downloadAttachment, listAttachments, updateTicket, uploadAttachment,
   escalateTicket, getTicketEscalations, forwardTicket, listTeams, listTeamMembers,
+  getTicketLock, lockTicket, unlockTicket, heartbeatLock,
   slaSummary, STATUS_LABELS, formatWhen, type Attachment, type Thread, type Ticket, type TicketDevice, type TicketLink,
-  type Escalation, type Team,
+  type Escalation, type Team, type TicketLockInfo,
 } from '../lib/tickets.js'
 import { listCannedResponses, type CannedResponse } from '../lib/canned.js'
 import { listDevices, type Device } from '../lib/devices.js'
@@ -47,6 +48,11 @@ export default function TicketDetailPage() {
   const [aiDraft, setAiDraft] = useState<KbDraftArticle | null>(null)
   const [aiDraftBusy, setAiDraftBusy] = useState(false)
 
+  // Ticket locking
+  const [ticketLock, setTicketLock] = useState<TicketLockInfo | null>(null)
+  const [lockIsMine, setLockIsMine] = useState(false)
+  const [lockBusy, setLockBusy] = useState(false)
+
   // Escalation & forward
   const [escalations, setEscalations] = useState<Escalation[]>([])
   const [teams, setTeams] = useState<Team[]>([])
@@ -72,6 +78,12 @@ export default function TicketDetailPage() {
       try {
         setLinks((await listTicketLinks(id)).links)
       } catch { setLinks([]) }
+      // Check lock status
+      try {
+        const lockRes = await getTicketLock(id)
+        setTicketLock(lockRes.lock)
+        setLockIsMine(lockRes.is_mine)
+      } catch { setTicketLock(null) }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load ticket')
     }
@@ -181,6 +193,55 @@ export default function TicketDetailPage() {
     }
     setFwdBusy(false)
   }
+
+  // ── Lock handlers ──
+  const handleLock = async () => {
+    if (!ticket) return
+    setLockBusy(true)
+    try {
+      const res = await lockTicket(ticket.id)
+      setTicketLock(res.lock)
+      setLockIsMine(true)
+    } catch (err: any) {
+      if (err?.status === 409) {
+        setError(`This ticket is currently locked by ${err.data?.held_by || 'another agent'}. Please wait or ask them to release it.`)
+      } else {
+        setError(err instanceof Error ? err.message : 'Could not lock ticket')
+      }
+    }
+    setLockBusy(false)
+  }
+
+  const handleUnlock = async () => {
+    if (!ticket) return
+    setLockBusy(true)
+    try {
+      await unlockTicket(ticket.id)
+      setTicketLock(null)
+      setLockIsMine(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not unlock ticket')
+    }
+    setLockBusy(false)
+  }
+
+  // Heartbeat to keep lock alive
+  useEffect(() => {
+    if (!ticketLock || !lockIsMine || !id) return
+    const interval = setInterval(() => {
+      heartbeatLock(id).catch(() => {})
+    }, 25_000) // heartbeat every 25s (lock TTL is 30m)
+    return () => clearInterval(interval)
+  }, [ticketLock, lockIsMine, id])
+
+  // Auto-unlock on unmount
+  useEffect(() => {
+    return () => {
+      if (id && lockIsMine) {
+        unlockTicket(id).catch(() => {})
+      }
+    }
+  }, [id, lockIsMine])
 
   const changeDevice = async (deviceId: string) => {
     if (!ticket || deviceSaving) return
@@ -378,6 +439,31 @@ export default function TicketDetailPage() {
       </div>
 
       {error ? <Alert kind="error">{error}</Alert> : null}
+
+      {/* Lock banner */}
+      {ticketLock && !lockIsMine && (
+        <div className="ticket-lock-banner">
+          <span className="ticket-lock-icon">🔒</span>
+          <span className="ticket-lock-text">
+            This ticket is locked by <strong>{ticketLock.locked_by_name || ticketLock.locked_by_email}</strong> until {new Date(ticketLock.expires_at).toLocaleTimeString()}.
+          </span>
+          <span className="ticket-lock-hint">Only they can make changes right now.</span>
+        </div>
+      )}
+      {lockIsMine && (
+        <div className="ticket-lock-banner ticket-lock-mine">
+          <span className="ticket-lock-icon">🔓</span>
+          <span className="ticket-lock-text">You have this ticket locked.</span>
+          <button className="btn btn-ghost btn-sm" onClick={() => void handleUnlock()} disabled={lockBusy}>Release lock</button>
+        </div>
+      )}
+      {!ticketLock && (
+        <div className="ticket-lock-banner ticket-lock-none">
+          <span className="ticket-lock-icon">🔓</span>
+          <span className="ticket-lock-text">This ticket is not locked.</span>
+          <button className="btn btn-ghost btn-sm" onClick={() => void handleLock()} disabled={lockBusy}>Lock it</button>
+        </div>
+      )}
 
       <section className="ticket-device-context">
         <div>

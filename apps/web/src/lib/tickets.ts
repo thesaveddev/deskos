@@ -273,3 +273,32 @@ export function listTeams(): Promise<{ teams: Team[] }> {
 export function listTeamMembers(teamId: string): Promise<{ members: Array<{ id: string; name: string; email: string }> }> {
   return api(`/teams/${teamId}/members`)
 }
+
+// ── Ticket locking ──
+
+export interface TicketLockInfo {
+  id: number
+  ticket_id: string
+  locked_by: string
+  locked_by_name?: string
+  locked_by_email?: string
+  locked_at: string
+  expires_at: string
+  heartbeat_at: string
+}
+
+export function getTicketLock(id: string): Promise<{ lock: TicketLockInfo | null; is_mine: boolean }> {
+  return api(`/tickets/${id}/lock`)
+}
+
+export function lockTicket(id: string): Promise<{ lock: TicketLockInfo }> {
+  return api(`/tickets/${id}/lock`, { method: 'POST' })
+}
+
+export function unlockTicket(id: string): Promise<{ ok: boolean }> {
+  return api(`/tickets/${id}/lock`, { method: 'DELETE' })
+}
+
+export function heartbeatLock(id: string): Promise<{ ok: boolean }> {
+  return api(`/tickets/${id}/lock/heartbeat`, { method: 'POST' })
+}
