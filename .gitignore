@@ -1,0 +1,16 @@
+node_modules/
+dist/
+build/
+target/
+coverage/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+.vite/
+*.tsbuildinfo
+apps/api/.devdb/
+apps/api/.uploads/
+artifacts/
+deskos-agent.json

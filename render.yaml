@@ -1,0 +1,44 @@
+services:
+  - type: web
+    name: deskos-api
+    runtime: docker
+    dockerfilePath: Dockerfile
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: deskos-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: deskos-redis
+          property: connectionString
+      - key: DESKOS_JWT_SECRET
+        generateValue: true
+      - key: DESKOS_EMAIL_KEY
+        generateValue: true
+      - key: DESKOS_RELAY_SECRET
+        generateValue: true
+      - key: DESKOS_AUTO_MIGRATE
+        value: "1"
+      - key: DESKOS_PUBLIC_URL
+        sync: false
+        value: ""  # Set to your Render URL after first deploy, e.g. https://deskos-api.onrender.com
+      - key: DESKOS_RELAY_URL
+        sync: false
+        value: ""  # Set to your relay WebSocket URL
+      - key: PORT
+        value: "4000"
+    healthCheckPath: /healthz
+    autoDeploy: true
+
+  - type: redis
+    name: deskos-redis
+    ipAllowList: []  # Only accessible from other Render services
+
+databases:
+  - name: deskos-db
+    plan: free
+    databaseName: deskos
+    user: deskos

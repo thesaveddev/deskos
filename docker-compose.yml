@@ -1,0 +1,66 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: deskos
+      POSTGRES_PASSWORD: deskos_dev_only
+      POSTGRES_DB: deskos
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U deskos']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ':9001'
+    environment:
+      MINIO_ROOT_USER: deskos
+      MINIO_ROOT_PASSWORD: deskos_dev_only
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - miniodata:/data
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    ports:
+      - '1025:1025'
+      - '8025:8025'
+
+  # coturn for the WebRTC NAT/media path (TURN). `--static-auth-secret` must
+  # match the API's DESKOS_ICE_TURN_SECRET; the API mints short-lived REST-API
+  # credentials HMAC'd with that secret. Change DESKOS_ICE_TURN_SECRET to the
+  # value below for local development.
+  turn:
+    image: coturn/coturn:4.6.3-alpine
+    network_mode: host
+    command: >
+      -n
+      --log-file=stdout
+      --realm=deskos
+      --static-auth-secret=deskos-turn-dev-only
+      --no-tls
+      --no-dtls
+      --listening-ip=127.0.0.1
+      --relay-ip=127.0.0.1
+      --fingerprint
+
+volumes:
+  pgdata:
+  miniodata:

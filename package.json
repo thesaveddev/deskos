@@ -1,0 +1,31 @@
+{
+  "name": "deskos",
+  "private": true,
+  "version": "0.0.1",
+  "description": "DeskOS — AI-ready helpdesk & ITSM platform with first-class remote support",
+  "type": "module",
+  "workspaces": [
+    "apps/web",
+    "apps/api",
+    "apps/relay",
+    "packages/shared",
+    "packages/ui"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n db,api,relay,web -c blue,yellow,magenta,cyan \"npm:dev:db\" \"npm:dev:api\" \"npm:dev:relay\" \"npm:dev:web\"",
+    "dev:db": "npm run dev:db -w @deskos/api",
+    "dev:api": "npm run dev -w @deskos/api",
+    "dev:relay": "npm run dev -w @deskos/relay",
+    "dev:web": "npm run dev -w @deskos/web",
+    "build": "npm run build --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

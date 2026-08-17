@@ -1,0 +1,21 @@
+# DeskOS — IT Support OS
+# https://www.deskos.com
+
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /login
+Disallow: /signup
+Disallow: /settings/
+Disallow: /portal/
+Disallow: /admin/
+Disallow: /_internal/
+
+# Explicitly allow public pages
+Allow: /pricing
+Allow: /privacy
+Allow: /terms
+Allow: /about
+Allow: /
+
+Sitemap: https://www.deskos.com/sitemap.xml
