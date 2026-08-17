@@ -1,6 +1,6 @@
 import { AppError } from '../../core/errors.js'
 import { decryptSecret, encryptSecret, isEncryptedSecret, maskSecret } from '../../core/crypto.js'
-import type { DbClient, DbPool } from '../../db/pool.js'
+import type { DbPool } from '../../db/pool.js'
 import { withTenant } from '../../db/pool.js'
 import type { EntraGraphClient, EntraUser } from './graph.js'
 import { graphClient } from './graph.js'

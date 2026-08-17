@@ -60,7 +60,7 @@ export async function proposeRemediation(
   tenantId: string,
   signal: RemediationSignal,
   provider: AiProvider,
-  model: string,
+  _model: string,
 ): Promise<Record<string, unknown>> {
   const proposal = proposeTool(signal)
   // Best-effort AI rationale enrichment; falls back to the deterministic text.

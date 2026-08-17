@@ -15,7 +15,6 @@ import {
   listConnections,
   listContacts,
   listSyncRuns,
-  maskConnection,
   runAccountAction,
   syncDirectory,
   testConnection,
