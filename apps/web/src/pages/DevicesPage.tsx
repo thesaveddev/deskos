@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Shell } from '../components/Shell.js'
-import { Pagination, useCursorPagination } from '../components/Pagination.js'
+import { Pagination, useOffsetPagination } from '../components/Pagination.js'
 import { Alert } from '../components/ui.js'
 import { useAuth } from '../lib/auth.js'
 import {
@@ -42,9 +42,9 @@ function serverRelayUrl(): string {
 
 export default function DevicesPage() {
   const [devices, setDevices] = useState<Device[]>([])
-  const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
-  const pagination = useCursorPagination()
+  const pagination = useOffsetPagination(20)
   const [groups, setGroups] = useState<DeviceGroup[]>([])
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState<'' | DeviceStatus>('')
@@ -62,23 +62,27 @@ export default function DevicesPage() {
   const [fleetNotice, setFleetNotice] = useState<string | null>(null)
   const canManage = useAuth((state) => state.memberships.some((membership) => membership.permissions.includes('device.manage')))
 
-  const loadDevices = useCallback(async (cursor?: string) => {
+  const loadDevices = useCallback(async () => {
     setError(null)
     setLoading(true)
     try {
-      const response = await listDevices({ q: query.trim() || undefined, status: status || undefined, groupId: groupId || undefined, cursor })
+      const response = await listDevices({
+        q: query.trim() || undefined,
+        status: status || undefined,
+        groupId: groupId || undefined,
+        limit: pagination.pageSize,
+        offset: pagination.offset,
+      })
       setDevices(response.devices)
-      setNextCursor(response.nextCursor)
+      setTotal(response.total ?? response.devices.length)
     } catch (err) {
       setDevices([])
       setError(err instanceof Error ? err.message : 'Failed to load devices')
     }
     setLoading(false)
-  }, [groupId, query, status])
+  }, [groupId, query, status, pagination.page, pagination.pageSize])
 
   useEffect(() => {
-    setDevices([])
-    pagination.reset()
     void loadDevices()
   }, [loadDevices])
 
@@ -92,204 +96,182 @@ export default function DevicesPage() {
           setTokenCreatedAt(response.activeCode?.createdAt ?? response.activeToken?.createdAt ?? null)
           setCodeExpiresAt(response.activeCode?.expiresAt ?? null)
         })
-        .catch(() => {
-          // Reading the token requires device management permission. The page remains useful without it.
-        })
+        .catch(() => {})
     }
   }, [canManage])
 
   const handleRotateToken = async () => {
-    if (tokenBusy) return
+    if (!canManage || tokenBusy) return
     setTokenBusy(true)
     setTokenNotice(null)
-    setCopyNotice(null)
     try {
-      const response = await rotateEnrolToken()
-      setEnrolCode(response.code)
-      setFleetToken(response.token)
-      setTokenCreatedAt(new Date().toISOString())
-      setCodeExpiresAt(response.codeExpiresAt)
-      setTokenNotice('Read this code to the endpoint user before it expires. It can be used only once.')
+      const result = await rotateEnrolToken()
+      setEnrolCode(result.code || null)
+      setFleetToken(result.token || null)
+      setCodeExpiresAt(result.codeExpiresAt || null)
+      setTokenNotice('Enrollment credential rotated.')
     } catch (err) {
-      setTokenNotice(err instanceof Error ? err.message : 'Could not generate the enrollment code')
-    } finally {
-      setTokenBusy(false)
+      setTokenNotice(err instanceof Error ? err.message : 'Rotation failed')
     }
+    setTokenBusy(false)
   }
 
-  const copyToken = async () => {
-    if (!enrolCode) return
+  const handleCopy = async (text: string, which: 'code' | 'fleet') => {
     try {
-      await navigator.clipboard.writeText(enrolCode)
-      setCopyNotice('Copied to clipboard.')
+      await navigator.clipboard.writeText(text)
+      setCopyNotice(which === 'code' ? 'Enrollment code copied.' : 'Fleet token copied.')
+      setTimeout(() => setCopyNotice(null), 2000)
     } catch {
-      setCopyNotice('Copy failed — select the code manually.')
+      setCopyNotice('Copy failed — select and copy manually.')
     }
-  }
-
-  const fleetCommand = fleetToken
-    ? `msiexec /i DeskOSAgent.msi /qn DESKOS_API_URL="${serverApiUrl()}" DESKOS_RELAY_URL="${serverRelayUrl()}" DESKOS_ENROLL_TOKEN="${fleetToken}"`
-    : ''
-
-  const copyFleetCommand = async () => {
-    if (!fleetCommand) return
-    try {
-      await navigator.clipboard.writeText(fleetCommand)
-      setFleetNotice('Fleet deployment command copied.')
-    } catch {
-      setFleetNotice('Copy failed — select the command manually.')
-    }
-  }
-
-  const clearFilters = () => {
-    setQuery('')
-    setStatus('')
-    setGroupId('')
   }
 
   return (
     <Shell>
       <div className="page-head">
-        <div>
-          <h1 className="page-title">Devices</h1>
-          <p className="page-subtitle">Endpoint health, inventory, alerts, and linked tickets.</p>
-        </div>
-        <div className="page-actions">
-          <Link to="/devices/groups" className="btn btn-ghost btn-sm">Manage groups</Link>
-          {canManage ? (
-            <button className="btn btn-primary btn-sm" onClick={() => setShowDeploy((visible) => !visible)}>
-              {showDeploy ? 'Hide deployment' : 'Deploy agent'}
-            </button>
-          ) : null}
-        </div>
+        <h1 className="page-title">Devices</h1>
+        {canManage && (
+          <button className="btn btn-ghost btn-sm" onClick={() => setShowDeploy((open) => !open)}>
+            {showDeploy ? 'Hide deploy info' : 'Deploy / enrol'}
+          </button>
+        )}
       </div>
+
+      {showDeploy && (
+        <section className="panel deploy-panel">
+          <h2 className="channel-form-title">Enrol a device</h2>
+          <p className="muted" style={{ marginBottom: 12 }}>
+            Run the agent installer on the target machine, then paste the enrollment code or fleet token below.
+          </p>
+
+          <div className="deploy-row">
+            <div>
+              <span className="etch">Current enrollment code</span>
+              {enrolCode ? (
+                <div className="deploy-code-row">
+                  <code className="deploy-code">{enrolCode}</code>
+                  <button className="btn btn-ghost btn-sm" onClick={() => void handleCopy(enrolCode, 'code')}>Copy</button>
+                </div>
+              ) : (
+                <div className="deploy-code-row">
+                  <span className="muted">No active code — rotate to generate one.</span>
+                </div>
+              )}
+              {copyNotice && <span className="muted" style={{ display: 'block', marginTop: 4 }}>{copyNotice}</span>}
+              {tokenNotice && <span className="muted" style={{ display: 'block', marginTop: 4 }}>{tokenNotice}</span>}
+              <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>
+                {tokenCreatedAt ? `Created ${new Date(tokenCreatedAt).toLocaleString()}` : ''}
+                {codeExpiresAt ? ` · Expires ${new Date(codeExpiresAt).toLocaleString()}` : ''}
+              </div>
+              <button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={() => void handleRotateToken()} disabled={tokenBusy}>
+                {tokenBusy ? 'Rotating…' : 'Rotate enrollment code'}
+              </button>
+            </div>
+
+            <div>
+              <span className="etch">Fleet token</span>
+              {fleetToken ? (
+                <div className="deploy-code-row">
+                  <code className="deploy-code" style={{ maxWidth: 320, wordBreak: 'break-all' }}>{fleetToken}</code>
+                  <button className="btn btn-ghost btn-sm" onClick={() => handleCopy(fleetToken, 'fleet')}>Copy</button>
+                </div>
+              ) : (
+                <div className="deploy-code-row">
+                  <span className="muted">No fleet token — rotate to generate one.</span>
+                </div>
+              )}
+              {fleetNotice && <span className="muted" style={{ display: 'block', marginTop: 4 }}>{fleetNotice}</span>}
+            </div>
+          </div>
+
+          <div style={{ marginTop: 12 }}>
+            <span className="etch">Server endpoints (read-only)</span>
+            <div className="deploy-code-row" style={{ marginTop: 4 }}>
+              <span className="muted">API</span>
+              <code className="deploy-code" style={{ fontSize: 12 }}>{serverApiUrl()}</code>
+            </div>
+            <div className="deploy-code-row" style={{ marginTop: 4 }}>
+              <span className="muted">Relay</span>
+              <code className="deploy-code" style={{ fontSize: 12 }}>{serverRelayUrl()}</code>
+            </div>
+          </div>
+        </section>
+      )}
 
       {error ? <Alert kind="error">{error}</Alert> : null}
 
-      {showDeploy && canManage ? (
-        <section className="deploy-panel">
-          <div className="deploy-panel-head">
-            <div>
-              <span className="etch">Device enrolment</span>
-              <h2>Connect an endpoint</h2>
-            </div>
-            {tokenCreatedAt ? <span className="muted mono">rotated {formatWhen(tokenCreatedAt)}</span> : null}
-          </div>
-          <p className="muted deploy-copy">
-            Generate an eight-digit enrollment code, then read it to the endpoint user. It expires after 15 minutes and is consumed by the first successful enrollment. Fleet deployments use a separate opaque token generated at the same time.
-          </p>
-          {enrolCode ? (
-            <div className="token-reveal">
-              <code aria-label="Eight-digit enrollment code">{enrolCode}</code>
-              <button className="btn btn-ghost btn-sm" onClick={() => void copyToken()}>Copy code</button>
-              {codeExpiresAt ? <span className="field-hint">expires {formatWhen(codeExpiresAt)}</span> : null}
-            </div>
-          ) : null}
-          {copyNotice ? <div className="field-hint">{copyNotice}</div> : null}
-          {tokenNotice ? <Alert kind={enrolCode ? 'info' : 'error'}>{tokenNotice}</Alert> : null}
-          <div className="deploy-actions">
-            <button className="btn btn-primary btn-sm" onClick={() => void handleRotateToken()} disabled={tokenBusy}>
-              {tokenBusy ? 'Generating…' : enrolCode ? 'Generate another code' : 'Generate enrollment code'}
-            </button>
-            <span className="field-hint">The code is shown once and expires in 15 minutes.</span>
-          </div>
-          <div className="deploy-modes">
-            <article className="deploy-mode-card">
-              <span className="etch">Customer-assisted</span>
-              <strong>Send the MSI and code</strong>
-              <p className="muted">The user installs the MSI, opens <b>Enroll DeskOS Agent</b> from the Start Menu, and enters only this one-time code in the local browser wizard.</p>
-            </article>
-            <article className="deploy-mode-card">
-              <span className="etch">Technician-assisted</span>
-              <strong>Guide the user through setup</strong>
-              <p className="muted">Share the MSI and code during a support call. The user approves enrollment, then you can request the first attended session.</p>
-            </article>
-            <article className="deploy-mode-card deploy-mode-fleet">
-              <span className="etch">IT fleet deployment</span>
-              <strong>Protected MSI bootstrap token</strong>
-              <p className="muted">Pass this command through Intune, Group Policy, or your endpoint platform. It uses the opaque fleet token returned with the phone-friendly code.</p>
-              {fleetCommand ? <code className="fleet-command">{fleetCommand}</code> : <span className="field-hint">Generate a token to create the fleet command.</span>}
-              <button className="btn btn-ghost btn-sm" onClick={() => void copyFleetCommand()} disabled={!fleetCommand}>Copy fleet command</button>
-              {fleetNotice ? <span className="field-hint">{fleetNotice}</span> : null}
-            </article>
-          </div>
-        </section>
-      ) : null}
-
-      <div className="device-filters">
+      <div className="filter-bar">
         <input
-          className="field-input device-search"
+          className="field-input"
+          placeholder="Search devices…"
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search by name, hostname, or OS…"
-          aria-label="Search devices"
+          onChange={(e) => { setQuery(e.target.value); pagination.goToPage(0) }}
+          onKeyDown={(e) => e.key === 'Enter' && void loadDevices()}
+          style={{ maxWidth: 240 }}
         />
-        <select className="field-input device-filter" value={status} onChange={(event) => setStatus(event.target.value as '' | DeviceStatus)} aria-label="Filter by status">
-          {STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        <select
+          className="field-input"
+          value={status}
+          onChange={(e) => { setStatus(e.target.value as '' | DeviceStatus); pagination.goToPage(0) }}
+        >
+          {STATUS_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
         </select>
-        <select className="field-input device-filter" value={groupId} onChange={(event) => setGroupId(event.target.value)} aria-label="Filter by group">
+        <select
+          className="field-input"
+          value={groupId}
+          onChange={(e) => { setGroupId(e.target.value); pagination.goToPage(0) }}
+        >
           <option value="">All groups</option>
-          {groups.map((group) => <option key={group.id} value={group.id}>{group.name} ({group.device_count})</option>)}
+          {groups.map((group) => (
+            <option key={group.id} value={group.id}>{group.name}</option>
+          ))}
         </select>
-        {(query || status || groupId) ? <button className="btn btn-ghost btn-sm" onClick={clearFilters}>Clear</button> : null}
+        {groupsError && <span className="muted" style={{ fontSize: 12 }}>{groupsError}</span>}
       </div>
 
-      {groupsError ? <div className="field-hint device-inline-note">{groupsError}</div> : null}
-      {devices === null ? <div className="etch" style={{ padding: 24 }}>Loading devices…</div> : null}
-      {devices && devices.length === 0 ? (
-        <div className="empty-state">
-          <p>{query || status || groupId ? 'No devices match these filters.' : 'No devices have enrolled yet.'}</p>
-          {query || status || groupId ? (
-            <button className="btn btn-ghost" onClick={clearFilters}>Clear filters</button>
-          ) : canManage ? (
-            <button className="btn btn-primary" onClick={() => setShowDeploy(true)}>Deploy your first agent</button>
-          ) : null}
-        </div>
-      ) : null}
-
-      {devices && devices.length > 0 ? (
-        <div className="device-table-wrap">
-          <table className="device-table">
-            <thead>
-              <tr>
-                <th>Device</th>
-                <th>Status</th>
-                <th>Platform</th>
-                <th>Group</th>
-                <th>Last seen</th>
-                <th className="device-ip">IP address</th>
+      {loading ? (
+        <div className="etch" style={{ padding: 24 }}>Loading devices…</div>
+      ) : devices.length === 0 ? (
+        <div className="empty-state">No devices found.</div>
+      ) : (
+        <table className="queue-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Hostname</th>
+              <th>OS</th>
+              <th>Status</th>
+              <th>Group</th>
+              <th className="col-updated">Last seen</th>
+            </tr>
+          </thead>
+          <tbody>
+            {devices.map((device) => (
+              <tr key={device.id} onClick={() => window.location.assign(`/devices/${device.id}`)} style={{ cursor: 'pointer' }}>
+                <td>{device.name}</td>
+                <td className="mono">{device.hostname}</td>
+                <td>{platformLabel(device)}</td>
+                <td>
+                  <span className={`status-pill status-${device.status}`}>{statusLabel(device.status)}</span>
+                </td>
+                <td>{device.group_name ?? '—'}</td>
+                <td className="col-updated mono">{device.last_seen_at ? formatWhen(device.last_seen_at) : '—'}</td>
               </tr>
-            </thead>
-            <tbody>
-              {devices.map((device) => (
-                <tr key={device.id}>
-                  <td>
-                    <Link to={`/devices/${device.id}`} className="device-name-link">
-                      <span className="device-avatar">{(device.name || '?').slice(0, 1).toUpperCase()}</span>
-                      <span>
-                        <strong>{device.name}</strong>
-                        <small>{device.hostname || 'No hostname reported'}</small>
-                      </span>
-                    </Link>
-                  </td>
-                  <td><span className={`status-pill status-${device.status}`}>{statusLabel(device.status)}</span></td>
-                  <td>{platformLabel(device)}</td>
-                  <td>{device.group_name ?? <span className="muted">Ungrouped</span>}</td>
-                  <td className="mono">{device.last_seen_at ? formatWhen(device.last_seen_at) : '—'}</td>
-                  <td className="device-ip mono">{device.ip_address || '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : null}
+            ))}
+          </tbody>
+        </table>
+      )}
 
-      {devices && devices.length > 0 && (
+      {devices.length > 0 && (
         <Pagination
-          hasMore={!!nextCursor}
-          onNext={() => { if (nextCursor) { pagination.goNext(nextCursor); void loadDevices(nextCursor) } }}
-          onPrev={pagination.canGoPrev ? () => { pagination.goPrev(); void loadDevices() } : undefined}
+          page={pagination.page}
+          pageSize={pagination.pageSize}
+          totalItems={total}
           loading={loading}
+          onPageChange={pagination.goToPage}
+          onPageSizeChange={pagination.changeSize}
         />
       )}
     </Shell>

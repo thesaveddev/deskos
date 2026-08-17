@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Shell } from '../components/Shell.js'
-import { Pagination, useCursorPagination } from '../components/Pagination.js'
+import { Pagination, useOffsetPagination } from '../components/Pagination.js'
 import { listTickets, slaSummary, STATUS_LABELS, formatWhen, bulkUpdateTickets, listTeams, type Ticket, type Team } from '../lib/tickets.js'
 import { useAuth } from '../lib/auth.js'
 
@@ -27,6 +27,7 @@ const SORT_OPTIONS = [
 export default function TicketsPage() {
   const navigate = useNavigate()
   const user = useAuth((s) => s.user)
+  const pagination = useOffsetPagination(20)
 
   // Quick filter tabs
   const [quickFilter, setQuickFilter] = useState<QuickFilter>('all')
@@ -43,22 +44,20 @@ export default function TicketsPage() {
 
   // Data
   const [tickets, setTickets] = useState<Ticket[]>([])
+  const [total, setTotal] = useState(0)
   const [teams, setTeams] = useState<Team[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [nextCursor, setNextCursor] = useState<string | null>(null)
-  const pagination = useCursorPagination()
 
   // Bulk selection
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [bulkBusy, setBulkBusy] = useState(false)
 
   // Load teams
   useEffect(() => {
     listTeams().then((r) => setTeams(r.teams)).catch(() => {})
   }, [])
 
-  const load = useCallback(async (cursor?: string | null) => {
+  const load = useCallback(async () => {
     setError(null)
     setLoading(true)
     try {
@@ -83,35 +82,23 @@ export default function TicketsPage() {
       params.sort = sortField
       params.dir = sortDir
 
-      if (cursor) params.cursor = cursor
+      // Pagination
+      params.limit = String(pagination.pageSize)
+      params.offset = String(pagination.offset)
 
       const res = await listTickets(params)
       setTickets(res.tickets)
-      setNextCursor(res.nextCursor)
+      setTotal(res.total ?? res.tickets.length)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load tickets')
     }
     setLoading(false)
-  }, [quickFilter, fStatus, fPriority, fTeam, fSearch, fDateFrom, fDateTo, fSort])
+  }, [quickFilter, fStatus, fPriority, fTeam, fSearch, fDateFrom, fDateTo, fSort, pagination.page, pagination.pageSize])
 
   useEffect(() => {
-    setTickets([])
     setSelected(new Set())
-    pagination.reset()
     void load()
   }, [load])
-
-  const handleNext = () => {
-    if (nextCursor) {
-      pagination.goNext(nextCursor)
-      void load(nextCursor)
-    }
-  }
-
-  const handlePrev = () => {
-    pagination.goPrev()
-    void load()
-  }
 
   // Bulk actions
   const toggleSelect = (id: string) => {
@@ -133,13 +120,11 @@ export default function TicketsPage() {
 
   const handleBulk = async (updates: { status?: string; priority?: string; assignee_id?: string }) => {
     if (selected.size === 0) return
-    setBulkBusy(true)
     try {
       await bulkUpdateTickets(Array.from(selected), updates)
       setSelected(new Set())
       void load()
     } catch { /* silent */ }
-    setBulkBusy(false)
   }
 
   const clearFilters = () => {
@@ -151,6 +136,7 @@ export default function TicketsPage() {
     setFDateTo('')
     setFSort('created')
     setQuickFilter('all')
+    pagination.reset()
   }
 
   const hasActiveFilters = fStatus || fPriority || fTeam || fSearch || fDateFrom || fDateTo
@@ -174,7 +160,7 @@ export default function TicketsPage() {
           placeholder="Search by subject or ticket number…"
           value={fSearch}
           onChange={(e) => setFSearch(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && void load()}
+          onKeyDown={(e) => { if (e.key === 'Enter') { pagination.goToPage(0); void load() } }}
         />
       </div>
 
@@ -186,7 +172,7 @@ export default function TicketsPage() {
             role="tab"
             aria-selected={quickFilter === f.key}
             className={`tab${quickFilter === f.key ? ' active' : ''}`}
-            onClick={() => setQuickFilter(f.key)}
+            onClick={() => { setQuickFilter(f.key); pagination.goToPage(0) }}
           >
             {f.label}
           </button>
@@ -233,7 +219,7 @@ export default function TicketsPage() {
               <input className="field-input" type="date" value={fDateTo} onChange={(e) => setFDateTo(e.target.value)} />
             </div>
             <div className="tickets-filter-group tickets-filter-actions">
-              <button className="btn btn-primary btn-sm" onClick={() => void load()}>Apply</button>
+              <button className="btn btn-primary btn-sm" onClick={() => { pagination.goToPage(0); void load() }}>Apply</button>
               {hasActiveFilters && <button className="btn btn-ghost btn-sm" onClick={clearFilters}>Clear all</button>}
             </div>
           </div>
@@ -259,7 +245,7 @@ export default function TicketsPage() {
             <option value="medium">Medium</option>
             <option value="low">Low</option>
           </select>
-          <button className="btn btn-ghost btn-sm" onClick={() => setSelected(new Set())} disabled={bulkBusy}>Clear selection</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setSelected(new Set())}>Clear selection</button>
         </div>
       )}
 
@@ -318,9 +304,12 @@ export default function TicketsPage() {
 
       {tickets.length > 0 && (
         <Pagination
-          hasMore={!!nextCursor}
-          onNext={handleNext}
-          onPrev={pagination.page > 0 ? handlePrev : undefined}
+          page={pagination.page}
+          pageSize={pagination.pageSize}
+          totalItems={total}
+          loading={loading}
+          onPageChange={pagination.goToPage}
+          onPageSizeChange={pagination.changeSize}
         />
       )}
     </Shell>

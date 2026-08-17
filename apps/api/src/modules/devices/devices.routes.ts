@@ -48,7 +48,7 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
   // -- Devices ---------------------------------------------------------------
   app.get('/devices', { preHandler: [...guards, requirePermission('device.read')] }, async (request) => {
     const ctx = request.tenantCtx!
-    const q = request.query as { q?: string; groupId?: string; status?: string; limit?: string; cursor?: string }
+    const q = request.query as { q?: string; groupId?: string; status?: string; limit?: string; offset?: string; cursor?: string }
     const clauses: string[] = []
     const values: unknown[] = []
     if (q.q) {
@@ -64,13 +64,17 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
       clauses.push(`${statusExpr} = $${values.length + 1}`)
       values.push(q.status)
     }
-    if (q.cursor && isUuid(q.cursor)) {
-      values.push(q.cursor)
-      clauses.push(`d.created_at < (SELECT created_at FROM devices WHERE id = $${values.length})`)
-    }
     const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''
     const limit = Math.min(Number(q.limit ?? 50), 200)
+    const offset = Math.max(0, Number(q.offset ?? 0))
 
+    // Count total
+    const countResult = await withTenant(app.db, ctx.tenantId, (client) =>
+      client.query(`SELECT COUNT(*)::int AS total FROM devices d ${where}`, values).then((r) => r.rows[0]),
+    )
+    const total = countResult?.total ?? 0
+
+    // Fetch page
     const rows = await withTenant(app.db, ctx.tenantId, (client) =>
       client
         .query(
@@ -82,13 +86,12 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
              LEFT JOIN device_groups g ON g.id = d.group_id
              ${where}
             ORDER BY d.created_at DESC
-            LIMIT $${values.length + 1}`,
-          [...values, limit + 1],
+            LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
+          [...values, limit, offset],
         )
         .then((r) => r.rows),
     )
-    const hasMore = rows.length > limit
-    return { devices: rows.slice(0, limit), nextCursor: hasMore ? rows[limit - 1].id : null }
+    return { devices: rows, total, nextCursor: null }
   })
 
   app.get('/devices/:id', { preHandler: [...guards, requirePermission('device.read')] }, async (request) => {

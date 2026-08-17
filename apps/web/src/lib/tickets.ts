@@ -48,7 +48,7 @@ export interface Thread {
   created_at: string
 }
 
-export function listTickets(params: Record<string, string> = {}): Promise<{ tickets: Ticket[]; nextCursor: string | null }> {
+export function listTickets(params: Record<string, string> = {}): Promise<{ tickets: Ticket[]; total: number; nextCursor: string | null }> {
   const qs = new URLSearchParams(params).toString()
   return api(`/tickets${qs ? `?${qs}` : ''}`)
 }

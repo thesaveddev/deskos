@@ -1,58 +1,118 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 
-interface Props {
-  hasMore: boolean
-  onNext: () => void
-  onPrev?: () => void
+const PAGE_SIZES = [5, 10, 20, 50, 100]
+
+interface PaginationProps {
+  page: number
+  pageSize: number
+  totalItems: number
   loading?: boolean
+  onPageChange: (page: number) => void
+  onPageSizeChange: (size: number) => void
 }
 
-export function Pagination({ hasMore, onNext, onPrev, loading }: Props) {
+export function Pagination({ page, pageSize, totalItems, loading, onPageChange, onPageSizeChange }: PaginationProps) {
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
+  const startItem = totalItems === 0 ? 0 : page * pageSize + 1
+  const endItem = Math.min((page + 1) * pageSize, totalItems)
+
+  const pageNumbers = useMemo(() => {
+    const pages: (number | '...')[] = []
+    if (totalPages <= 7) {
+      for (let i = 0; i < totalPages; i++) pages.push(i)
+    } else {
+      pages.push(0)
+      if (page > 3) pages.push('...')
+      const start = Math.max(1, page - 1)
+      const end = Math.min(totalPages - 2, page + 1)
+      for (let i = start; i <= end; i++) pages.push(i)
+      if (page < totalPages - 4) pages.push('...')
+      pages.push(totalPages - 1)
+    }
+    return pages
+  }, [page, totalPages])
+
+  if (totalItems === 0) return null
+
   return (
     <div className="pagination">
-      <button
-        className="btn btn-ghost btn-sm"
-        onClick={onPrev}
-        disabled={!onPrev || loading}
-      >
-        ← Previous
-      </button>
-      <button
-        className="btn btn-ghost btn-sm"
-        onClick={onNext}
-        disabled={!hasMore || loading}
-      >
-        {loading ? 'Loading…' : 'Next →'}
-      </button>
+      <div className="pagination-info">
+        <span className="pagination-count">
+          {startItem}–{endItem} of {totalItems}
+        </span>
+        <select
+          className="field-input pagination-size"
+          value={pageSize}
+          onChange={(e) => onPageSizeChange(Number(e.target.value))}
+          disabled={loading}
+        >
+          {PAGE_SIZES.map((s) => <option key={s} value={s}>{s} / page</option>)}
+        </select>
+      </div>
+
+      <div className="pagination-pages">
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={() => onPageChange(0)}
+          disabled={page === 0 || loading}
+          title="First page"
+        >
+          «
+        </button>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={() => onPageChange(page - 1)}
+          disabled={page === 0 || loading}
+        >
+          ‹
+        </button>
+        {pageNumbers.map((p, i) =>
+          p === '...' ? (
+            <span key={`dots-${i}`} className="pagination-dots">…</span>
+          ) : (
+            <button
+              key={p}
+              className={`btn btn-sm pagination-page-btn ${p === page ? 'active' : ''}`}
+              onClick={() => onPageChange(p)}
+              disabled={loading}
+            >
+              {p + 1}
+            </button>
+          )
+        )}
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={() => onPageChange(page + 1)}
+          disabled={page >= totalPages - 1 || loading}
+        >
+          ›
+        </button>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={() => onPageChange(totalPages - 1)}
+          disabled={page >= totalPages - 1 || loading}
+          title="Last page"
+        >
+          »
+        </button>
+      </div>
     </div>
   )
 }
 
 /**
- * Hook for cursor-based pagination.
- * Manages page history and cursor tracking.
+ * Simple offset-based pagination state.
+ * Stores page number and page size; consumers build query params from these.
  */
-export function useCursorPagination() {
-  const [cursors, setCursors] = useState<(string | null)[]>([null])
+export function useOffsetPagination(defaultSize = 20) {
   const [page, setPage] = useState(0)
+  const [pageSize, setPageSize] = useState(defaultSize)
 
-  const currentCursor = cursors[page] ?? null
+  const offset = page * pageSize
 
-  const goNext = (nextCursor: string | null) => {
-    if (nextCursor) {
-      setCursors((prev) => [...prev.slice(0, page + 1), nextCursor])
-      setPage((p) => p + 1)
-    }
-  }
+  const goToPage = (p: number) => setPage(Math.max(0, p))
+  const changeSize = (size: number) => { setPageSize(size); setPage(0) }
+  const reset = () => { setPage(0); setPageSize(defaultSize) }
 
-  const goPrev = () => {
-    if (page > 0) setPage((p) => p - 1)
-  }
-
-  const reset = () => {
-    setCursors([null])
-    setPage(0)
-  }
-
-  return { cursor: currentCursor, page, goNext, goPrev, reset, canGoPrev: page > 0 }
+  return { page, pageSize, offset, goToPage, changeSize, reset }
 }

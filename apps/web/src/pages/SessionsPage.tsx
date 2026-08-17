@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { Shell } from '../components/Shell.js'
-import { Pagination, useCursorPagination } from '../components/Pagination.js'
+import { Pagination, useOffsetPagination } from '../components/Pagination.js'
 import { Alert, Field } from '../components/ui.js'
 import { useAuth } from '../lib/auth.js'
 import {
@@ -37,9 +37,9 @@ function typeLabel(type: RemoteSession['type']): string {
 
 export default function SessionsPage() {
   const [sessions, setSessions] = useState<RemoteSession[]>([])
-  const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
-  const pagination = useCursorPagination()
+  const pagination = useOffsetPagination(20)
   const [state, setState] = useState<'' | RemoteSessionState>('')
   const [error, setError] = useState<string | null>(null)
   const [endingId, setEndingId] = useState<string | null>(null)
@@ -128,23 +128,21 @@ export default function SessionsPage() {
     }
   }
 
-  const load = useCallback(async (cursor?: string) => {
+  const load = useCallback(async () => {
     setError(null)
     setLoading(true)
     try {
-      const res = await listSessions({ state: state || undefined, cursor })
+      const res = await listSessions({ state: state || undefined, limit: pagination.pageSize, offset: pagination.offset })
       setSessions(res.sessions)
-      setNextCursor(res.nextCursor)
+      setTotal(res.total ?? res.sessions.length)
     } catch (err) {
       setSessions([])
       setError(err instanceof Error ? err.message : 'Failed to load sessions')
     }
     setLoading(false)
-  }, [state])
+  }, [state, pagination.page, pagination.pageSize])
 
   useEffect(() => {
-    setSessions([])
-    pagination.reset()
     void load()
   }, [load])
 
@@ -304,10 +302,12 @@ export default function SessionsPage() {
 
       {sessions && sessions.length > 0 && (
         <Pagination
-          hasMore={!!nextCursor}
-          onNext={() => { if (nextCursor) { pagination.goNext(nextCursor); void load(nextCursor) } }}
-          onPrev={pagination.canGoPrev ? () => { pagination.goPrev(); void load() } : undefined}
+          page={pagination.page}
+          pageSize={pagination.pageSize}
+          totalItems={total}
           loading={loading}
+          onPageChange={pagination.goToPage}
+          onPageSizeChange={pagination.changeSize}
         />
       )}
     </Shell>

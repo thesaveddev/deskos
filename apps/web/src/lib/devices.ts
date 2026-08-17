@@ -69,7 +69,7 @@ export interface DeviceDetailResponse {
   tickets: DeviceTicket[]
 }
 
-export function listDevices(params: { q?: string; groupId?: string; status?: DeviceStatus; cursor?: string; limit?: number } = {}): Promise<{ devices: Device[]; nextCursor: string | null }> {
+export function listDevices(params: { q?: string; groupId?: string; status?: DeviceStatus; cursor?: string; limit?: number; offset?: number } = {}): Promise<{ devices: Device[]; total: number; nextCursor: string | null }> {
   const query = new URLSearchParams()
   if (params.q) query.set('q', params.q)
   if (params.groupId) query.set('groupId', params.groupId)

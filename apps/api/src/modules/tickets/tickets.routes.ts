@@ -150,6 +150,7 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
     const ctx = request.tenantCtx!
     const q = request.query as Record<string, string | undefined>
     const limit = Math.min(Number(q.limit ?? 50), 200)
+    const offset = Math.max(0, Number(q.offset ?? 0))
 
     const tickets = await withTenant(app.db, ctx.tenantId, async (client) => {
       const clauses: string[] = []
@@ -196,17 +197,28 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
         values.push(q.date_to)
         clauses.push(`t.created_at <= $${values.length}`)
       }
-      if (q.cursor) {
-        values.push(q.cursor)
-        clauses.push(`t.created_at < (SELECT created_at FROM tickets WHERE id = $${values.length})`)
-      }
+      // cursor-based pagination removed in favor of offset
       const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''
 
       // Sort
       const sortField = q.sort === 'priority' ? 't.priority' : q.sort === 'updated' ? 't.updated_at' : q.sort === 'number' ? 't.number' : 't.created_at'
       const sortDir = q.dir === 'asc' ? 'ASC' : 'DESC'
 
-      values.push(limit + 1)
+      // Count total matching rows
+      const countValues = [...values]
+      const countResult = await client.query(
+        `SELECT COUNT(*)::int AS total FROM tickets t
+           JOIN users ru ON ru.id = t.requester_id
+           ${where}`,
+        countValues,
+      )
+      const total = countResult.rows[0]?.total ?? 0
+
+      // Fetch page
+      values.push(limit)
+      const limitIdx = values.length
+      values.push(offset)
+      const offsetIdx = values.length
       const { rows } = await client.query(
         `SELECT t.*, ru.name AS requester_name, au.name AS assignee_name, tm.name AS team_name
            FROM tickets t
@@ -215,16 +227,16 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
            LEFT JOIN teams tm ON tm.id = t.team_id
            ${where}
           ORDER BY ${sortField} ${sortDir}, t.number DESC
-          LIMIT $${values.length}`,
+          LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
         values,
       )
-      return rows
+      return { rows, total }
     })
 
-    const hasMore = tickets.length > limit
     return {
-      tickets: tickets.slice(0, limit),
-      nextCursor: hasMore ? tickets[limit - 1].id : null,
+      tickets: tickets.rows,
+      total: tickets.total,
+      nextCursor: null,
     }
   })
 

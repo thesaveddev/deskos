@@ -250,7 +250,7 @@ export async function remoteRoutes(app: FastifyInstance): Promise<void> {
   app.get('/sessions', { preHandler: userGuards }, async (request) => {
     const ctx = request.tenantCtx!
     if (!canManageSessions(ctx.orgRole)) throw AppError.forbidden('Remote session access denied', 'missing_permission')
-    const query = request.query as { state?: string; deviceId?: string; limit?: string; cursor?: string }
+    const query = request.query as { state?: string; deviceId?: string; limit?: string; offset?: string; cursor?: string }
     return withTenant(app.db, ctx.tenantId, async (client) => {
       const values: unknown[] = []
       const clauses: string[] = []
@@ -262,12 +262,16 @@ export async function remoteRoutes(app: FastifyInstance): Promise<void> {
         values.push(query.deviceId)
         clauses.push(`s.device_id = $${values.length}`)
       }
-      if (query.cursor) {
-        values.push(query.cursor)
-        clauses.push(`s.created_at < (SELECT created_at FROM remote_sessions WHERE id = $${values.length})`)
-      }
       const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''
       const limit = Math.min(Number(query.limit ?? 50), 200)
+      const offset = Math.max(0, Number(query.offset ?? 0))
+
+      const countResult = await client.query(
+        `SELECT COUNT(*)::int AS total FROM remote_sessions s ${where}`,
+        values,
+      )
+      const total = countResult.rows[0]?.total ?? 0
+
       const sessions = await client.query(
         `SELECT s.*, d.name AS device_name, d.hostname, t.number AS ticket_number, u.name AS requested_by_name
            FROM remote_sessions s
@@ -276,11 +280,10 @@ export async function remoteRoutes(app: FastifyInstance): Promise<void> {
            JOIN users u ON u.id = s.requested_by
            ${where}
           ORDER BY s.created_at DESC
-          LIMIT $${values.length + 1}`,
-        [...values, limit + 1],
+          LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
+        [...values, limit, offset],
       )
-      const hasMore = sessions.rows.length > limit
-      return { sessions: sessions.rows.slice(0, limit), nextCursor: hasMore ? sessions.rows[limit - 1].id : null }
+      return { sessions: sessions.rows, total, nextCursor: null }
     })
   })
 
