@@ -10,7 +10,7 @@ describe('patch management', () => {
   let approver: Awaited<ReturnType<typeof seedActiveMember>>
   let endUser: Awaited<ReturnType<typeof seedActiveMember>>
   let foreign: Awaited<ReturnType<typeof signupOwner>>
-  let deviceId: string
+  let _deviceId: string
   let deviceToken: string
   let patchId: string
 
@@ -31,7 +31,7 @@ describe('patch management', () => {
       url: '/api/v1/agent/enrol',
       payload: { token: rotate.json().token, name: 'patch-box', hostname: 'p-host', os: 'windows' },
     })
-    deviceId = enrol.json().device.id as string
+    _deviceId = enrol.json().device.id as string
     deviceToken = enrol.json().deviceToken as string
   })
 

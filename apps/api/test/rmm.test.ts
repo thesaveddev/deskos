@@ -10,7 +10,7 @@ describe('RMM endpoint management', () => {
   let foreign: Awaited<ReturnType<typeof signupOwner>>
   let deviceId: string
   let deviceToken: string
-  let policyId: string
+  let _policyId: string
 
   beforeAll(async () => {
     app = await createTestApp()
@@ -73,7 +73,7 @@ describe('RMM endpoint management', () => {
       payload: { name: 'Encryption required', postureChecks: [{ check: 'encryption', expected: true }] },
     })
     expect(create.statusCode).toBe(201)
-    policyId = create.json().policy.id
+    _policyId = create.json().policy.id
 
     const list = await app.inject({ method: 'GET', url: '/api/v1/endpoint-policies', headers: authHeaders(owner) })
     expect(list.json().policies).toHaveLength(1)

@@ -9,7 +9,7 @@ describe('major incidents', () => {
   let endUser: Awaited<ReturnType<typeof seedActiveMember>>
   let foreign: Awaited<ReturnType<typeof signupOwner>>
   let incidentId: string
-  let incidentTicketId: string
+  let _incidentTicketId: string
 
   beforeAll(async () => {
     app = await createTestApp()
@@ -51,7 +51,7 @@ describe('major incidents', () => {
     expect(res.statusCode).toBe(201)
     const body = res.json()
     incidentId = body.incident.id
-    incidentTicketId = body.ticketId
+    _incidentTicketId = body.ticketId
     expect(body.incident.severity).toBe('sev1')
     expect(body.incident.status).toBe('open')
     expect(body.incident.priority).toBe('p1')
