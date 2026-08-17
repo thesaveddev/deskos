@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { Shell } from '../components/Shell.js'
+import { Pagination, useCursorPagination } from '../components/Pagination.js'
 import { Alert, Field } from '../components/ui.js'
 import { useAuth } from '../lib/auth.js'
 import {
@@ -35,7 +36,10 @@ function typeLabel(type: RemoteSession['type']): string {
 }
 
 export default function SessionsPage() {
-  const [sessions, setSessions] = useState<RemoteSession[] | null>(null)
+  const [sessions, setSessions] = useState<RemoteSession[]>([])
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const pagination = useCursorPagination()
   const [state, setState] = useState<'' | RemoteSessionState>('')
   const [error, setError] = useState<string | null>(null)
   const [endingId, setEndingId] = useState<string | null>(null)
@@ -124,17 +128,23 @@ export default function SessionsPage() {
     }
   }
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (cursor?: string) => {
     setError(null)
+    setLoading(true)
     try {
-      setSessions((await listSessions({ state: state || undefined })).sessions)
+      const res = await listSessions({ state: state || undefined, cursor })
+      setSessions(res.sessions)
+      setNextCursor(res.nextCursor)
     } catch (err) {
       setSessions([])
       setError(err instanceof Error ? err.message : 'Failed to load sessions')
     }
+    setLoading(false)
   }, [state])
 
   useEffect(() => {
+    setSessions([])
+    pagination.reset()
     void load()
   }, [load])
 
@@ -291,6 +301,15 @@ export default function SessionsPage() {
           ))}
         </div>
       ) : null}
+
+      {sessions && sessions.length > 0 && (
+        <Pagination
+          hasMore={!!nextCursor}
+          onNext={() => { if (nextCursor) { pagination.goNext(nextCursor); void load(nextCursor) } }}
+          onPrev={pagination.canGoPrev ? () => { pagination.goPrev(); void load() } : undefined}
+          loading={loading}
+        />
+      )}
     </Shell>
   )
 }

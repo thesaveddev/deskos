@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Shell } from '../components/Shell.js'
+import { Pagination, useCursorPagination } from '../components/Pagination.js'
 import { Alert } from '../components/ui.js'
 import { useAuth } from '../lib/auth.js'
 import {
@@ -40,7 +41,10 @@ function serverRelayUrl(): string {
 }
 
 export default function DevicesPage() {
-  const [devices, setDevices] = useState<Device[] | null>(null)
+  const [devices, setDevices] = useState<Device[]>([])
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const pagination = useCursorPagination()
   const [groups, setGroups] = useState<DeviceGroup[]>([])
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState<'' | DeviceStatus>('')
@@ -58,18 +62,23 @@ export default function DevicesPage() {
   const [fleetNotice, setFleetNotice] = useState<string | null>(null)
   const canManage = useAuth((state) => state.memberships.some((membership) => membership.permissions.includes('device.manage')))
 
-  const loadDevices = useCallback(async () => {
+  const loadDevices = useCallback(async (cursor?: string) => {
     setError(null)
+    setLoading(true)
     try {
-      const response = await listDevices({ q: query.trim() || undefined, status: status || undefined, groupId: groupId || undefined })
+      const response = await listDevices({ q: query.trim() || undefined, status: status || undefined, groupId: groupId || undefined, cursor })
       setDevices(response.devices)
+      setNextCursor(response.nextCursor)
     } catch (err) {
       setDevices([])
       setError(err instanceof Error ? err.message : 'Failed to load devices')
     }
+    setLoading(false)
   }, [groupId, query, status])
 
   useEffect(() => {
+    setDevices([])
+    pagination.reset()
     void loadDevices()
   }, [loadDevices])
 
@@ -274,6 +283,15 @@ export default function DevicesPage() {
           </table>
         </div>
       ) : null}
+
+      {devices && devices.length > 0 && (
+        <Pagination
+          hasMore={!!nextCursor}
+          onNext={() => { if (nextCursor) { pagination.goNext(nextCursor); void loadDevices(nextCursor) } }}
+          onPrev={pagination.canGoPrev ? () => { pagination.goPrev(); void loadDevices() } : undefined}
+          loading={loading}
+        />
+      )}
     </Shell>
   )
 }

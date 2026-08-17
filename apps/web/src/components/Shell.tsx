@@ -38,7 +38,6 @@ function NavSections() {
       items: [
         { to: '/', end: true, label: 'Home', show: true },
         { to: '/tickets', label: 'Tickets', show: true },
-        { to: '/tickets/new', label: 'New ticket', show: true },
         { to: '/approvals', label: 'Approvals', show: true },
       ],
     },

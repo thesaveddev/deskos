@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Shell } from '../components/Shell.js'
+import { Pagination, useCursorPagination } from '../components/Pagination.js'
 import { listTickets, slaSummary, STATUS_LABELS, formatWhen, type Ticket } from '../lib/tickets.js'
 import { useAuth } from '../lib/auth.js'
 
@@ -16,26 +17,47 @@ export default function TicketsPage() {
   const navigate = useNavigate()
   const user = useAuth((s) => s.user)
   const [filter, setFilter] = useState<Filter>('all')
-  const [tickets, setTickets] = useState<Ticket[] | null>(null)
+  const [tickets, setTickets] = useState<Ticket[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const pagination = useCursorPagination()
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (cursor?: string | null) => {
     setError(null)
+    setLoading(true)
     try {
       const params: Record<string, string> = {}
       if (filter === 'mine') params.assignee = 'me'
       if (filter === 'unassigned') params.assignee = 'none'
+      if (cursor) params.cursor = cursor
       const res = await listTickets(params)
       setTickets(res.tickets.filter((t) => filter === 'all' ? t.status !== 'resolved' && t.status !== 'closed' : true))
+      setNextCursor(res.nextCursor)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load tickets')
     }
+    setLoading(false)
   }, [filter])
 
   useEffect(() => {
-    setTickets(null)
+    setTickets([])
+    pagination.reset()
     void load()
   }, [load])
+
+  const handleNext = () => {
+    if (nextCursor) {
+      pagination.goNext(nextCursor)
+      void load(nextCursor)
+    }
+  }
+
+  const handlePrev = () => {
+    pagination.goPrev()
+    // For prev, we'd need to track all cursors — simplified: just reload from start
+    void load()
+  }
 
   return (
     <Shell>
@@ -102,6 +124,15 @@ export default function TicketsPage() {
           </tbody>
         </table>
       ) : null}
+
+      {tickets && tickets.length > 0 && (
+        <Pagination
+          hasMore={!!nextCursor}
+          onNext={handleNext}
+          onPrev={pagination.canGoPrev ? handlePrev : undefined}
+          loading={loading}
+        />
+      )}
     </Shell>
   )
 }

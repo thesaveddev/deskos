@@ -48,7 +48,7 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
   // -- Devices ---------------------------------------------------------------
   app.get('/devices', { preHandler: [...guards, requirePermission('device.read')] }, async (request) => {
     const ctx = request.tenantCtx!
-    const q = request.query as { q?: string; groupId?: string; status?: string }
+    const q = request.query as { q?: string; groupId?: string; status?: string; limit?: string; cursor?: string }
     const clauses: string[] = []
     const values: unknown[] = []
     if (q.q) {
@@ -64,7 +64,12 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
       clauses.push(`${statusExpr} = $${values.length + 1}`)
       values.push(q.status)
     }
+    if (q.cursor && isUuid(q.cursor)) {
+      values.push(q.cursor)
+      clauses.push(`d.created_at < (SELECT created_at FROM devices WHERE id = $${values.length})`)
+    }
     const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''
+    const limit = Math.min(Number(q.limit ?? 50), 200)
 
     const rows = await withTenant(app.db, ctx.tenantId, (client) =>
       client
@@ -76,12 +81,14 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
              FROM devices d
              LEFT JOIN device_groups g ON g.id = d.group_id
              ${where}
-            ORDER BY d.created_at DESC`,
-          values,
+            ORDER BY d.created_at DESC
+            LIMIT $${values.length + 1}`,
+          [...values, limit + 1],
         )
         .then((r) => r.rows),
     )
-    return { devices: rows }
+    const hasMore = rows.length > limit
+    return { devices: rows.slice(0, limit), nextCursor: hasMore ? rows[limit - 1].id : null }
   })
 
   app.get('/devices/:id', { preHandler: [...guards, requirePermission('device.read')] }, async (request) => {

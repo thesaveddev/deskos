@@ -85,7 +85,7 @@ export function joinSession(id: string): Promise<{ session: RemoteSession; joinT
   return api(`/sessions/${id}/join`, { method: 'POST', body: {} })
 }
 
-export function listSessions(params: { state?: RemoteSessionState; deviceId?: string } = {}): Promise<{ sessions: RemoteSession[] }> {
+export function listSessions(params: { state?: RemoteSessionState; deviceId?: string; cursor?: string; limit?: number } = {}): Promise<{ sessions: RemoteSession[]; nextCursor: string | null }> {
   const query = new URLSearchParams()
   if (params.state) query.set('state', params.state)
   if (params.deviceId) query.set('deviceId', params.deviceId)
