@@ -6534,3 +6534,247 @@ select.field-input {
   color: var(--text-3);
   flex-shrink: 0;
 }
+
+/* ── Privileged Access ──────────────────────────────────────── */
+
+.grant-summary-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--gap);
+  margin-bottom: var(--gap);
+}
+
+.grant-summary-card {
+  background: var(--bg-2);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+  padding: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.grant-summary-highlight {
+  border-color: rgba(59, 130, 246, 0.3);
+  background: rgba(59, 130, 246, 0.04);
+}
+
+.grant-summary-icon {
+  font-size: 1.5rem;
+}
+
+.grant-summary-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--text-1);
+  display: block;
+  line-height: 1;
+}
+
+.grant-summary-label {
+  font-size: 0.75rem;
+  color: var(--text-2);
+  display: block;
+  margin-top: 0.15rem;
+}
+
+.grant-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.grant-card {
+  background: var(--bg-2);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.grant-card.grant-active {
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.grant-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--line-1);
+  background: var(--bg-1);
+}
+
+.grant-card-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.2rem 0.6rem;
+  border-radius: 10px;
+  text-transform: capitalize;
+}
+
+.grant-card-time {
+  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  color: var(--text-3);
+}
+
+.grant-card-body {
+  padding: 1rem;
+}
+
+.grant-card-permission {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-1);
+  margin: 0 0 0.25rem;
+}
+
+.grant-card-desc {
+  font-size: 0.8rem;
+  color: var(--text-3);
+  margin: 0 0 0.75rem;
+  line-height: 1.4;
+}
+
+.grant-card-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem;
+}
+
+.grant-meta-row {
+  display: flex;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.grant-meta-label {
+  color: var(--text-3);
+  min-width: 80px;
+}
+
+.grant-meta-value {
+  color: var(--text-2);
+}
+
+.grant-card-actions {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--line-1);
+}
+
+/* ── Request modal ──────────────────────────────────────────── */
+
+.grant-request-modal {
+  max-width: 560px;
+}
+
+.grant-form-section {
+  margin-bottom: 1.25rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--line-1);
+}
+.grant-form-section:last-of-type {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.grant-form-section-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-1);
+  margin: 0 0 0.75rem;
+}
+
+.grant-permission-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.grant-permission-card {
+  text-align: left;
+  background: var(--bg-1);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.75rem;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.grant-permission-card:hover {
+  border-color: var(--line-2);
+}
+
+.grant-permission-card.selected {
+  border-color: var(--accent);
+  background: rgba(232, 163, 61, 0.06);
+}
+
+.grant-permission-name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.grant-permission-desc {
+  font-size: 0.7rem;
+  color: var(--text-3);
+  line-height: 1.3;
+}
+
+.grant-scope-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.grant-scope-btn {
+  flex: 1;
+  padding: 0.5rem;
+  background: var(--bg-1);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.grant-scope-btn:hover {
+  border-color: var(--line-2);
+}
+
+.grant-scope-btn.selected {
+  border-color: var(--accent);
+  color: var(--text-1);
+  font-weight: 600;
+}
+
+.grant-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.grant-form-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.grant-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line-1);
+}
