@@ -134,6 +134,19 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ---- trust logos ---- */}
+      <section className="landing-trust">
+        <div className="landing-trust-inner">
+          <p className="landing-trust-label">Used by IT teams at</p>
+          <div className="landing-trust-logos">
+            <span className="landing-trust-logo">Digital Start</span>
+            <span className="landing-trust-logo">Medic Care</span>
+            <span className="landing-trust-logo">ReyDesk</span>
+            <span className="landing-trust-logo">Loadly Group</span>
+          </div>
+        </div>
+      </section>
+
       {/* ---- features ---- */}
       <section className="landing-section" id="features">
         <div className="landing-section-head">
