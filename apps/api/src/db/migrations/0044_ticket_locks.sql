@@ -10,7 +10,7 @@ CREATE TABLE ticket_locks (
   heartbeat_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX idx_ticket_locks_unique ON ticket_locks(ticket_id) WHERE expires_at > now();
+-- Unique lock per ticket enforced in application code (now() is not IMMUTABLE for partial indexes)
 CREATE INDEX idx_ticket_locks_tenant ON ticket_locks(tenant_id, ticket_id);
 
 -- Auto-expire stale locks via a function (called periodically or on read)
