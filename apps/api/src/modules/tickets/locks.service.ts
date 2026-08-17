@@ -1,8 +1,7 @@
 import type { DbPool } from '../../db/pool.js'
 import { withTenant } from '../../db/pool.js'
 
-const LOCK_TTL_MINUTES = 30
-const HEARTBEAT_INTERVAL_SECONDS = 30
+const LOCK_TTL_MINUTES = 5
 
 export interface TicketLock {
   id: number
@@ -15,55 +14,38 @@ export interface TicketLock {
   heartbeat_at: string
 }
 
+export interface TicketViewer {
+  user_id: string
+  name: string
+  email: string
+  viewing_at: string
+}
+
 /**
- * Attempt to lock a ticket. Returns the lock if successful, or the existing lock info if already locked.
+ * Auto-lock when an agent claims/assigns a ticket.
  */
-export async function lockTicket(
+export async function autoLockOnAssign(
   db: DbPool,
   tenantId: string,
   ticketId: string,
   userId: string,
-): Promise<{ locked: boolean; lock?: TicketLock; held_by?: string }> {
+): Promise<void> {
   return withTenant(db, tenantId, async (client) => {
-    // Expire stale locks first
+    // Clean stale locks
     await client.query("DELETE FROM ticket_locks WHERE expires_at < now()")
-
-    // Check if already locked by someone else
-    const existing = await client.query(
-      `SELECT l.*, u.name AS locked_by_name, u.email AS locked_by_email
-       FROM ticket_locks l
-       JOIN users u ON u.id = l.locked_by
-       WHERE l.ticket_id = $1 AND l.expires_at > now() AND l.locked_by != $2`,
-      [ticketId, userId],
-    )
-
-    if (existing.rows[0]) {
-      return {
-        locked: false,
-        held_by: existing.rows[0].locked_by_name || existing.rows[0].locked_by_email,
-      }
-    }
-
-    // Remove any existing lock by this user (re-lock)
-    await client.query(
-      'DELETE FROM ticket_locks WHERE ticket_id = $1 AND locked_by = $2',
-      [ticketId, userId],
-    )
-
+    // Remove existing lock for this user on this ticket
+    await client.query('DELETE FROM ticket_locks WHERE ticket_id = $1 AND locked_by = $2', [ticketId, userId])
     // Create new lock
-    const { rows } = await client.query(
+    await client.query(
       `INSERT INTO ticket_locks (tenant_id, ticket_id, locked_by, expires_at)
-       VALUES ($1, $2, $3, now() + make_interval(mins => $4))
-       RETURNING *`,
+       VALUES ($1, $2, $3, now() + make_interval(mins => $4))`,
       [tenantId, ticketId, userId, LOCK_TTL_MINUTES],
     )
-
-    return { locked: true, lock: rows[0] }
   })
 }
 
 /**
- * Release a ticket lock.
+ * Release lock (agent navigated away or manually released).
  */
 export async function unlockTicket(
   db: DbPool,
@@ -81,7 +63,24 @@ export async function unlockTicket(
 }
 
 /**
- * Extend a lock's expiry (heartbeat).
+ * Manager/admin force-unlock a ticket locked by someone else.
+ */
+export async function forceUnlock(
+  db: DbPool,
+  tenantId: string,
+  ticketId: string,
+): Promise<boolean> {
+  return withTenant(db, tenantId, async (client) => {
+    const result = await client.query(
+      'DELETE FROM ticket_locks WHERE ticket_id = $1',
+      [ticketId],
+    )
+    return (result.rowCount ?? 0) > 0
+  })
+}
+
+/**
+ * Heartbeat — extend lock while agent is actively viewing.
  */
 export async function heartbeatLock(
   db: DbPool,
@@ -109,9 +108,7 @@ export async function getTicketLock(
   ticketId: string,
 ): Promise<TicketLock | null> {
   return withTenant(db, tenantId, async (client) => {
-    // Expire stale locks
     await client.query("DELETE FROM ticket_locks WHERE expires_at < now()")
-
     const { rows } = await client.query(
       `SELECT l.*, u.name AS locked_by_name, u.email AS locked_by_email
        FROM ticket_locks l
@@ -120,5 +117,83 @@ export async function getTicketLock(
       [ticketId],
     )
     return rows[0] ?? null
+  })
+}
+
+/**
+ * Start viewing a ticket (called when agent opens the detail page).
+ */
+export async function startViewing(
+  db: DbPool,
+  tenantId: string,
+  ticketId: string,
+  userId: string,
+): Promise<void> {
+  return withTenant(db, tenantId, async (client) => {
+    await client.query("DELETE FROM ticket_viewers WHERE viewing_at < now() - interval '2 minutes'")
+    // Upsert: update if exists, insert if not
+    await client.query(
+      `INSERT INTO ticket_viewers (tenant_id, ticket_id, user_id, viewing_at)
+       VALUES ($1, $2, $3, now())
+       ON CONFLICT (tenant_id, ticket_id, user_id) DO UPDATE SET viewing_at = now()`,
+      [tenantId, ticketId, userId],
+    )
+  })
+}
+
+/**
+ * Stop viewing a ticket (called on unmount / navigate away).
+ */
+export async function stopViewing(
+  db: DbPool,
+  tenantId: string,
+  ticketId: string,
+  userId: string,
+): Promise<void> {
+  return withTenant(db, tenantId, async (client) => {
+    await client.query(
+      'DELETE FROM ticket_viewers WHERE ticket_id = $1 AND user_id = $2',
+      [ticketId, userId],
+    )
+  })
+}
+
+/**
+ * Heartbeat viewing (called periodically while viewing).
+ */
+export async function heartbeatViewing(
+  db: DbPool,
+  tenantId: string,
+  ticketId: string,
+  userId: string,
+): Promise<void> {
+  return withTenant(db, tenantId, async (client) => {
+    await client.query(
+      `UPDATE ticket_viewers SET viewing_at = now()
+       WHERE ticket_id = $1 AND user_id = $2`,
+      [ticketId, userId],
+    )
+  })
+}
+
+/**
+ * Get all current viewers of a ticket.
+ */
+export async function getViewers(
+  db: DbPool,
+  tenantId: string,
+  ticketId: string,
+): Promise<TicketViewer[]> {
+  return withTenant(db, tenantId, async (client) => {
+    await client.query("DELETE FROM ticket_viewers WHERE viewing_at < now() - interval '2 minutes'")
+    const { rows } = await client.query(
+      `SELECT v.user_id, u.name, u.email, v.viewing_at
+       FROM ticket_viewers v
+       JOIN users u ON u.id = v.user_id
+       WHERE v.ticket_id = $1
+       ORDER BY v.viewing_at DESC`,
+      [ticketId],
+    )
+    return rows
   })
 }

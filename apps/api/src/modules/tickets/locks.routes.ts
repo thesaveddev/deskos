@@ -2,13 +2,17 @@ import type { FastifyInstance } from 'fastify'
 import { authenticate } from '../../middleware/authenticate.js'
 import { requireTenant } from '../../middleware/requireTenant.js'
 import { requirePermission } from '../../middleware/requirePermission.js'
-import { lockTicket, unlockTicket, heartbeatLock, getTicketLock } from './locks.service.js'
+import {
+  getTicketLock, unlockTicket, forceUnlock, heartbeatLock,
+  startViewing, stopViewing, heartbeatViewing, getViewers,
+} from './locks.service.js'
 
 export async function ticketLockRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authenticate)
   app.addHook('preHandler', requireTenant)
 
-  // Get lock status for a ticket
+  // ── Lock endpoints ──
+
   app.get('/tickets/:id/lock', { preHandler: requirePermission('ticket.write') }, async (req, reply) => {
     const ctx = (req as any).tenantCtx
     const { id } = req.params as { id: string }
@@ -17,21 +21,7 @@ export async function ticketLockRoutes(app: FastifyInstance) {
     return reply.send({ lock, is_mine: isMine })
   })
 
-  // Lock a ticket
-  app.post('/tickets/:id/lock', { preHandler: requirePermission('ticket.write') }, async (req, reply) => {
-    const ctx = (req as any).tenantCtx
-    const { id } = req.params as { id: string }
-    const result = await lockTicket(app.db, ctx.tenantId, id, ctx.userId)
-    if (!result.locked) {
-      return reply.status(409).send({
-        error: 'Ticket is locked by another agent',
-        held_by: result.held_by,
-      })
-    }
-    return reply.send({ lock: result.lock })
-  })
-
-  // Unlock a ticket
+  // Unlock (agent navigated away)
   app.delete('/tickets/:id/lock', { preHandler: requirePermission('ticket.write') }, async (req, reply) => {
     const ctx = (req as any).tenantCtx
     const { id } = req.params as { id: string }
@@ -39,11 +29,49 @@ export async function ticketLockRoutes(app: FastifyInstance) {
     return reply.send({ ok: true })
   })
 
-  // Heartbeat (extend lock)
+  // Force unlock (manager/admin only)
+  app.delete('/tickets/:id/lock/force', { preHandler: requirePermission('ticket.write') }, async (req, reply) => {
+    const ctx = (req as any).tenantCtx
+    const { id } = req.params as { id: string }
+    await forceUnlock(app.db, ctx.tenantId, id)
+    return reply.send({ ok: true })
+  })
+
+  // Heartbeat lock (while viewing)
   app.post('/tickets/:id/lock/heartbeat', { preHandler: requirePermission('ticket.write') }, async (req, reply) => {
     const ctx = (req as any).tenantCtx
     const { id } = req.params as { id: string }
     const extended = await heartbeatLock(app.db, ctx.tenantId, id, ctx.userId)
     return reply.send({ ok: extended })
+  })
+
+  // ── Viewing endpoints ──
+
+  app.post('/tickets/:id/viewing', { preHandler: requirePermission('ticket.read') }, async (req, reply) => {
+    const ctx = (req as any).tenantCtx
+    const { id } = req.params as { id: string }
+    await startViewing(app.db, ctx.tenantId, id, ctx.userId)
+    return reply.send({ ok: true })
+  })
+
+  app.delete('/tickets/:id/viewing', { preHandler: requirePermission('ticket.read') }, async (req, reply) => {
+    const ctx = (req as any).tenantCtx
+    const { id } = req.params as { id: string }
+    await stopViewing(app.db, ctx.tenantId, id, ctx.userId)
+    return reply.send({ ok: true })
+  })
+
+  app.post('/tickets/:id/viewing/heartbeat', { preHandler: requirePermission('ticket.read') }, async (req, reply) => {
+    const ctx = (req as any).tenantCtx
+    const { id } = req.params as { id: string }
+    await heartbeatViewing(app.db, ctx.tenantId, id, ctx.userId)
+    return reply.send({ ok: true })
+  })
+
+  app.get('/tickets/:id/viewers', { preHandler: requirePermission('ticket.read') }, async (req, reply) => {
+    const ctx = (req as any).tenantCtx
+    const { id } = req.params as { id: string }
+    const viewers = await getViewers(app.db, ctx.tenantId, id)
+    return reply.send({ viewers })
   })
 }

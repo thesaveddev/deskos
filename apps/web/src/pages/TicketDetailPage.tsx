@@ -8,7 +8,8 @@ import {
   addTicketLink, assignTicket, getTicket, listTicketLinks, removeTicketLink, replyTicket, setTicketStatus,
   downloadAttachment, listAttachments, updateTicket, uploadAttachment,
   escalateTicket, getTicketEscalations, forwardTicket, listTeams, listTeamMembers,
-  getTicketLock, lockTicket, unlockTicket, heartbeatLock,
+  getTicketLock, lockTicket, unlockTicket, heartbeatLock, forceUnlockTicket,
+  startViewingTicket, stopViewingTicket, heartbeatViewing, getTicketViewers,
   slaSummary, STATUS_LABELS, formatWhen, type Attachment, type Thread, type Ticket, type TicketDevice, type TicketLink,
   type Escalation, type Team, type TicketLockInfo,
 } from '../lib/tickets.js'
@@ -48,10 +49,12 @@ export default function TicketDetailPage() {
   const [aiDraft, setAiDraft] = useState<KbDraftArticle | null>(null)
   const [aiDraftBusy, setAiDraftBusy] = useState(false)
 
-  // Ticket locking
+  // Ticket locking & viewing
   const [ticketLock, setTicketLock] = useState<TicketLockInfo | null>(null)
   const [lockIsMine, setLockIsMine] = useState(false)
   const [lockBusy, setLockBusy] = useState(false)
+  const [viewers, setViewers] = useState<Array<{ user_id: string; name: string; email: string; since: string }>>([])
+  const isManagerOrAdmin = auth.user && auth.memberships.some(m => ['admin', 'manager', 'owner'].includes(m.orgRole))
 
   // Escalation & forward
   const [escalations, setEscalations] = useState<Escalation[]>([])
@@ -84,6 +87,11 @@ export default function TicketDetailPage() {
         setTicketLock(lockRes.lock)
         setLockIsMine(lockRes.is_mine)
       } catch { setTicketLock(null) }
+      // Check viewers
+      try {
+        const viewersRes = await getTicketViewers(id)
+        setViewers(viewersRes.viewers)
+      } catch { /* ignore */ }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load ticket')
     }
@@ -154,6 +162,12 @@ export default function TicketDetailPage() {
     if (!auth.user) return
     setError(null)
     try {
+      // Auto-lock the ticket when assigning
+      try {
+        const lockRes = await lockTicket(ticket.id)
+        setTicketLock(lockRes.lock)
+        setLockIsMine(true)
+      } catch { /* lock may fail if someone else has it, that's ok */ }
       const res = await assignTicket(ticket.id, auth.user.id)
       setTicket(res.ticket)
       await load()
@@ -195,53 +209,53 @@ export default function TicketDetailPage() {
   }
 
   // ── Lock handlers ──
-  const handleLock = async () => {
-    if (!ticket) return
+  const handleForceUnlock = async () => {
+    if (!ticket || !isManagerOrAdmin) return
     setLockBusy(true)
     try {
-      const res = await lockTicket(ticket.id)
-      setTicketLock(res.lock)
-      setLockIsMine(true)
-    } catch (err: any) {
-      if (err?.status === 409) {
-        setError(`This ticket is currently locked by ${err.data?.held_by || 'another agent'}. Please wait or ask them to release it.`)
-      } else {
-        setError(err instanceof Error ? err.message : 'Could not lock ticket')
-      }
-    }
-    setLockBusy(false)
-  }
-
-  const handleUnlock = async () => {
-    if (!ticket) return
-    setLockBusy(true)
-    try {
-      await unlockTicket(ticket.id)
+      await forceUnlockTicket(ticket.id)
       setTicketLock(null)
       setLockIsMine(false)
+      await load()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not unlock ticket')
+      setError(err instanceof Error ? err.message : 'Could not force unlock ticket')
     }
     setLockBusy(false)
   }
 
-  // Heartbeat to keep lock alive
+  // Heartbeat to keep lock alive while viewing (every 25s, TTL is 5 min)
   useEffect(() => {
-    if (!ticketLock || !lockIsMine || !id) return
+    if (!id) return
     const interval = setInterval(() => {
       heartbeatLock(id).catch(() => {})
-    }, 25_000) // heartbeat every 25s (lock TTL is 30m)
+      heartbeatViewing(id).catch(() => {})
+    }, 25_000)
     return () => clearInterval(interval)
-  }, [ticketLock, lockIsMine, id])
+  }, [id])
 
-  // Auto-unlock on unmount
+  // Track viewers
   useEffect(() => {
-    return () => {
-      if (id && lockIsMine) {
-        unlockTicket(id).catch(() => {})
-      }
+    if (!id) return
+    const fetchViewers = async () => {
+      try {
+        const res = await getTicketViewers(id)
+        setViewers(res.viewers)
+      } catch { /* ignore */ }
     }
-  }, [id, lockIsMine])
+    void fetchViewers()
+    const interval = setInterval(fetchViewers, 10_000) // check every 10s
+    return () => clearInterval(interval)
+  }, [id])
+
+  // Start viewing on mount, stop on unmount
+  useEffect(() => {
+    if (!id) return
+    void startViewingTicket(id)
+    return () => {
+      void stopViewingTicket(id)
+      void unlockTicket(id) // auto-unlock when navigating away
+    }
+  }, [id])
 
   const changeDevice = async (deviceId: string) => {
     if (!ticket || deviceSaving) return
@@ -447,21 +461,39 @@ export default function TicketDetailPage() {
           <span className="ticket-lock-text">
             This ticket is locked by <strong>{ticketLock.locked_by_name || ticketLock.locked_by_email}</strong> until {new Date(ticketLock.expires_at).toLocaleTimeString()}.
           </span>
-          <span className="ticket-lock-hint">Only they can make changes right now.</span>
+          {isManagerOrAdmin && (
+            <button className="btn btn-ghost btn-sm" onClick={() => void handleForceUnlock()} disabled={lockBusy}>
+              Force unlock
+            </button>
+          )}
         </div>
       )}
       {lockIsMine && (
         <div className="ticket-lock-banner ticket-lock-mine">
           <span className="ticket-lock-icon">🔓</span>
           <span className="ticket-lock-text">You have this ticket locked.</span>
-          <button className="btn btn-ghost btn-sm" onClick={() => void handleUnlock()} disabled={lockBusy}>Release lock</button>
         </div>
       )}
       {!ticketLock && (
         <div className="ticket-lock-banner ticket-lock-none">
           <span className="ticket-lock-icon">🔓</span>
           <span className="ticket-lock-text">This ticket is not locked.</span>
-          <button className="btn btn-ghost btn-sm" onClick={() => void handleLock()} disabled={lockBusy}>Lock it</button>
+        </div>
+      )}
+
+      {/* Viewing indicator */}
+      {viewers.length > 0 && (
+        <div className="ticket-viewers">
+          <span className="ticket-viewers-icon">👁</span>
+          <span className="ticket-viewers-text">
+            {viewers.length === 1 
+              ? `${viewers[0].name || viewers[0].email} is viewing` 
+              : `${viewers.length} agents are viewing this ticket`
+            }
+          </span>
+          <span className="ticket-viewers-list">
+            {viewers.map(v => v.name || v.email).join(', ')}
+          </span>
         </div>
       )}
 

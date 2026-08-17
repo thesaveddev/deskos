@@ -302,3 +302,23 @@ export function unlockTicket(id: string): Promise<{ ok: boolean }> {
 export function heartbeatLock(id: string): Promise<{ ok: boolean }> {
   return api(`/tickets/${id}/lock/heartbeat`, { method: 'POST' })
 }
+
+export function forceUnlockTicket(id: string): Promise<{ ok: boolean }> {
+  return api(`/tickets/${id}/lock/force`, { method: 'DELETE' })
+}
+
+export function startViewingTicket(id: string): Promise<{ ok: boolean }> {
+  return api(`/tickets/${id}/viewing`, { method: 'POST' })
+}
+
+export function stopViewingTicket(id: string): Promise<{ ok: boolean }> {
+  return api(`/tickets/${id}/viewing`, { method: 'DELETE' })
+}
+
+export function heartbeatViewing(id: string): Promise<{ ok: boolean }> {
+  return api(`/tickets/${id}/viewing/heartbeat`, { method: 'POST' })
+}
+
+export function getTicketViewers(id: string): Promise<{ viewers: Array<{ user_id: string; name: string; email: string; since: string }> }> {
+  return api(`/tickets/${id}/viewers`)
+}
