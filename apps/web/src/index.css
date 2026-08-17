@@ -5259,8 +5259,8 @@ select.field-input {
   flex-wrap: wrap;
   position: sticky;
   bottom: 0;
-  background: var(--bg-primary);
-  border-top: 1px solid var(--border);
+  background: var(--bg-1);
+  border-top: 1px solid var(--line-1);
   z-index: 5;
   margin: 0 -16px;
 }
@@ -7289,11 +7289,11 @@ select.field-input {
   opacity: 0.7;
 }
 .ticket-viewers-text {
-  color: var(--text-primary);
+  color: var(--text-1);
   font-weight: 500;
 }
 .ticket-viewers-list {
-  color: var(--text-secondary);
+  color: var(--text-2);
   font-size: 0.8rem;
   margin-left: auto;
 }
@@ -7314,8 +7314,8 @@ select.field-input {
   flex-shrink: 0;
   position: sticky;
   bottom: 0;
-  border-top: 1px solid var(--border);
-  background: var(--bg-primary);
+  border-top: 1px solid var(--line-1);
+  background: var(--bg-1);
   z-index: 10;
   box-shadow: 0 -2px 8px rgba(0,0,0,0.08);
 }
@@ -7331,9 +7331,9 @@ select.field-input {
   display: block;
   text-align: left;
   padding: 1rem 1.25rem;
-  border: 1px solid var(--border);
+  border: 1px solid var(--line-1);
   border-radius: 8px;
-  background: var(--bg-secondary);
+  background: var(--bg-2);
   cursor: pointer;
   transition: all 0.15s ease;
   width: 100%;
@@ -7341,7 +7341,7 @@ select.field-input {
 }
 .mfa-policy-card:hover {
   border-color: var(--accent);
-  background: var(--bg-tertiary);
+  background: var(--bg-2);
 }
 .mfa-policy-card.active {
   border-color: var(--accent);
@@ -7363,11 +7363,11 @@ select.field-input {
 }
 .mfa-policy-name {
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--text-1);
 }
 .mfa-policy-desc {
   margin: 0;
-  color: var(--text-secondary);
+  color: var(--text-2);
   font-size: 0.85rem;
   line-height: 1.4;
 }
@@ -7376,17 +7376,17 @@ select.field-input {
   flex-direction: column;
   gap: 0.35rem;
   padding: 0.75rem 1rem;
-  background: var(--bg-secondary);
+  background: var(--bg-2);
   border-radius: 8px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--line-1);
 }
 .mfa-stat {
   font-size: 0.85rem;
-  color: var(--text-secondary);
+  color: var(--text-2);
 }
 .mfa-stat-num {
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--text-1);
 }
 .mfa-stat-warn {
   color: #e07b00;
@@ -7421,8 +7421,8 @@ select.field-input {
   right: 0;
   width: 340px;
   max-height: 420px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
+  background: var(--bg-1);
+  border: 1px solid var(--line-1);
   border-radius: 12px;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
   z-index: 1000;
@@ -7435,7 +7435,7 @@ select.field-input {
   align-items: center;
   gap: 0.5rem;
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--line-1);
 }
 .notes-dropdown-add {
   width: 28px;
@@ -7464,7 +7464,7 @@ select.field-input {
   margin: 0;
   font-size: 0.9rem;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--text-1);
   flex: 1;
 }
 .notes-dropdown-close {
@@ -7473,7 +7473,7 @@ select.field-input {
   border-radius: 4px;
   border: none;
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--text-2);
   cursor: pointer;
   font-size: 0.9rem;
   display: flex;
@@ -7481,18 +7481,18 @@ select.field-input {
   justify-content: center;
 }
 .notes-dropdown-close:hover {
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
+  background: var(--bg-2);
+  color: var(--text-1);
 }
 .notes-dropdown-search {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 1rem;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--line-1);
 }
 .notes-search-icon {
-  color: var(--text-secondary);
+  color: var(--text-2);
   flex-shrink: 0;
 }
 .notes-dropdown-search-input {
@@ -7501,11 +7501,11 @@ select.field-input {
   background: transparent;
   outline: none;
   font-size: 0.85rem;
-  color: var(--text-primary);
+  color: var(--text-1);
   font-family: inherit;
 }
 .notes-dropdown-search-input::placeholder {
-  color: var(--text-secondary);
+  color: var(--text-2);
 }
 .notes-dropdown-list {
   flex: 1 1 0;
@@ -7519,7 +7519,7 @@ select.field-input {
   justify-content: center;
   padding: 2rem 1rem;
   text-align: center;
-  color: var(--text-secondary);
+  color: var(--text-2);
 }
 .notes-dropdown-empty-icon {
   font-size: 2rem;
@@ -7530,7 +7530,7 @@ select.field-input {
 }
 .notes-dropdown-empty-hint {
   font-size: 0.8rem;
-  color: var(--text-secondary);
+  color: var(--text-2);
   margin-top: 0.25rem !important;
 }
 .notes-dropdown-item {
@@ -7542,10 +7542,10 @@ select.field-input {
   transition: background 0.1s;
 }
 .notes-dropdown-item:hover {
-  background: var(--bg-secondary);
+  background: var(--bg-2);
 }
 .notes-dropdown-item.editing {
-  background: var(--bg-secondary);
+  background: var(--bg-2);
   cursor: default;
   padding: 0.75rem 1rem;
 }
@@ -7563,7 +7563,7 @@ select.field-input {
 .notes-dropdown-item-title {
   display: block;
   font-weight: 500;
-  color: var(--text-primary);
+  color: var(--text-1);
   font-size: 0.85rem;
   white-space: nowrap;
   overflow: hidden;
@@ -7572,7 +7572,7 @@ select.field-input {
 .notes-dropdown-item-preview {
   display: block;
   font-size: 0.78rem;
-  color: var(--text-secondary);
+  color: var(--text-2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -7582,7 +7582,7 @@ select.field-input {
   flex-shrink: 0;
   border: none;
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--text-2);
   cursor: pointer;
   padding: 4px;
   border-radius: 4px;
@@ -7601,13 +7601,13 @@ select.field-input {
 }
 .notes-dropdown-edit-title {
   width: 100%;
-  border: 1px solid var(--border);
+  border: 1px solid var(--line-1);
   border-radius: 6px;
   padding: 0.35rem 0.5rem;
   font-size: 0.85rem;
   font-weight: 600;
-  background: var(--bg-primary);
-  color: var(--text-primary);
+  background: var(--bg-1);
+  color: var(--text-1);
   outline: none;
   margin-bottom: 0.35rem;
   font-family: inherit;
@@ -7617,12 +7617,12 @@ select.field-input {
 }
 .notes-dropdown-edit-body {
   width: 100%;
-  border: 1px solid var(--border);
+  border: 1px solid var(--line-1);
   border-radius: 6px;
   padding: 0.35rem 0.5rem;
   font-size: 0.82rem;
-  background: var(--bg-primary);
-  color: var(--text-primary);
+  background: var(--bg-1);
+  color: var(--text-1);
   outline: none;
   resize: vertical;
   min-height: 60px;
@@ -7651,7 +7651,7 @@ select.field-input {
   border-radius: 6px;
   border: 1px solid transparent;
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--text-2);
   cursor: pointer;
   font-size: 0.82rem;
   font-weight: 500;
@@ -7659,8 +7659,8 @@ select.field-input {
   transition: all 0.15s;
 }
 .report-tab:hover {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
+  background: var(--bg-2);
+  color: var(--text-1);
 }
 .report-tab.active {
   background: var(--accent);
@@ -7681,8 +7681,8 @@ select.field-input {
   gap: 0.75rem;
 }
 .report-stat-card {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
+  background: var(--bg-2);
+  border: 1px solid var(--line-1);
   border-radius: 10px;
   padding: 1rem 1.1rem;
   display: flex;
@@ -7696,12 +7696,12 @@ select.field-input {
 }
 .report-stat-icon {
   display: inline-flex;
-  color: var(--text-secondary);
+  color: var(--text-2);
   opacity: 0.7;
 }
 .report-stat-label {
   font-size: 0.78rem;
-  color: var(--text-secondary);
+  color: var(--text-2);
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -7709,12 +7709,12 @@ select.field-input {
 .report-stat-value {
   font-size: 1.6rem;
   font-weight: 700;
-  color: var(--text-primary);
+  color: var(--text-1);
   line-height: 1.2;
 }
 .report-stat-sub {
   font-size: 0.75rem;
-  color: var(--text-secondary);
+  color: var(--text-2);
 }
 .stat-ok .report-stat-value { color: #10b981; }
 .stat-crit .report-stat-value { color: #ef4444; }
@@ -7727,8 +7727,8 @@ select.field-input {
   gap: 0.75rem;
 }
 .report-chart-card {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
+  background: var(--bg-2);
+  border: 1px solid var(--line-1);
   border-radius: 10px;
   padding: 1.1rem;
   overflow: hidden;
@@ -7740,7 +7740,7 @@ select.field-input {
   margin: 0 0 0.75rem 0;
   font-size: 0.88rem;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--text-1);
 }
 
 /* SVG charts */
@@ -7748,10 +7748,10 @@ select.field-input {
   width: 100%;
   height: auto;
 }
-.chart-title { fill: var(--text-secondary); font-size: 12px; font-weight: 600; }
-.chart-title-text { font-size: 0.85rem; font-weight: 600; color: var(--text-primary); margin-bottom: 0.5rem; display: block; }
-.chart-grid { stroke: var(--border); stroke-width: 0.5; stroke-dasharray: 3 3; }
-.chart-tick { fill: var(--text-secondary); font-size: 10px; font-family: var(--font-mono); }
+.chart-title { fill: var(--text-2); font-size: 12px; font-weight: 600; }
+.chart-title-text { font-size: 0.85rem; font-weight: 600; color: var(--text-1); margin-bottom: 0.5rem; display: block; }
+.chart-grid { stroke: var(--line-1); stroke-width: 0.5; stroke-dasharray: 3 3; }
+.chart-tick { fill: var(--text-2); font-size: 10px; font-family: var(--font-mono); }
 
 /* Donut */
 .donut-wrap {
@@ -7760,8 +7760,8 @@ select.field-input {
   align-items: center;
   gap: 0.75rem;
 }
-.donut-center { fill: var(--text-primary); font-size: 22px; font-weight: 700; }
-.donut-sub { fill: var(--text-secondary); font-size: 11px; }
+.donut-center { fill: var(--text-1); font-size: 22px; font-weight: 700; }
+.donut-sub { fill: var(--text-2); font-size: 11px; }
 .donut-legend {
   display: flex;
   flex-wrap: wrap;
@@ -7773,7 +7773,7 @@ select.field-input {
   align-items: center;
   gap: 0.3rem;
   font-size: 0.78rem;
-  color: var(--text-secondary);
+  color: var(--text-2);
 }
 .donut-legend-dot {
   width: 8px;
@@ -7796,7 +7796,7 @@ select.field-input {
 .hbar-label {
   width: 120px;
   font-size: 0.82rem;
-  color: var(--text-primary);
+  color: var(--text-1);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -7805,7 +7805,7 @@ select.field-input {
 .hbar-track {
   flex: 1;
   height: 18px;
-  background: var(--bg-tertiary);
+  background: var(--bg-2);
   border-radius: 4px;
   overflow: hidden;
 }
@@ -7817,12 +7817,12 @@ select.field-input {
 }
 .hbar-value {
   font-size: 0.8rem;
-  color: var(--text-primary);
+  color: var(--text-1);
   min-width: 40px;
   text-align: right;
   flex-shrink: 0;
 }
-.hbar-sub { color: var(--text-secondary); font-size: 0.72rem; }
+.hbar-sub { color: var(--text-2); font-size: 0.72rem; }
 
 /* SLA grid */
 .report-sla-grid {
@@ -7840,11 +7840,11 @@ select.field-input {
 .report-sla-num {
   font-size: 1.5rem;
   font-weight: 700;
-  color: var(--text-primary);
+  color: var(--text-1);
 }
 .report-sla-label {
   font-size: 0.78rem;
-  color: var(--text-secondary);
+  color: var(--text-2);
   margin-top: 0.15rem;
 }
 .report-sla-ok { color: #10b981; }
@@ -7864,19 +7864,19 @@ select.field-input {
 }
 .agent-perf-head {
   font-weight: 600;
-  color: var(--text-secondary);
-  border-bottom: 1px solid var(--border);
+  color: var(--text-2);
+  border-bottom: 1px solid var(--line-1);
   text-transform: uppercase;
   font-size: 0.72rem;
   letter-spacing: 0.04em;
 }
 .agent-perf-row {
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--line-1);
 }
 .agent-perf-row:last-child {
   border-bottom: none;
 }
 .agent-perf-name {
   font-weight: 500;
-  color: var(--text-primary);
+  color: var(--text-1);
 }

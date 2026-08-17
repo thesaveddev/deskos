@@ -47,7 +47,7 @@ function LineChart({ data, width = 600, height = 200, color = 'var(--accent)', l
       <path d={pathD} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
       {/* Dots */}
       {points.map((p, i) => (
-        <circle key={i} cx={p.x} cy={p.y} r="3.5" fill={color} stroke="var(--bg-primary)" strokeWidth="2" />
+        <circle key={i} cx={p.x} cy={p.y} r="3.5" fill={color} stroke="var(--bg-1)" strokeWidth="2" />
       ))}
       {/* X labels */}
       {xTicks.map((d, i) => {
@@ -70,7 +70,7 @@ function DonutChart({ segments, size = 180, thickness = 28, label }: {
     <div className="donut-wrap">
       {label && <span className="chart-title-text">{label}</span>}
       <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size} className="report-chart">
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--border)" strokeWidth={thickness} />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--line-1)" strokeWidth={thickness} />
         {segments.map((seg) => {
           const pct = seg.value / total
           const dash = circ * pct
