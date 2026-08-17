@@ -74,7 +74,7 @@ export default function LandingLayout({ children, title, description }: Props) {
               {l.label}
             </Link>
           ))}
-          <a className="landing-nav-link" href="/api/v1/openapi.json" target="_blank" rel="noreferrer">API</a>
+          <Link className="landing-nav-link" to="/api-docs">API</Link>
           <button className="theme-toggle" onClick={toggle} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
             {theme === 'dark' ? '☀️' : '🌙'}
           </button>
@@ -109,7 +109,7 @@ export default function LandingLayout({ children, title, description }: Props) {
             <Link to="/features">Features</Link>
             <Link to="/use-cases">Use Cases</Link>
             <Link to="/pricing">Pricing</Link>
-            <a href="/api/v1/openapi.json" target="_blank" rel="noreferrer">API Docs</a>
+            <Link to="/api-docs">API Docs</Link>
             <a href="https://github.com/thesaveddev/deskos" target="_blank" rel="noreferrer">GitHub</a>
           </div>
           <div className="landing-footer-col">
