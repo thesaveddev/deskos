@@ -13,6 +13,7 @@ services:
       - key: REDIS_URL
         fromService:
           name: deskos-redis
+          type: redis
           property: connectionString
       - key: DESKOS_JWT_SECRET
         generateValue: true
@@ -23,10 +24,8 @@ services:
       - key: DESKOS_AUTO_MIGRATE
         value: "1"
       - key: DESKOS_PUBLIC_URL
-        sync: false
         value: ""  # Set to your Render URL after first deploy, e.g. https://deskos-api.onrender.com
       - key: DESKOS_RELAY_URL
-        sync: false
         value: ""  # Set to your relay WebSocket URL
       - key: PORT
         value: "4000"
