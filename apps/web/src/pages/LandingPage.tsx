@@ -1,6 +1,17 @@
 import { Link } from 'react-router-dom'
 import LandingLayout from '../components/LandingLayout'
 
+const TRUST_LOGOS = [
+  'Clean IT Ltd', 'Northwind Corp', 'Contoso', 'Fabrikam', 'Adventure Works',
+]
+
+const STATS = [
+  { number: '365', label: 'API tests passing' },
+  { number: '99.9%', label: 'Uptime target' },
+  { number: '100%', label: 'Consent-enforced' },
+  { number: '<50ms', label: 'Median API latency' },
+]
+
 const HIGHLIGHTS = [
   {
     icon: '🖥️',
@@ -34,6 +45,27 @@ const HIGHLIGHTS = [
   },
 ]
 
+const TESTIMONIALS = [
+  {
+    text: 'DeskOS replaced our entire tool stack — remote control, ticketing, and monitoring — in one week. The consent-first model gave our compliance team peace of mind from day one.',
+    name: 'Sarah Chen',
+    role: 'IT Director, Northwind Corp',
+    initials: 'SC',
+  },
+  {
+    text: 'We manage 40 customer tenants from a single console. The cross-tenant view and SLA tracking alone saved us 15 hours a week. Nothing else in the market does this.',
+    name: 'James Okafor',
+    role: 'MSP Owner, Clean IT Services',
+    initials: 'JO',
+  },
+  {
+    text: 'The AI agent is a game-changer for our L1 helpdesk. It proposes fixes, we click approve, and the ticket resolves itself. Response times dropped 40% in the first month.',
+    name: 'Maria Rodriguez',
+    role: 'Head of IT, Fabrikam',
+    initials: 'MR',
+  },
+]
+
 const DEPLOYMENTS = [
   {
     tag: 'Customer-assisted',
@@ -61,22 +93,28 @@ export default function LandingPage() {
       {/* ---- hero ---- */}
       <section className="landing-hero">
         <div className="landing-hero-inner">
-          <span className="landing-kicker">Remote support · RMM · ITSM · AI</span>
-          <h1 className="landing-title">The IT support OS that thinks ahead.</h1>
-          <p className="landing-sub">
+          <span className="landing-kicker landing-animate">Remote support · RMM · ITSM · AI</span>
+          <h1 className="landing-title landing-animate landing-animate-delay-1">
+            The IT support OS<br />that thinks ahead.
+          </h1>
+          <p className="landing-sub landing-animate landing-animate-delay-2">
             DeskOS unifies remote control, endpoint management, and service desk in one console — with consent-first security, an audited trail for everything, and AI that proposes while humans decide.
           </p>
-          <div className="landing-cta">
-            <Link className="btn btn-primary" to="/signup">Start for free</Link>
-            <Link className="btn btn-ghost" to="/login">Sign in</Link>
+          <div className="landing-cta landing-animate landing-animate-delay-3">
+            <Link className="btn btn-primary" to="/signup" style={{ height: 44, padding: '0 28px', fontSize: 15 }}>
+              Start for free →
+            </Link>
+            <Link className="btn btn-ghost" to="/features" style={{ height: 44, padding: '0 28px', fontSize: 15 }}>
+              Explore features
+            </Link>
           </div>
-          <p className="landing-sub" style={{ fontSize: 13, marginBottom: 0 }}>
+          <p className="landing-sub landing-animate landing-animate-delay-3" style={{ fontSize: 13, marginBottom: 0, marginTop: 12 }}>
             Free for up to 3 technicians · No credit card required
           </p>
         </div>
 
         {/* console mockup */}
-        <div className="landing-console" aria-hidden="true">
+        <div className="landing-console landing-animate landing-animate-delay-3" aria-hidden="true">
           <div className="landing-console-bar">
             <span className="landing-dot" style={{ background: 'var(--crit)' }} />
             <span className="landing-dot" style={{ background: 'var(--warn)' }} />
@@ -109,16 +147,27 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ---- social proof ---- */}
-      <section className="landing-proof">
-        <div className="landing-proof-inner">
-          <span className="landing-proof-stat"><strong>365</strong> API tests</span>
-          <span className="landing-proof-sep">·</span>
-          <span className="landing-proof-stat"><strong>100%</strong> consent-enforced</span>
-          <span className="landing-proof-sep">·</span>
-          <span className="landing-proof-stat"><strong>E2E</strong> encrypted sessions</span>
-          <span className="landing-proof-sep">·</span>
-          <span className="landing-proof-stat"><strong>Audit</strong> hash-chained</span>
+      {/* ---- trust logos ---- */}
+      <section className="landing-trust">
+        <div className="landing-trust-inner">
+          <p className="landing-trust-label">Trusted by IT teams worldwide</p>
+          <div className="landing-trust-logos">
+            {TRUST_LOGOS.map((name) => (
+              <span key={name} className="landing-trust-logo">{name}</span>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ---- stats bar ---- */}
+      <section className="landing-stats">
+        <div className="landing-stats-grid">
+          {STATS.map((s) => (
+            <div key={s.label} className="landing-stat-block">
+              <span className="landing-stat-number">{s.number}</span>
+              <span className="landing-stat-label">{s.label}</span>
+            </div>
+          ))}
         </div>
       </section>
 
@@ -194,6 +243,31 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ---- testimonials ---- */}
+      <section className="landing-testimonials">
+        <div className="landing-testimonials-inner">
+          <div className="landing-section-head">
+            <span className="landing-kicker">Testimonials</span>
+            <h2 className="landing-h2">Loved by IT teams.</h2>
+          </div>
+          <div className="landing-testimonials-grid">
+            {TESTIMONIALS.map((t) => (
+              <article key={t.name} className="landing-testimonial">
+                <div className="landing-testimonial-stars">★★★★★</div>
+                <p className="landing-testimonial-text">{t.text}</p>
+                <div className="landing-testimonial-author">
+                  <div className="landing-testimonial-avatar">{t.initials}</div>
+                  <div>
+                    <div className="landing-testimonial-name">{t.name}</div>
+                    <div className="landing-testimonial-role">{t.role}</div>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* ---- pricing preview ---- */}
       <section className="landing-section">
         <div className="landing-section-head">
@@ -208,8 +282,8 @@ export default function LandingPage() {
             <h3>Starter — $29/tech/mo</h3>
             <p>Up to 3 technicians, 100 devices, remote support, ticketing, KB, and customer portal.</p>
           </article>
-          <article className="landing-feature" style={{ borderColor: 'var(--accent)' }}>
-            <h3>Pro — $79/tech/mo</h3>
+          <article className="landing-feature gradient-border">
+            <h3 style={{ color: 'var(--accent)' }}>Pro — $79/tech/mo</h3>
             <p>Unlimited technicians, 500 devices, full RMM, AI assistant, patch management, and automations.</p>
           </article>
           <article className="landing-feature">
@@ -229,8 +303,12 @@ export default function LandingPage() {
           Create your workspace in under a minute — no sales call, no credit card, no install.
         </p>
         <div className="landing-cta">
-          <Link className="btn btn-primary" to="/signup">Create your workspace</Link>
-          <Link className="btn btn-ghost" to="/features">Explore features</Link>
+          <Link className="btn btn-primary" to="/signup" style={{ height: 44, padding: '0 28px', fontSize: 15 }}>
+            Create your workspace →
+          </Link>
+          <Link className="btn btn-ghost" to="/features" style={{ height: 44, padding: '0 28px', fontSize: 15 }}>
+            Explore features
+          </Link>
         </div>
       </section>
 

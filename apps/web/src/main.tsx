@@ -8,6 +8,7 @@ import '@fontsource/ibm-plex-mono/400.css'
 import '@fontsource/ibm-plex-mono/500.css'
 import App from './App'
 import { ErrorBoundary } from './components/ErrorBoundary.js'
+import { ThemeProvider } from './lib/theme.js'
 import './index.css'
 import { registerServiceWorker } from './lib/push.js'
 
@@ -17,9 +18,11 @@ void registerServiceWorker()
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ErrorBoundary>
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
+      <ThemeProvider>
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </ThemeProvider>
     </ErrorBoundary>
   </React.StrictMode>,
 )

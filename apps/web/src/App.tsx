@@ -23,6 +23,7 @@ import PricingPage from './pages/PricingPage.js'
 import PrivacyPage from './pages/PrivacyPage.js'
 import TermsPage from './pages/TermsPage.js'
 import AboutPage from './pages/AboutPage.js'
+import ContactPage from './pages/ContactPage.js'
 import MonitoringPage from './pages/MonitoringPage.js'
 import MarketplacePage from './pages/MarketplacePage.js'
 import MspPage from './pages/MspPage.js'
@@ -95,6 +96,7 @@ export default function App() {
       <Route path="/privacy" element={<PrivacyPage />} />
       <Route path="/terms" element={<TermsPage />} />
       <Route path="/about" element={<AboutPage />} />
+      <Route path="/contact" element={<ContactPage />} />
       <Route path="/" element={<HomeRoute />} />
 
       {/* Protected console pages */}
