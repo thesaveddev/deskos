@@ -267,7 +267,7 @@ export default function FeaturesPage() {
       <FeatureSection
         id="remote"
         kicker="Remote Support"
-        title="AnyDesk-class remote control."
+        title="Remote desktop support."
         subtitle="Attended and unattended sessions with end-to-end encryption, consent enforcement, and a portable helper that needs no installation."
         features={REMOTE_FEATURES}
       />

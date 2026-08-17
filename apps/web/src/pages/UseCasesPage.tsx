@@ -146,53 +146,9 @@ export default function UseCasesPage() {
         </section>
       ))}
 
-      {/* comparison */}
-      <section className="landing-section" id="comparison">
-        <div className="landing-section-head">
-          <span className="landing-kicker">Why DeskOS</span>
-          <h2 className="landing-h2">How it stacks up.</h2>
-          <p className="landing-section-sub">
-            Most IT teams stitch together 3–4 tools. DeskOS replaces them with one.
-          </p>
-        </div>
-        <div className="landing-table-wrap">
-          <table className="comparison-table">
-            <thead>
-              <tr>
-                <th>Feature</th>
-                <th>DeskOS</th>
-                <th>TeamViewer</th>
-                <th>Splashtop</th>
-                <th>AnyDesk</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[
-                { feature: 'Remote control', deskos: '✅ built-in', tv: '✅ built-in', st: '✅ built-in', ad: '✅ built-in' },
-                { feature: 'Endpoint management', deskos: '✅ built-in', tv: '⚠️ separate', st: '⚠️ separate', ad: '❌' },
-                { feature: 'ITSM ticketing', deskos: '✅ built-in', tv: '❌', st: '❌', ad: '❌' },
-                { feature: 'AI assistant', deskos: '✅ built-in', tv: '❌', st: '❌', ad: '❌' },
-                { feature: 'Consent-first', deskos: '✅ enforced', tv: '⚠️', st: '⚠️', ad: '⚠️' },
-                { feature: 'Audit log', deskos: '✅ hash-chained', tv: '❌', st: '❌', ad: '❌' },
-                { feature: 'Multi-tenant MSP', deskos: '✅ first-class', tv: '⚠️ add-on', st: '❌', ad: '❌' },
-                { feature: 'Self-hosted option', deskos: '✅ Docker', tv: '❌', st: '❌', ad: '❌' },
-              ].map((row) => (
-                <tr key={row.feature}>
-                  <td>{row.feature}</td>
-                  <td className="mono">{row.deskos}</td>
-                  <td className="mono">{row.tv}</td>
-                  <td className="mono">{row.st}</td>
-                  <td className="mono">{row.ad}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
       {/* CTA */}
       <section className="landing-cta-band">
-        <h2 className="landing-h2">See how DeskOS fits your team.</h2>
+        <h2 className="landing-h2">See if it works for your team.</h2>
         <p className="landing-sub">
           Create your workspace in under a minute — no sales call, no credit card.
         </p>
