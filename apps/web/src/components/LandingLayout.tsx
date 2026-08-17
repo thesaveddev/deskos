@@ -12,6 +12,7 @@ const NAV_LINKS = [
   { to: '/features', label: 'Features' },
   { to: '/use-cases', label: 'Use Cases' },
   { to: '/pricing', label: 'Pricing' },
+  { to: '/support', label: 'Support' },
   { to: '/about', label: 'About' },
   { to: '/contact', label: 'Contact' },
 ]
@@ -114,9 +115,10 @@ export default function LandingLayout({ children, title, description }: Props) {
           </div>
           <div className="landing-footer-col">
             <h4>Resources</h4>
+            <Link to="/support">Support</Link>
+            <Link to="/api-docs">API Docs</Link>
+            <Link to="/admin">Admin</Link>
             <a href="#faq">FAQ</a>
-            <Link to="/login">Customer Portal</Link>
-            <a href="mailto:support@deskos.com">Support</a>
             <a href="mailto:hello@deskos.com">General Enquiries</a>
           </div>
           <div className="landing-footer-col">

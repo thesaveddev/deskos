@@ -55,6 +55,7 @@ import { rmmRoutes } from './modules/rmm/rmm.routes.js'
 import { adhocSessionRoutes, connectRoutes } from './modules/remote/adhoc.routes.js'
 import { probeRoutes } from './modules/remote/probe.routes.js'
 import { marketplaceRoutes } from './modules/marketplace/marketplace.routes.js'
+import { supportRoutes } from './modules/support/support.routes.js'
 import { recordingRoutes } from './modules/remote/recording.routes.js'
 import { remoteRoutes } from './modules/remote/remote.routes.js'
 import { scriptRoutes } from './modules/scripts/scripts.routes.js'
@@ -253,6 +254,7 @@ export async function buildApp(config: AppConfig): Promise<FastifyInstance> {
     await v1.register(adhocSessionRoutes)
     await v1.register(probeRoutes)
     await v1.register(marketplaceRoutes)
+    await v1.register(supportRoutes)
   }, { prefix: '/api/v1' })
 
   // Public, unauthenticated connect flow for ad-hoc (unmanaged) support links.

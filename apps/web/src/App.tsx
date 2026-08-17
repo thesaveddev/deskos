@@ -25,6 +25,8 @@ import TermsPage from './pages/TermsPage.js'
 import AboutPage from './pages/AboutPage.js'
 import ContactPage from './pages/ContactPage.js'
 import ApiDocsPage from './pages/ApiDocsPage.js'
+import SupportPage from './pages/SupportPage.js'
+import AdminDashboardPage from './pages/AdminDashboardPage.js'
 import MonitoringPage from './pages/MonitoringPage.js'
 import MarketplacePage from './pages/MarketplacePage.js'
 import MspPage from './pages/MspPage.js'
@@ -99,6 +101,8 @@ export default function App() {
       <Route path="/about" element={<AboutPage />} />
       <Route path="/contact" element={<ContactPage />} />
       <Route path="/api-docs" element={<ApiDocsPage />} />
+      <Route path="/support" element={<SupportPage />} />
+      <Route path="/admin" element={<Protected><AdminDashboardPage /></Protected>} />
       <Route path="/" element={<HomeRoute />} />
 
       {/* Protected console pages */}
