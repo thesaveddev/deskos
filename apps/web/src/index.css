@@ -194,54 +194,128 @@ a:hover {
 
 /* ---- buttons ---- */
 
+/* ═══════════════════════════════════════════════════════════════
+   Buttons
+   ═══════════════════════════════════════════════════════════════ */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  height: 36px;
-  padding: 0 16px;
-  border-radius: var(--radius-sm);
+  gap: 6px;
+  height: 38px;
+  padding: 0 18px;
+  border-radius: var(--radius);
   border: 1px solid transparent;
   font-family: inherit;
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   cursor: pointer;
-  transition: background-color 120ms ease, border-color 120ms ease;
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  user-select: none;
+  white-space: nowrap;
+  position: relative;
+  overflow: hidden;
 }
-
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
 .btn:disabled {
-  opacity: 0.55;
+  opacity: 0.45;
   cursor: not-allowed;
+  pointer-events: none;
 }
-
 .btn-primary {
   background: var(--accent);
   color: #1b1408;
+  border-color: transparent;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.15);
 }
-
 .btn-primary:hover:not(:disabled) {
   background: var(--accent-hi);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
 }
-
+.btn-primary:active:not(:disabled) {
+  transform: scale(0.97) translateY(0);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
 .btn-ghost {
   background: transparent;
   border-color: var(--line-2);
   color: var(--text-1);
+  box-shadow: none;
 }
-
 .btn-ghost:hover:not(:disabled) {
   background: var(--bg-2);
+  border-color: var(--line-1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
-
+.btn-danger {
+  background: #dc3545;
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 1px 3px rgba(220, 53, 69, 0.25);
+}
+.btn-danger:hover:not(:disabled) {
+  background: #c82333;
+  box-shadow: 0 2px 8px rgba(220, 53, 69, 0.35);
+  transform: translateY(-1px);
+}
+.btn-success {
+  background: #10b981;
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 1px 3px rgba(16, 185, 129, 0.25);
+}
+.btn-success:hover:not(:disabled) {
+  background: #059669;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.35);
+  transform: translateY(-1px);
+}
+.btn-outline {
+  background: transparent;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.btn-outline:hover:not(:disabled) {
+  background: var(--accent);
+  color: #1b1408;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
 .btn-block {
   width: 100%;
 }
-
 .btn-sm {
   height: 30px;
   padding: 0 12px;
-  font-size: 13px;
+  font-size: 12.5px;
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+}
+.btn-xs {
+  height: 24px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+}
+.btn-link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  padding: 0;
+  height: auto;
+  font-size: inherit;
+  font-weight: 500;
+}
+.btn-link:hover:not(:disabled) {
+  color: var(--accent-hi);
+  text-decoration: underline;
 }
 
 /* ---- feedback ---- */
@@ -833,13 +907,17 @@ select.field-input {
 
 .form-actions {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   justify-content: flex-end;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line-1);
+  margin-top: 1rem;
 }
 
 .page-actions {
   display: flex;
   gap: 8px;
+  align-items: center;
 }
 
 /* ---- knowledge base ---- */
@@ -2157,15 +2235,6 @@ select.field-input {
 }
 
 /* ---- remote session console ---- */
-
-.btn-danger {
-  background: var(--crit);
-  color: #fff;
-}
-
-.btn-danger:hover:not(:disabled) {
-  background: #ee7068;
-}
 
 .console-breadcrumb {
   display: flex;
@@ -6223,18 +6292,6 @@ select.field-input {
 }
 .billing-invoice-row:last-child { border-bottom: none; }
 
-.btn-danger {
-  color: var(--crit);
-}
-.btn-danger:hover {
-  background: rgba(224, 86, 79, 0.1);
-}
-
-.btn-xs {
-  font-size: 0.7rem;
-  padding: 0.2rem 0.5rem;
-}
-
 .status-pill {
   display: inline-flex;
   align-items: center;
@@ -7135,14 +7192,16 @@ select.field-input {
   color: #1b1408;
   font-size: 0.8rem;
   font-weight: 600;
-  padding: 0.4rem 0.85rem;
-  border-radius: var(--radius-sm);
+  padding: 0.45rem 0.9rem;
+  border-radius: var(--radius);
   border: none;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
   white-space: nowrap;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.15);
 }
-.btn-remote-session:hover { background: var(--accent-hi); }
+.btn-remote-session:hover { background: var(--accent-hi); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18); transform: translateY(-1px); }
+.btn-remote-session:active { transform: scale(0.97) translateY(0); }
 
 .btn-new-ticket {
   display: inline-flex;
@@ -7152,15 +7211,17 @@ select.field-input {
   color: #1b1408;
   font-size: 0.8rem;
   font-weight: 600;
-  padding: 0.4rem 0.85rem;
-  border-radius: var(--radius-sm);
+  padding: 0.45rem 0.9rem;
+  border-radius: var(--radius);
   border: none;
   cursor: pointer;
   text-decoration: none;
-  transition: background 0.15s;
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
   white-space: nowrap;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.15);
 }
-.btn-new-ticket:hover { background: var(--accent-hi); color: #1b1408; text-decoration: none; }
+.btn-new-ticket:hover { background: var(--accent-hi); color: #1b1408; text-decoration: none; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18); transform: translateY(-1px); }
+.btn-new-ticket:active { transform: scale(0.97) translateY(0); }
 
 .topbar-icons {
   display: flex;
@@ -7174,17 +7235,21 @@ select.field-input {
   justify-content: center;
   width: 34px;
   height: 34px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   border: none;
   background: transparent;
   color: var(--text-2);
   cursor: pointer;
   text-decoration: none;
-  transition: background 0.15s, color 0.15s;
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .topbar-icon-btn:hover {
   background: var(--bg-2);
   color: var(--text-1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+.topbar-icon-btn:active {
+  transform: scale(0.92);
 }
 
 .topbar-remote-wrap {
