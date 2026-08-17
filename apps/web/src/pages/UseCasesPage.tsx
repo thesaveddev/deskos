@@ -6,8 +6,7 @@ const USE_CASES = [
     icon: '🏢',
     title: 'MSPs & IT service providers',
     subtitle: 'Multiple customers, one view.',
-    description:
-      'DeskOS is built for multi-tenant operations. Manage multiple customer tenants from one cross-tenant console with per-customer branding, SLA tracking, and a customer-facing portal — all without switching tools.',
+    description: 'Manage multiple customer tenants from one console. Per-customer branding, SLA tracking, and a customer-facing portal — all in one place.',
     features: [
       'Cross-tenant technician console',
       'Per-customer branding and SLA',
