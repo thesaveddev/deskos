@@ -128,7 +128,7 @@ export async function deleteApp(db: DbPool | DbClient, id: string): Promise<void
 
 /* ── Tenant installs (RLS-scoped) ─────────────────────── */
 
-export async function listInstalls(db: DbPool, tenantId: string): Promise<AppInstall[]> {
+export async function listInstalls(db: DbPool | DbClient, tenantId: string): Promise<AppInstall[]> {
   const { rows } = await q(db,
     `SELECT i.*, r.name AS app_name, r.slug AS app_slug, r.description AS app_description,
             r.developer AS app_developer, r.version AS app_version, r.icon_url AS app_icon_url,
