@@ -88,11 +88,24 @@ const USE_CASES = [
   },
 ]
 
+const useCasesJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'WebPage',
+  name: 'DeskOS Use Cases',
+  description: 'See how MSPs, internal IT teams, education, healthcare, SaaS companies, and security-conscious organizations use DeskOS.',
+  about: {
+    '@type': 'SoftwareApplication',
+    name: 'DeskOS',
+    applicationCategory: 'BusinessApplication',
+  },
+}
+
 export default function UseCasesPage() {
   return (
     <LandingLayout
       title="Use Cases — DeskOS | Who Uses DeskOS"
       description="See how MSPs, internal IT teams, education, healthcare, SaaS companies, and security-conscious organizations use DeskOS for remote support and IT management."
+      structuredData={useCasesJsonLd}
     >
       {/* hero */}
       <section className="landing-hero">

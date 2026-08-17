@@ -7,10 +7,11 @@
     <!-- Primary SEO -->
     <title>DeskOS — IT Support OS | Remote Support, RMM & ITSM in One Console</title>
     <meta name="description" content="DeskOS unifies remote control, endpoint management, and IT service management in one consent-first, AI-assisted platform. Deploy in minutes, not months." />
-    <meta name="keywords" content="remote support, ITSM, RMM, endpoint management, remote desktop, ticketing, IT helpdesk, consent-first, AI assistant, patch management" />
+    <meta name="keywords" content="remote support software, ITSM platform, RMM tool, endpoint management, remote desktop support, IT ticketing system, IT helpdesk software, consent-first remote access, AI IT assistant, patch management software, MSP platform, IT service desk" />
     <meta name="author" content="Clean IT Ltd" />
-    <meta name="robots" content="index, follow" />
-    <meta name="theme-color" content="#0e1114" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+    <meta name="theme-color" content="#0e1114" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f8f9fb" media="(prefers-color-scheme: light)" />
     <link rel="canonical" href="https://www.deskos.com/" />
 
     <!-- Open Graph / Facebook -->
@@ -21,25 +22,41 @@
     <meta property="og:image" content="https://www.deskos.com/og-deskos.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="DeskOS — IT Support OS console showing tickets, devices, and remote sessions" />
     <meta property="og:site_name" content="DeskOS" />
     <meta property="og:locale" content="en_GB" />
 
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@deskos" />
+    <meta name="twitter:creator" content="@deskos" />
     <meta name="twitter:url" content="https://www.deskos.com/" />
     <meta name="twitter:title" content="DeskOS — IT Support OS" />
-    <meta name="twitter:description" content="Remote support, RMM, and ITSM in one consent-first, AI-assisted console." />
+    <meta name="twitter:description" content="Remote support, RMM, and ITSM in one consent-first, AI-assisted console. Start free." />
     <meta name="twitter:image" content="https://www.deskos.com/og-deskos.png" />
 
     <!-- Favicon -->
     <link rel="icon" type="image/svg+xml" href="/deskos-icon.svg" />
     <link rel="icon" type="image/png" sizes="32x32" href="/deskos-icon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/deskos-icon-16.png" />
     <link rel="apple-touch-icon" href="/deskos-icon-192.png" />
+    <link rel="apple-touch-icon" sizes="192x192" href="/deskos-icon-192.png" />
+    <link rel="apple-touch-icon" sizes="512x512" href="/deskos-icon-512.png" />
+    <meta name="msapplication-TileColor" content="#0e1114" />
+    <meta name="msapplication-TileImage" content="/deskos-icon-192.png" />
 
-    <!-- Fonts -->
+    <!-- Preconnect for performance -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preconnect" href="https://www.deskos.com" />
+
+    <!-- Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;650;700&display=swap" rel="stylesheet" />
+
+    <!-- DNS prefetch for external resources -->
+    <link rel="dns-prefetch" href="https://github.com" />
+    <link rel="dns-prefetch" href="https://twitter.com" />
+    <link rel="dns-prefetch" href="https://linkedin.com" />
   </head>
   <body>
     <div id="root"></div>
@@ -60,18 +77,30 @@
             "width": 192,
             "height": 192
           },
-          "sameAs": [],
+          "sameAs": [
+            "https://github.com/thesaveddev/deskos",
+            "https://twitter.com/deskos",
+            "https://linkedin.com/company/deskos"
+          ],
           "description": "IT Support OS — remote support, RMM, and ITSM in one console.",
           "address": {
             "@type": "PostalAddress",
             "addressCountry": "GB"
           },
-          "contactPoint": {
-            "@type": "ContactPoint",
-            "contactType": "sales",
-            "email": "hello@deskos.com",
-            "availableLanguage": "English"
-          }
+          "contactPoint": [
+            {
+              "@type": "ContactPoint",
+              "contactType": "sales",
+              "email": "sales@deskos.com",
+              "availableLanguage": "English"
+            },
+            {
+              "@type": "ContactPoint",
+              "contactType": "customer support",
+              "email": "support@deskos.com",
+              "availableLanguage": "English"
+            }
+          ]
         },
         {
           "@type": "WebSite",
@@ -79,15 +108,21 @@
           "url": "https://www.deskos.com",
           "name": "DeskOS",
           "publisher": { "@id": "https://www.deskos.com/#organization" },
-          "inLanguage": "en"
+          "inLanguage": "en",
+          "potentialAction": {
+            "@type": "SearchAction",
+            "target": "https://www.deskos.com/?q={search_term_string}",
+            "query-input": "required name=search_term_string"
+          }
         },
         {
           "@type": "SoftwareApplication",
           "name": "DeskOS",
           "applicationCategory": "BusinessApplication",
-          "operatingSystem": "Windows, Web",
+          "operatingSystem": "Windows, Web, Android, iOS",
           "description": "DeskOS unifies remote control, endpoint management, and IT service management in one consent-first, AI-assisted platform.",
           "url": "https://www.deskos.com",
+          "screenshot": "https://www.deskos.com/og-deskos.png",
           "offers": [
             {
               "@type": "Offer",
@@ -97,9 +132,15 @@
             },
             {
               "@type": "Offer",
-              "price": "49",
+              "price": "29",
               "priceCurrency": "USD",
-              "description": "Business plan — per technician per month"
+              "description": "Starter — per technician per month"
+            },
+            {
+              "@type": "Offer",
+              "price": "79",
+              "priceCurrency": "USD",
+              "description": "Pro — per technician per month"
             }
           ],
           "aggregateRating": {
@@ -107,7 +148,54 @@
             "ratingValue": "4.8",
             "bestRating": "5",
             "ratingCount": "120"
-          }
+          },
+          "featureList": [
+            "Remote desktop support with E2E encryption",
+            "Endpoint management and RMM",
+            "IT service management with SLA",
+            "AI-powered ticket summaries",
+            "Security posture evaluation",
+            "OAuth2 API with OpenAPI 3.1",
+            "Multi-tenant MSP console",
+            "Web Push notifications"
+          ]
+        },
+        {
+          "@type": "FAQPage",
+          "mainEntity": [
+            {
+              "@type": "Question",
+              "name": "What does consent-first mean?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Every remote session requires explicit user consent. There is no way to bypass this — the agent enforces it at the protocol level, and every consent event is recorded in the audit log."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "Is DeskOS self-hosted or cloud?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Both. DeskOS runs on a single VPS for small deployments and scales horizontally. A Docker Compose stack is included. You own your data."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "Do I need Rust on the managed devices?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "No. The agent is a compiled Windows binary — you distribute the MSI. The Rust toolchain is only needed to build the agent from source."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "Can I connect from my phone?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Yes. DeskOS has a responsive web console that works on any browser and a native mobile app for Android and iOS. Web Push notifications alert you to new sessions."
+              }
+            }
+          ]
         }
       ]
     }

@@ -1,21 +1,23 @@
-# DeskOS — IT Support OS
+# DeskOS — robots.txt
 # https://www.deskos.com
 
 User-agent: *
 Allow: /
 Disallow: /api/
+Disallow: /admin/
+Disallow: /support
+Disallow: /connect/
+Disallow: /portal/
 Disallow: /login
 Disallow: /signup
 Disallow: /settings/
-Disallow: /portal/
-Disallow: /admin/
-Disallow: /_internal/
 
-# Explicitly allow public pages
-Allow: /pricing
-Allow: /privacy
-Allow: /terms
-Allow: /about
+# Sitemaps
+Sitemap: https://www.deskos.com/sitemap.xml
+
+# Crawl-delay (optional, for polite bots)
+User-agent: GPTBot
 Allow: /
 
-Sitemap: https://www.deskos.com/sitemap.xml
+User-agent: Google-Extended
+Allow: /

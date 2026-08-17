@@ -222,11 +222,32 @@ function FeatureSection({
   )
 }
 
+const featuresJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'DeskOS',
+  applicationCategory: 'BusinessApplication',
+  featureList: [
+    'Remote desktop support with end-to-end encryption',
+    'Endpoint management and RMM',
+    'IT service management with SLA tracking',
+    'AI-powered ticket summaries and remediation',
+    'Security posture evaluation and compliance',
+    'OAuth2 API with OpenAPI 3.1 specification',
+    'Multi-tenant MSP console',
+    'Web Push notifications',
+    'Knowledge base with AI drafting',
+    'Patch management with ring rollout',
+  ],
+  url: 'https://www.deskos.com/features',
+}
+
 export default function FeaturesPage() {
   return (
     <LandingLayout
       title="Features — DeskOS | Remote Support, RMM & ITSM"
       description="Explore DeskOS features: remote desktop support, endpoint management, IT ticketing, AI assistant, security compliance, and 50+ integrations."
+      structuredData={featuresJsonLd}
     >
       {/* hero */}
       <section className="landing-hero">

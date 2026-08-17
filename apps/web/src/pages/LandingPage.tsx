@@ -311,28 +311,6 @@ export default function LandingPage() {
           </Link>
         </div>
       </section>
-
-      {/* JSON-LD structured data for SEO */}
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify({
-            '@context': 'https://schema.org',
-            '@type': 'SoftwareApplication',
-            name: 'DeskOS',
-            applicationCategory: 'BusinessApplication',
-            description: 'DeskOS unifies remote control, endpoint management, and IT service management in one consent-first, AI-assisted platform.',
-            url: 'https://www.deskos.com',
-            offers: {
-              '@type': 'AggregateOffer',
-              lowPrice: '0',
-              highPrice: '79',
-              priceCurrency: 'USD',
-              offerCount: '3',
-            },
-          }),
-        }}
-      />
     </LandingLayout>
   )
 }

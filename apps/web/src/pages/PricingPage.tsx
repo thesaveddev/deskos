@@ -139,11 +139,42 @@ const COMPARE_ROWS = [
   { feature: 'Support', starter: 'Email', pro: 'Priority email + chat', enterprise: 'Dedicated engineer' },
 ]
 
+const pricingJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'WebPage',
+  name: 'DeskOS Pricing',
+  description: 'Simple, transparent pricing for DeskOS. Start free for up to 3 technicians.',
+  offers: [
+    {
+      '@type': 'Offer',
+      name: 'Starter',
+      price: '29',
+      priceCurrency: 'USD',
+      description: 'Up to 3 technicians, 100 devices, remote support, ticketing, KB',
+    },
+    {
+      '@type': 'Offer',
+      name: 'Pro',
+      price: '79',
+      priceCurrency: 'USD',
+      description: 'Unlimited technicians, 500 devices, full RMM, AI assistant, patches',
+    },
+    {
+      '@type': 'Offer',
+      name: 'Enterprise',
+      price: '0',
+      priceCurrency: 'USD',
+      description: 'Custom pricing for MSPs and large organizations',
+    },
+  ],
+}
+
 export default function PricingPage() {
   return (
     <LandingLayout
       title="Pricing — DeskOS | IT Support OS Plans"
       description="Simple, transparent pricing for DeskOS. Start free for up to 3 technicians. Pro plan from $79/tech/month. Enterprise with custom pricing."
+      structuredData={pricingJsonLd}
     >
       {/* hero */}
       <section className="landing-hero">

@@ -6,6 +6,10 @@ interface Props {
   children: ReactNode
   title?: string
   description?: string
+  /** Page-specific JSON-LD structured data */
+  structuredData?: Record<string, unknown>
+  /** Canonical URL override (defaults to current path) */
+  canonical?: string
 }
 
 const NAV_LINKS = [
@@ -17,10 +21,20 @@ const NAV_LINKS = [
   { to: '/contact', label: 'Contact' },
 ]
 
-export default function LandingLayout({ children, title, description }: Props) {
+const SITE_NAME = 'DeskOS'
+const SITE_URL = 'https://www.deskos.com'
+const DEFAULT_DESCRIPTION = 'DeskOS unifies remote control, endpoint management, and IT service management in one consent-first, AI-assisted platform.'
+const OG_IMAGE = `${SITE_URL}/og-deskos.png`
+
+export default function LandingLayout({ children, title, description, structuredData, canonical }: Props) {
   const location = useLocation()
   const { theme, toggle } = useTheme()
   const [scrolled, setScrolled] = useState(false)
+
+  const fullTitle = title || `${SITE_NAME} — IT Support OS`
+  const pageDescription = description || DEFAULT_DESCRIPTION
+  const canonicalUrl = canonical || `${SITE_URL}${location.pathname}`
+  const ogTitle = title || `${SITE_NAME} — IT Support OS | Remote Support, RMM & ITSM`
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 10)
@@ -32,32 +46,101 @@ export default function LandingLayout({ children, title, description }: Props) {
     window.scrollTo(0, 0)
   }, [location.pathname])
 
+  // Update meta tags on mount / route change
   useEffect(() => {
-    document.title = title || 'DeskOS — IT Support OS'
-    const meta = (name: string, content: string) => {
-      let el = document.querySelector(`meta[name="${name}"]`) as HTMLMetaElement | null
+    document.title = fullTitle
+
+    const setMeta = (name: string, content: string, isProperty = false) => {
+      const attr = isProperty ? 'property' : 'name'
+      let el = document.querySelector(`meta[${attr}="${name}"]`) as HTMLMetaElement | null
       if (!el) {
         el = document.createElement('meta')
-        el.setAttribute('name', name)
+        el.setAttribute(attr, name)
         document.head.appendChild(el)
       }
       el.setAttribute('content', content)
     }
-    if (description) {
-      meta('description', description)
-      meta('og:description', description)
+
+    // Primary
+    setMeta('description', pageDescription)
+    setMeta('keywords', 'remote support, ITSM, RMM, endpoint management, remote desktop, ticketing, IT helpdesk, consent-first, AI assistant, patch management, IT support platform')
+    setMeta('author', 'Clean IT Ltd')
+    setMeta('robots', 'index, follow')
+    setMeta('theme-color', theme === 'dark' ? '#0e1114' : '#f8f9fb')
+
+    // Canonical
+    let canonicalEl = document.querySelector('link[rel="canonical"]') as HTMLLinkElement | null
+    if (!canonicalEl) {
+      canonicalEl = document.createElement('link')
+      canonicalEl.setAttribute('rel', 'canonical')
+      document.head.appendChild(canonicalEl)
     }
-    if (title) {
-      meta('og:title', title)
-    }
-    meta('og:image', '/og-deskos.png')
-    meta('og:url', 'https://www.deskos.com' + location.pathname)
-    meta('twitter:card', 'summary_large_image')
-    return () => { document.title = 'DeskOS' }
-  }, [title, description, location.pathname])
+    canonicalEl.setAttribute('href', canonicalUrl)
+
+    // Open Graph
+    setMeta('og:type', 'website', true)
+    setMeta('og:url', canonicalUrl, true)
+    setMeta('og:title', ogTitle, true)
+    setMeta('og:description', pageDescription, true)
+    setMeta('og:image', OG_IMAGE, true)
+    setMeta('og:image:width', '1200', true)
+    setMeta('og:image:height', '630', true)
+    setMeta('og:site_name', SITE_NAME, true)
+    setMeta('og:locale', 'en_GB', true)
+
+    // Twitter
+    setMeta('twitter:card', 'summary_large_image')
+    setMeta('twitter:url', canonicalUrl)
+    setMeta('twitter:title', ogTitle)
+    setMeta('twitter:description', pageDescription)
+    setMeta('twitter:image', OG_IMAGE)
+
+    return () => { document.title = SITE_NAME }
+  }, [fullTitle, pageDescription, canonicalUrl, ogTitle, theme])
+
+  // Default organization structured data
+  const orgJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'Organization',
+    name: SITE_NAME,
+    url: SITE_URL,
+    logo: `${SITE_URL}/deskos-icon-192.png`,
+    description: DEFAULT_DESCRIPTION,
+    address: { '@type': 'PostalAddress', addressCountry: 'GB' },
+    contactPoint: {
+      '@type': 'ContactPoint',
+      contactType: 'customer support',
+      email: 'support@deskos.com',
+      availableLanguage: 'English',
+    },
+    sameAs: [
+      'https://github.com/thesaveddev/deskos',
+      'https://twitter.com/deskos',
+      'https://linkedin.com/company/deskos',
+    ],
+  }
+
+  const webSiteJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    name: SITE_NAME,
+    url: SITE_URL,
+    potentialAction: {
+      '@type': 'SearchAction',
+      target: `${SITE_URL}/?q={search_term_string}`,
+      'query-input': 'required name=search_term_string',
+    },
+  }
 
   return (
     <div className="landing">
+      {/* SEO: Organization + Website structured data */}
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(orgJsonLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(webSiteJsonLd) }} />
+      {structuredData && (
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }} />
+      )}
+
       {/* ---- sticky nav ---- */}
       <header className={`landing-nav${scrolled ? ' scrolled' : ''}`}>
         <div className="landing-nav-inner">
@@ -116,9 +199,8 @@ export default function LandingLayout({ children, title, description }: Props) {
           <div className="landing-footer-col">
             <h4>Resources</h4>
             <Link to="/support">Support</Link>
-            <Link to="/api-docs">API Docs</Link>
-            <Link to="/admin">Admin</Link>
             <a href="#faq">FAQ</a>
+            <Link to="/login">Customer Portal</Link>
             <a href="mailto:hello@deskos.com">General Enquiries</a>
           </div>
           <div className="landing-footer-col">
