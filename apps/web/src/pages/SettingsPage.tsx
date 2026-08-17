@@ -4,6 +4,7 @@ import { Shell } from '../components/Shell.js'
 import { Alert, Field } from '../components/ui.js'
 import { getTenant, updateTenant } from '../lib/tenant.js'
 import { getIdleTimeoutMinutes, setIdleTimeoutMinutes } from '../lib/idle.js'
+import TicketSettingsPage from './TicketSettingsPage.js'
 function BasicSettings() {
   const [form, setForm] = useState<{ name: string; slug: string; region: string } | null>(null)
   const [busy, setBusy] = useState(false)
@@ -123,7 +124,9 @@ export default function SettingsPage() {
             ? 'api'
             : location.pathname.startsWith('/settings/preferences')
               ? 'preferences'
-              : 'basic'
+              : location.pathname.startsWith('/settings/tickets')
+                ? 'tickets'
+                : 'basic'
 
   return (
     <Shell>
@@ -136,6 +139,9 @@ export default function SettingsPage() {
         </NavLink>
         <NavLink to="/settings/preferences" className={({ isActive }) => `settings-tab${isActive ? ' active' : ''}`}>
           Preferences
+        </NavLink>
+        <NavLink to="/settings/tickets" className={({ isActive }) => `settings-tab${isActive ? ' active' : ''}`}>
+          Tickets
         </NavLink>
         <NavLink to="/settings/email" className={({ isActive }) => `settings-tab${isActive ? ' active' : ''}`}>
           Email
@@ -159,7 +165,7 @@ export default function SettingsPage() {
           Public API
         </NavLink>
       </div>
-      <div className="settings-body">{tab === 'basic' ? <BasicSettings /> : tab === 'preferences' ? <PreferencesSettings /> : <Outlet />}</div>
+      <div className="settings-body">{tab === 'basic' ? <BasicSettings /> : tab === 'preferences' ? <PreferencesSettings /> : tab === 'tickets' ? <TicketSettingsPage /> : <Outlet />}</div>
     </Shell>
   )
 }
