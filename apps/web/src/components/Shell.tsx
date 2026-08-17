@@ -5,6 +5,7 @@ import { MobileShell } from './MobileShell.js'
 import { useAuth } from '../lib/auth.js'
 import { isNative } from '../lib/capacitor.js'
 import { lockScreen } from '../lib/lock.js'
+import { createAdhocSession } from '../lib/sessions.js'
 import { readSessionDock, sessionDockEventName, type SessionDockEntry } from '../lib/sessions.js'
 
 function tenantColor(id?: string): string {
@@ -138,6 +139,10 @@ export function Shell({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
   const [navOpen, setNavOpen] = useState(false)
   const [sessionDock, setSessionDock] = useState<SessionDockEntry | null>(() => readSessionDock())
+  const [showSessionKey, setShowSessionKey] = useState(false)
+  const [sessionKey, setSessionKey] = useState<string | null>(null)
+  const [sessionKeyExpires, setSessionKeyExpires] = useState<string | null>(null)
+  const [sessionKeyBusy, setSessionKeyBusy] = useState(false)
 
   useEffect(() => {
     const refresh = () => setSessionDock(readSessionDock())
@@ -207,6 +212,75 @@ export function Shell({ children }: { children: ReactNode }) {
             </select>
           ) : null}
           <div className="topbar-spacer" />
+
+          {/* Remote Session button + key dropdown */}
+          <div className="topbar-remote-wrap">
+            <button
+              className="btn btn-remote-session"
+              onClick={() => {
+                if (showSessionKey) { setShowSessionKey(false); return }
+                setSessionKeyBusy(true)
+                setShowSessionKey(true)
+                setSessionKey(null)
+                createAdhocSession({
+                  permissions: ['view_screen', 'control_input', 'clipboard', 'terminal', 'elevation', 'file_transfer', 'system_manage'],
+                  expiresInMin: 10,
+                }).then((res) => {
+                  setSessionKey(res.code)
+                  setSessionKeyExpires(res.expiresAt)
+                }).catch(() => {
+                  setSessionKey(null)
+                }).finally(() => setSessionKeyBusy(false))
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+              Remote Session
+            </button>
+            {showSessionKey && (
+              <div className="session-key-dropdown">
+                <button className="session-key-close" onClick={() => setShowSessionKey(false)}>✕</button>
+                <h4 className="session-key-title">Session Key</h4>
+                {sessionKeyBusy ? (
+                  <div className="session-key-loading">Generating…</div>
+                ) : sessionKey ? (
+                  <>
+                    <div className="session-key-code">{sessionKey}</div>
+                    <span className="session-key-validity">Valid for 10 minutes</span>
+                    <button
+                      className="session-key-email"
+                      onClick={() => {
+                        const url = `${window.location.origin}/connect/${sessionKey}`
+                        window.open(`mailto:?subject=DeskOS Support Session&body=Join my support session:%0A%0A${url}%0A%0ACode: ${sessionKey}`, '_blank')
+                      }}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                      Send Email
+                    </button>
+                  </>
+                ) : (
+                  <div className="session-key-error">Failed to generate key</div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <Link to="/tickets/new" className="btn btn-new-ticket">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            New Ticket
+          </Link>
+
+          <div className="topbar-icons">
+            <Link to="/approvals" className="topbar-icon-btn" title="Approvals">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            </Link>
+            <Link to="/kb" className="topbar-icon-btn" title="Knowledge base">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+            </Link>
+            <button className="topbar-icon-btn" title="Notifications">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            </button>
+          </div>
+
           <CommandPalette />
           <button
             className="btn btn-ghost btn-sm lock-btn"
@@ -216,17 +290,14 @@ export function Shell({ children }: { children: ReactNode }) {
           >
             🔒
           </button>
-          <div className="topbar-user">
-            <span>{auth.user?.name}</span>
-            <button
-              className="btn btn-ghost btn-sm"
-              onClick={() => {
-                void auth.logout().then(() => navigate('/'))
-              }}
-            >
-              Sign out
-            </button>
-          </div>
+          <button
+            className="btn btn-ghost btn-sm topbar-icon-btn"
+            onClick={() => { void auth.logout().then(() => navigate('/')) }}
+            title="Sign out"
+            aria-label="Sign out"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          </button>
         </header>
         {auth.memberships.length > 1 ? (
           <div className="msp-banner" role="status">

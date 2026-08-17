@@ -7118,3 +7118,150 @@ select.field-input {
   color: var(--text-2);
   cursor: pointer;
 }
+
+/* ── Topbar buttons ─────────────────────────────────────────── */
+
+.btn-remote-session {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--accent);
+  color: #1b1408;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.4rem 0.85rem;
+  border-radius: var(--radius-sm);
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+.btn-remote-session:hover { background: var(--accent-hi); }
+
+.btn-new-ticket {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--accent);
+  color: #1b1408;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.4rem 0.85rem;
+  border-radius: var(--radius-sm);
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+.btn-new-ticket:hover { background: var(--accent-hi); color: #1b1408; text-decoration: none; }
+
+.topbar-icons {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.topbar-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s;
+}
+.topbar-icon-btn:hover {
+  background: var(--bg-2);
+  color: var(--text-1);
+}
+
+.topbar-remote-wrap {
+  position: relative;
+}
+
+/* ── Session key dropdown ───────────────────────────────────── */
+
+.session-key-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  background: var(--bg-1);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  width: 280px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  z-index: 100;
+  text-align: center;
+}
+
+.session-key-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: transparent;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.session-key-close:hover { color: var(--text-1); background: var(--bg-2); }
+
+.session-key-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-1);
+  margin: 0 0 0.75rem;
+}
+
+.session-key-code {
+  font-size: 1.6rem;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  color: var(--accent);
+  letter-spacing: 0.15em;
+  margin-bottom: 0.5rem;
+}
+
+.session-key-validity {
+  font-size: 0.75rem;
+  color: var(--text-3);
+  display: block;
+  margin-bottom: 0.75rem;
+}
+
+.session-key-email {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: transparent;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.4rem 0.85rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.session-key-email:hover { background: rgba(232, 163, 61, 0.08); }
+
+.session-key-loading {
+  color: var(--text-3);
+  font-size: 0.85rem;
+  padding: 1rem 0;
+}
+
+.session-key-error {
+  color: var(--crit);
+  font-size: 0.8rem;
+  padding: 0.5rem 0;
+}
