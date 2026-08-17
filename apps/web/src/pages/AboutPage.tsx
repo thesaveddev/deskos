@@ -4,89 +4,98 @@ import LandingLayout from '../components/LandingLayout'
 export default function AboutPage() {
   return (
     <LandingLayout
-      title="About — DeskOS | The IT Support OS"
-      description="About DeskOS — the IT support platform built by Clean IT Ltd. Our mission: one console for every IT task."
+      title="About — DeskOS"
+      description="DeskOS is built by Clean IT Ltd. One app for remote support, device management, and IT tickets."
     >
       <section className="landing-hero">
         <div className="landing-hero-inner">
-          <span className="landing-kicker">About us</span>
-          <h1 className="landing-title">One console for every IT task.</h1>
+          <span className="landing-kicker">About</span>
+          <h1 className="landing-title">Why we built this.</h1>
           <p className="landing-sub">
-            We built DeskOS because IT teams were drowning in tool sprawl — stitching together remote control, ticketing, monitoring, and compliance into a Frankenstein stack that nobody loved.
+            We kept buying separate tools for remote support, ticketing, and monitoring. It was expensive, messy, and nothing talked to each other. So we built one app that does all three.
           </p>
         </div>
       </section>
 
       <section className="landing-section">
         <div className="landing-section-head">
-          <h2 className="landing-h2">Our mission</h2>
+          <h2 className="landing-h2">The problem we ran into</h2>
         </div>
         <div className="legal-content">
           <p>
-            We believe that a small IT team — or even a single person — should be able to manage a fleet of endpoints, support remote users, track every action, and stay compliant, all from one clean, fast, well-designed console.
+            We were running a small IT operation. We had one tool for remote desktop access, another for tickets, another for monitoring devices. Every tool had its own login, its own subscription, its own way of storing data.
           </p>
           <p>
-            DeskOS is that console. We combine remote support, RMM, ITSM, AI assistance, and security into a single platform with consent-first design, hash-chained audit logs, and end-to-end encrypted sessions.
+            When something broke, we had to piece together what happened from three different audit logs. When a remote session went wrong, there was no record of who approved it. When we needed to show an auditor what we did, we had to export CSVs from three systems and hope they lined up.
           </p>
           <p>
-            We are building for the long term — no vendor lock-in, no dark patterns, no data harvesting. You own your data, your audit trail, and your infrastructure.
+            We looked at the existing options. The remote desktop tools were good at remote desktop but had no ticketing. The ticketing tools had no device monitoring. The monitoring tools had no remote access. And none of them had a proper audit trail.
           </p>
         </div>
       </section>
 
       <section className="landing-section">
         <div className="landing-section-head">
-          <h2 className="landing-h2">Why we exist</h2>
+          <h2 className="landing-h2">What we built</h2>
         </div>
         <div className="legal-content">
-          <h3>The problem</h3>
           <p>
-            Most IT teams use 3–5 separate tools: a remote control app, a ticketing system, an endpoint monitoring platform, a knowledge base, and a compliance tracker. Each tool has its own login, its own data model, and its own subscription. The result: context switching everywhere, inconsistent audit trails, and a lot of money spent on integrations that barely work.
+            DeskOS is one application that handles remote support, endpoint monitoring, and IT ticketing. Everything shares the same database. A remote session is linked to a ticket. A device alert can auto-create a ticket. The audit log records everything across all three.
           </p>
-
-          <h3>Our answer</h3>
           <p>
-            DeskOS is a single product that does the whole job. Remote sessions, tickets, devices, automation, knowledge, patches, compliance — all sharing the same data model, the same audit chain, and the same consent-first security model. One login. One console. One bill.
+            The design principles were straightforward:
           </p>
-
-          <h3>Who we are</h3>
-          <p>
-            DeskOS is built by <strong>Clean IT Ltd</strong>, a UK-based company focused on building IT operations tools that are honest, secure, and genuinely useful. We believe that good software should be transparent about what it does and respectful of the people who use it.
-          </p>
+          <ul>
+            <li><strong>Consent is mandatory.</strong> No remote session can start without the endpoint user clicking "Allow." This is enforced in the agent code, not just the UI.</li>
+            <li><strong>The audit log is tamper-evident.</strong> Each entry includes a hash of the previous entry. You can verify the chain hasn't been broken.</li>
+            <li><strong>Self-hostable.</strong> Run it on your own server with Docker. We don't need to see your data.</li>
+            <li><strong>No vendor lock-in.</strong> The API is documented. The database is PostgreSQL. You can export everything.</li>
+          </ul>
         </div>
       </section>
 
       <section className="landing-section">
         <div className="landing-section-head">
-          <h2 className="landing-h2">By the numbers</h2>
+          <h2 className="landing-h2">Where we are now</h2>
         </div>
-        <div className="landing-features">
+        <div className="landing-features" style={{ maxWidth: 720, margin: '0 auto' }}>
           <article className="landing-feature">
-            <span className="landing-feature-icon">365</span>
-            <h3>API tests</h3>
-            <p>Every endpoint is tested. CI runs the full suite on every push.</p>
+            <h3>39 migrations</h3>
+            <p>The schema is versioned. Every change is tracked. We don't make breaking changes without a migration.</p>
           </article>
           <article className="landing-feature">
-            <span className="landing-feature-icon">38</span>
-            <h3>Database migrations</h3>
-            <p>Schema-versioned with Row-Level Security on every tenant-scoped table.</p>
+            <h3>365 API tests</h3>
+            <p>Every endpoint has tests. CI runs them on every push. If a test breaks, we don't merge.</p>
           </article>
           <article className="landing-feature">
-            <span className="landing-feature-icon">100%</span>
-            <h3>Consent-enforced</h3>
-            <p>No remote session can start without explicit user consent. No exceptions.</p>
+            <h3>Open source</h3>
+            <p>The code is on GitHub. You can read it, fork it, run it yourself. No black boxes.</p>
           </article>
+        </div>
+      </section>
+
+      <section className="landing-section">
+        <div className="landing-section-head">
+          <h2 className="landing-h2">Who we are</h2>
+        </div>
+        <div className="legal-content">
+          <p>
+            DeskOS is built by <strong>Clean IT Ltd</strong>, a small UK-based company. We build IT tools because we've used bad IT tools and we think things can be better.
+          </p>
+          <p>
+            We're not a 500-person company. We're a small team writing code we'd want to use ourselves. If you have feedback, email us at <a href="mailto:hello@deskos.com">hello@deskos.com</a> — we read every message.
+          </p>
         </div>
       </section>
 
       <section className="landing-cta-band">
-        <h2 className="landing-h2">Get in touch</h2>
+        <h2 className="landing-h2">Want to try it?</h2>
         <p className="landing-sub">
-          Questions, feedback, or partnership enquiries — we'd love to hear from you.
+          Create a workspace. Takes about a minute. No credit card.
         </p>
         <div className="landing-cta">
-          <a className="btn btn-primary" href="mailto:hello@deskos.com">Email us</a>
-          <Link className="btn btn-ghost" to="/signup">Try it free</Link>
+          <Link className="btn btn-primary" to="/signup">Get started</Link>
+          <Link className="btn btn-ghost" to="/contact">Contact us</Link>
         </div>
       </section>
     </LandingLayout>

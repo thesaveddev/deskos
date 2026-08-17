@@ -17,7 +17,7 @@ export default function ContactPage() {
       <section className="landing-hero">
         <div className="landing-hero-inner">
           <span className="landing-kicker">Get in touch</span>
-          <h1 className="landing-title">We'd love to hear from you.</h1>
+          <h1 className="landing-title">Get in touch.</h1>
           <p className="landing-sub">
             Whether you have a question about features, pricing, deployment, or anything else — our team is ready to answer.
           </p>

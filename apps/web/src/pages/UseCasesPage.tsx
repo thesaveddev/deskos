@@ -5,7 +5,7 @@ const USE_CASES = [
   {
     icon: '🏢',
     title: 'MSPs & IT service providers',
-    subtitle: 'Manage multiple customer tenants from one console.',
+    subtitle: 'Multiple customers, one view.',
     description:
       'DeskOS is built for multi-tenant operations. Manage multiple customer tenants from one cross-tenant console with per-customer branding, SLA tracking, and a customer-facing portal — all without switching tools.',
     features: [
@@ -21,7 +21,7 @@ const USE_CASES = [
     title: 'Internal IT departments',
     subtitle: 'One console for helpdesk, endpoints, and compliance.',
     description:
-      'Stop stitching together three or four tools. DeskOS gives your helpdesk ticketing with SLA tracking, endpoint fleet management with health scores, and compliance dashboards — all in one place.',
+      'Tickets, devices, and remote access in one app. SLA tracking, device health scores, and compliance reports without switching between tools.',
     features: [
       'Ticketing with business-hours SLA',
       'Endpoint health & DEX scoring',
@@ -111,7 +111,7 @@ export default function UseCasesPage() {
       <section className="landing-hero">
         <div className="landing-hero-inner">
           <span className="landing-kicker">Use Cases</span>
-          <h1 className="landing-title">Built for every IT team.</h1>
+          <h1 className="landing-title">Who uses DeskOS?</h1>
           <p className="landing-sub">
             From a 3-person MSP managing customer tenants to a 500-device enterprise fleet — DeskOS scales with you.
           </p>

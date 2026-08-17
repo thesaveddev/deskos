@@ -253,9 +253,9 @@ export default function FeaturesPage() {
       <section className="landing-hero">
         <div className="landing-hero-inner">
           <span className="landing-kicker">Platform</span>
-          <h1 className="landing-title">Everything your IT team needs.</h1>
+          <h1 className="landing-title">What DeskOS does.</h1>
           <p className="landing-sub">
-            Remote support, endpoint management, ticketing, AI, security, and integrations — not a bundle of six products bolted together. One console, one database, one price.
+            Remote support, device monitoring, ticketing, AI assistance, security auditing, and integrations. All in one app, sharing one database.
           </p>
           <div className="landing-cta">
             <Link className="btn btn-primary" to="/signup">Start for free</Link>

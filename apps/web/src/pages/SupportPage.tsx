@@ -118,7 +118,7 @@ export default function SupportPage() {
       <section className="landing-hero">
         <div className="landing-hero-inner">
           <span className="landing-kicker">Support</span>
-          <h1 className="landing-title">How can we help?</h1>
+          <h1 className="landing-title">Need help with DeskOS?</h1>
           <p className="landing-sub">
             Submit a ticket for any issue with DeskOS — bugs, feature requests, billing, or technical support. Our team typically responds within 24 hours.
           </p>
