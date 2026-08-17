@@ -90,8 +90,16 @@ function NavSections() {
       ],
     },
     {
+      label: 'Team',
+      items: [
+        { to: '/staff', label: 'Staff management', show: can('member.read') },
+        { to: '/support', label: 'Support', show: true },
+      ],
+    },
+    {
       label: 'Account',
       items: [
+        { to: '/profile', label: 'My profile', show: true },
         { to: '/billing', label: 'Billing', show: true },
         { to: '/settings', label: 'Settings', show: true },
       ],

@@ -297,7 +297,8 @@ a:hover {
 
 .app-frame {
   display: flex;
-  min-height: 100%;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .nav-rail {
@@ -308,6 +309,8 @@ a:hover {
   display: flex;
   flex-direction: column;
   padding: 16px 0;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .nav-brand {
@@ -363,6 +366,7 @@ a:hover {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  overflow: hidden;
 }
 
 .topbar {
@@ -404,6 +408,7 @@ a:hover {
   max-width: 1080px;
   width: 100%;
   margin: 0 auto;
+  overflow-y: auto;
 }
 
 /* ---- page scaffolding ---- */
