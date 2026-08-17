@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { LockScreen } from './components/LockScreen.js'
+import { registerServiceWorker, enablePush } from './lib/push.js'
 import { useIdleTimeout } from './lib/idle.js'
 import { onLockRequest } from './lib/lock.js'
 import AiAgentPage from './pages/AiAgentPage.js'
@@ -104,6 +105,17 @@ export default function App() {
   useEffect(() => {
     void hydrate()
   }, [hydrate])
+
+  // Auto-enable push notifications after login
+  useEffect(() => {
+    if (status !== 'authed') return
+    // Register service worker eagerly
+    void registerServiceWorker()
+    // Auto-subscribe to push if permission not denied
+    if ('Notification' in window && Notification.permission !== 'denied') {
+      void enablePush()
+    }
+  }, [status])
 
   if (status === 'loading') {
     return (
