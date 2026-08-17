@@ -1,10 +1,10 @@
 import type { FastifyInstance } from 'fastify'
-import { requireAuth } from '../../middleware/requireAuth.js'
+import { authenticate } from '../../middleware/authenticate.js'
 import { requireTenant } from '../../middleware/requireTenant.js'
 import { listNotes, createNote, updateNote, deleteNote } from './notes.service.js'
 
 export async function notesRoutes(app: FastifyInstance) {
-  app.addHook('preHandler', requireAuth)
+  app.addHook('preHandler', authenticate)
   app.addHook('preHandler', requireTenant)
 
   // List my notes

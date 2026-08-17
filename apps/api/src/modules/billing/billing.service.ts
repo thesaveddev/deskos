@@ -1,4 +1,4 @@
-import type { PostgresClient } from '../../db/pool.js'
+import type { DbPool } from '../../db/pool.js'
 
 export interface Plan {
   id: number
@@ -56,7 +56,7 @@ export interface PaymentMethod {
 
 /* ── Plans ─────────────────────────────────────────────────── */
 
-export async function listPlans(db: PostgresClient): Promise<Plan[]> {
+export async function listPlans(db: DbPool): Promise<Plan[]> {
   const result = await db.query(
     `SELECT id, slug, name, description, price_monthly_cents, price_annual_cents,
             max_technicians, max_devices, features, is_active
@@ -67,7 +67,7 @@ export async function listPlans(db: PostgresClient): Promise<Plan[]> {
 
 /* ── Subscription ──────────────────────────────────────────── */
 
-export async function getSubscription(db: PostgresClient, tenantId: string): Promise<Subscription | null> {
+export async function getSubscription(db: DbPool, tenantId: string): Promise<Subscription | null> {
   const result = await db.query(
     `SELECT s.*, p.name AS plan_name, p.slug AS plan_slug
      FROM tenant_subscriptions s
@@ -80,7 +80,7 @@ export async function getSubscription(db: PostgresClient, tenantId: string): Pro
 }
 
 export async function createSubscription(
-  db: PostgresClient,
+  db: DbPool,
   tenantId: string,
   planSlug: string,
   billingCycle: 'monthly' | 'annual' = 'monthly',
@@ -99,7 +99,7 @@ export async function createSubscription(
 }
 
 export async function changePlan(
-  db: PostgresClient,
+  db: DbPool,
   tenantId: string,
   planSlug: string,
 ): Promise<Subscription | null> {
@@ -115,7 +115,7 @@ export async function changePlan(
   return result.rows[0] ?? null
 }
 
-export async function cancelSubscription(db: PostgresClient, tenantId: string): Promise<boolean> {
+export async function cancelSubscription(db: DbPool, tenantId: string): Promise<boolean> {
   const result = await db.query(
     `UPDATE tenant_subscriptions SET status = 'canceled', canceled_at = now(), updated_at = now()
      WHERE tenant_id = $1 AND status IN ('active', 'trialing')`,
@@ -126,7 +126,7 @@ export async function cancelSubscription(db: PostgresClient, tenantId: string): 
 
 /* ── Invoices ──────────────────────────────────────────────── */
 
-export async function listInvoices(db: PostgresClient, tenantId: string, limit = 20): Promise<Invoice[]> {
+export async function listInvoices(db: DbPool, tenantId: string, limit = 20): Promise<Invoice[]> {
   const result = await db.query(
     `SELECT * FROM invoices WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2`,
     [tenantId, limit],
@@ -136,7 +136,7 @@ export async function listInvoices(db: PostgresClient, tenantId: string, limit =
 
 /* ── Payment methods ───────────────────────────────────────── */
 
-export async function listPaymentMethods(db: PostgresClient, tenantId: string): Promise<PaymentMethod[]> {
+export async function listPaymentMethods(db: DbPool, tenantId: string): Promise<PaymentMethod[]> {
   const result = await db.query(
     `SELECT * FROM payment_methods WHERE tenant_id = $1 ORDER BY is_default DESC, created_at DESC`,
     [tenantId],
@@ -145,7 +145,7 @@ export async function listPaymentMethods(db: PostgresClient, tenantId: string): 
 }
 
 export async function addPaymentMethod(
-  db: PostgresClient,
+  db: DbPool,
   tenantId: string,
   data: { type?: string; brand?: string; last4: string; exp_month?: number; exp_year?: number },
 ): Promise<PaymentMethod> {
@@ -163,7 +163,7 @@ export async function addPaymentMethod(
 }
 
 export async function removePaymentMethod(
-  db: PostgresClient,
+  db: DbPool,
   tenantId: string,
   methodId: number,
 ): Promise<boolean> {
@@ -175,7 +175,7 @@ export async function removePaymentMethod(
 }
 
 export async function setDefaultPaymentMethod(
-  db: PostgresClient,
+  db: DbPool,
   tenantId: string,
   methodId: number,
 ): Promise<boolean> {

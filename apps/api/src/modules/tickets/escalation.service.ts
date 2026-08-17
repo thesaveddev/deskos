@@ -1,4 +1,4 @@
-import type { PostgresClient } from '../../db/pool.js'
+import type { DbPool } from '../../db/pool.js'
 
 /* ── Escalation ──────────────────────────────────────────────── */
 
@@ -32,7 +32,7 @@ export interface TicketEscalation {
   created_at: string
 }
 
-export async function listEscalationPolicies(db: PostgresClient, tenantId: string): Promise<EscalationPolicy[]> {
+export async function listEscalationPolicies(db: DbPool, tenantId: string): Promise<EscalationPolicy[]> {
   const { rows } = await db.query(
     `SELECT * FROM escalation_policies WHERE tenant_id = $1 ORDER BY trigger_after_minutes ASC`,
     [tenantId],
@@ -41,7 +41,7 @@ export async function listEscalationPolicies(db: PostgresClient, tenantId: strin
 }
 
 export async function createEscalationPolicy(
-  db: PostgresClient,
+  db: DbPool,
   tenantId: string,
   data: Partial<EscalationPolicy>,
 ): Promise<EscalationPolicy> {
@@ -66,7 +66,7 @@ export async function createEscalationPolicy(
 }
 
 export async function updateEscalationPolicy(
-  db: PostgresClient,
+  db: DbPool,
   tenantId: string,
   policyId: number,
   data: Partial<EscalationPolicy>,
@@ -88,7 +88,7 @@ export async function updateEscalationPolicy(
   return rows[0] ?? null
 }
 
-export async function deleteEscalationPolicy(db: PostgresClient, tenantId: string, policyId: number): Promise<boolean> {
+export async function deleteEscalationPolicy(db: DbPool, tenantId: string, policyId: number): Promise<boolean> {
   const { rowCount } = await db.query(
     'DELETE FROM escalation_policies WHERE id = $1 AND tenant_id = $2',
     [policyId, tenantId],
@@ -99,7 +99,7 @@ export async function deleteEscalationPolicy(db: PostgresClient, tenantId: strin
 /* ── Escalate a ticket ───────────────────────────────────────── */
 
 export async function escalateTicket(
-  db: PostgresClient,
+  db: DbPool,
   tenantId: string,
   ticketId: string,
   userId: string,
@@ -145,7 +145,7 @@ export async function escalateTicket(
   return rows[0]
 }
 
-export async function getTicketEscalations(db: PostgresClient, tenantId: string, ticketId: string): Promise<TicketEscalation[]> {
+export async function getTicketEscalations(db: DbPool, tenantId: string, ticketId: string): Promise<TicketEscalation[]> {
   const { rows } = await db.query(
     `SELECT e.*, u.name AS escalated_by_name
      FROM ticket_escalations e
@@ -160,7 +160,7 @@ export async function getTicketEscalations(db: PostgresClient, tenantId: string,
 /* ── Forward / Transfer ──────────────────────────────────────── */
 
 export async function forwardTicket(
-  db: PostgresClient,
+  db: DbPool,
   tenantId: string,
   ticketId: string,
   userId: string,
@@ -191,7 +191,7 @@ export async function forwardTicket(
 /* ── Merge tickets ───────────────────────────────────────────── */
 
 export async function mergeTickets(
-  db: PostgresClient,
+  db: DbPool,
   tenantId: string,
   primaryId: string,
   duplicateIds: string[],
@@ -229,7 +229,7 @@ export interface TicketActivity {
 }
 
 export async function logActivity(
-  db: PostgresClient,
+  db: DbPool,
   tenantId: string,
   ticketId: string,
   actorId: string,
@@ -243,7 +243,7 @@ export async function logActivity(
   )
 }
 
-export async function listActivity(db: PostgresClient, tenantId: string, ticketId: string): Promise<TicketActivity[]> {
+export async function listActivity(db: DbPool, tenantId: string, ticketId: string): Promise<TicketActivity[]> {
   const { rows } = await db.query(
     `SELECT a.*, u.name AS actor_name
      FROM ticket_activity a
@@ -259,7 +259,7 @@ export async function listActivity(db: PostgresClient, tenantId: string, ticketI
 /* ── Bulk actions ────────────────────────────────────────────── */
 
 export async function bulkUpdateTickets(
-  db: PostgresClient,
+  db: DbPool,
   tenantId: string,
   ticketIds: string[],
   userId: string,
@@ -291,7 +291,7 @@ export async function bulkUpdateTickets(
 
 /* ── Teams list (for forwarding) ─────────────────────────────── */
 
-export async function listTeams(db: PostgresClient, tenantId: string): Promise<Array<{ id: string; name: string }>> {
+export async function listTeams(db: DbPool, tenantId: string): Promise<Array<{ id: string; name: string }>> {
   const { rows } = await db.query(
     'SELECT id, name FROM teams WHERE tenant_id = $1 ORDER BY name',
     [tenantId],
@@ -299,7 +299,7 @@ export async function listTeams(db: PostgresClient, tenantId: string): Promise<A
   return rows
 }
 
-export async function listTeamMembers(db: PostgresClient, tenantId: string, teamId: string): Promise<Array<{ id: string; name: string; email: string }>> {
+export async function listTeamMembers(db: DbPool, tenantId: string, teamId: string): Promise<Array<{ id: string; name: string; email: string }>> {
   const { rows } = await db.query(
     `SELECT u.id, u.name, u.email FROM users u
      JOIN memberships m ON m.user_id = u.id

@@ -1,4 +1,4 @@
-import type { PostgresClient } from '../../db/pool.js'
+import type { DbPool } from '../../db/pool.js'
 
 export interface Note {
   id: number
@@ -18,7 +18,7 @@ export interface Note {
 
 const VALID_COLORS = ['yellow', 'green', 'blue', 'pink', 'purple', 'orange', 'gray']
 
-export async function listNotes(db: PostgresClient, tenantId: string, userId: string): Promise<Note[]> {
+export async function listNotes(db: DbPool, tenantId: string, userId: string): Promise<Note[]> {
   const result = await db.query(
     `SELECT id, tenant_id, user_id, title, body, color,
             position_x, position_y, width, height, is_pinned,
@@ -32,7 +32,7 @@ export async function listNotes(db: PostgresClient, tenantId: string, userId: st
 }
 
 export async function createNote(
-  db: PostgresClient,
+  db: DbPool,
   tenantId: string,
   userId: string,
   data: Partial<Pick<Note, 'title' | 'body' | 'color' | 'position_x' | 'position_y' | 'width' | 'height'>>,
@@ -57,7 +57,7 @@ export async function createNote(
 }
 
 export async function updateNote(
-  db: PostgresClient,
+  db: DbPool,
   tenantId: string,
   userId: string,
   noteId: number,
@@ -88,7 +88,7 @@ export async function updateNote(
 }
 
 export async function deleteNote(
-  db: PostgresClient,
+  db: DbPool,
   tenantId: string,
   userId: string,
   noteId: number,

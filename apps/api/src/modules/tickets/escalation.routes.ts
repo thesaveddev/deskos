@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { requireAuth } from '../../middleware/requireAuth.js'
+import { authenticate } from '../../middleware/authenticate.js'
 import { requireTenant } from '../../middleware/requireTenant.js'
 import { requirePermission } from '../../middleware/requirePermission.js'
 import {
@@ -12,25 +12,25 @@ import {
 } from './escalation.service.js'
 
 export async function escalationRoutes(app: FastifyInstance) {
-  app.addHook('preHandler', requireAuth)
+  app.addHook('preHandler', authenticate)
   app.addHook('preHandler', requireTenant)
 
   // ── Escalation policies ──
 
-  app.get('/escalation-policies', { preHandler: requirePermission('ticket.manage') }, async (req, reply) => {
+  app.get('/escalation-policies', { preHandler: requirePermission('ticket.write') }, async (req, reply) => {
     const ctx = (req as any).tenantCtx
     const policies = await listEscalationPolicies(app.db, ctx.tenantId)
     return reply.send({ policies })
   })
 
-  app.post('/escalation-policies', { preHandler: requirePermission('ticket.manage') }, async (req, reply) => {
+  app.post('/escalation-policies', { preHandler: requirePermission('ticket.write') }, async (req, reply) => {
     const ctx = (req as any).tenantCtx
     const body = (req.body || {}) as Record<string, unknown>
     const policy = await createEscalationPolicy(app.db, ctx.tenantId, body as any)
     return reply.code(201).send({ policy })
   })
 
-  app.patch('/escalation-policies/:id', { preHandler: requirePermission('ticket.manage') }, async (req, reply) => {
+  app.patch('/escalation-policies/:id', { preHandler: requirePermission('ticket.write') }, async (req, reply) => {
     const ctx = (req as any).tenantCtx
     const { id } = req.params as { id: string }
     const body = (req.body || {}) as Record<string, unknown>
@@ -39,7 +39,7 @@ export async function escalationRoutes(app: FastifyInstance) {
     return reply.send({ policy })
   })
 
-  app.delete('/escalation-policies/:id', { preHandler: requirePermission('ticket.manage') }, async (req, reply) => {
+  app.delete('/escalation-policies/:id', { preHandler: requirePermission('ticket.write') }, async (req, reply) => {
     const ctx = (req as any).tenantCtx
     const { id } = req.params as { id: string }
     const deleted = await deleteEscalationPolicy(app.db, ctx.tenantId, Number(id))
