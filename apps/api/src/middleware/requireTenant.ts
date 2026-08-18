@@ -50,6 +50,7 @@ export async function requireTenant(request: FastifyRequest, _reply: FastifyRepl
 
   request.tenantCtx = {
     tenantId: chosen.tenant_id,
+    userId: request.user.id,
     slug: chosen.slug,
     name: chosen.name,
     orgRole: chosen.org_role,

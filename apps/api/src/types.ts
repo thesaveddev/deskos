@@ -15,6 +15,7 @@ export interface AuthUser {
 
 export interface TenantContext {
   tenantId: string
+  userId: string
   slug: string
   name: string
   orgRole: OrgRole
