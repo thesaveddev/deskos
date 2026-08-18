@@ -35,9 +35,9 @@ export async function memberRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/members', { preHandler: [...guards, requirePermission('member.read')] }, async (request) => {
     const ctx = request.tenantCtx!
-    const { rows } = await app.db.query(
-      `SELECT m.id AS membership_id, m.org_role, m.status, m.created_at,
-              u.id AS user_id, u.email, u.name, u.status AS user_status
+    const { rows } = await app.db.query(        `SELECT m.id AS membership_id, m.org_role, m.status, m.created_at,
+              u.id AS user_id, u.email, u.name, u.status AS user_status,
+              u.mfa_enabled, u.webauthn_enabled
          FROM memberships m
          JOIN users u ON u.id = m.user_id
         WHERE m.tenant_id = $1
@@ -141,6 +141,71 @@ export async function memberRoutes(app: FastifyInstance): Promise<void> {
       }),
     )
     return { ok: true }
+  })
+
+  // ── Admin: Reset user MFA ──
+  app.post('/members/:membershipId/reset-mfa', { preHandler: [...guards, requirePermission('member.manage')] }, async (request) => {
+    const ctx = request.tenantCtx!
+    const { membershipId } = request.params as { membershipId: string }
+    const current = (
+      await app.db.query('SELECT id, user_id FROM memberships WHERE id = $1 AND tenant_id = $2', [membershipId, ctx.tenantId])
+    ).rows[0]
+    if (!current) throw AppError.notFound('Membership not found')
+
+    await app.db.query(
+      `UPDATE users SET mfa_enabled = false, mfa_secret = NULL WHERE id = $1`,
+      [current.user_id],
+    )
+
+    await withTenant(app.db, ctx.tenantId, (client) =>
+      recordAudit(client, ctx.tenantId, {
+        actorId: request.user!.id,
+        action: 'member.mfa_reset',
+        objectType: 'user',
+        objectId: current.user_id,
+        ip: request.ip,
+      }),
+    )
+    return { ok: true }
+  })
+
+  // ── Admin: Reset user passkeys ──
+  app.post('/members/:membershipId/reset-passkeys', { preHandler: [...guards, requirePermission('member.manage')] }, async (request) => {
+    const ctx = request.tenantCtx!
+    const { membershipId } = request.params as { membershipId: string }
+    const current = (
+      await app.db.query('SELECT id, user_id FROM memberships WHERE id = $1 AND tenant_id = $2', [membershipId, ctx.tenantId])
+    ).rows[0]
+    if (!current) throw AppError.notFound('Membership not found')
+
+    await app.db.query('DELETE FROM webauthn_credentials WHERE user_id = $1', [current.user_id])
+    await app.db.query('UPDATE users SET webauthn_enabled = false WHERE id = $1', [current.user_id])
+
+    await withTenant(app.db, ctx.tenantId, (client) =>
+      recordAudit(client, ctx.tenantId, {
+        actorId: request.user!.id,
+        action: 'member.passkeys_reset',
+        objectType: 'user',
+        objectId: current.user_id,
+        ip: request.ip,
+      }),
+    )
+    return { ok: true }
+  })
+
+  // ── Admin: List all passkeys across org users ──
+  app.get('/members/all-passkeys', { preHandler: [...guards, requirePermission('member.manage')] }, async (request) => {
+    const ctx = request.tenantCtx!
+    const { rows } = await app.db.query(
+      `SELECT wc.id AS credential_id, wc.device_name, wc.created_at, wc.last_used_at,
+              u.id AS user_id, u.name AS user_name, u.email AS user_email
+         FROM webauthn_credentials wc
+         JOIN users u ON u.id = wc.user_id
+         JOIN memberships m ON m.user_id = u.id AND m.tenant_id = $1
+        ORDER BY wc.created_at DESC`,
+      [ctx.tenantId],
+    )
+    return { passkeys: rows }
   })
 
   app.delete('/members/:membershipId', { preHandler: [...guards, requirePermission('member.manage')] }, async (request) => {

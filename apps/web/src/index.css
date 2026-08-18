@@ -8292,3 +8292,164 @@ select.ts-input { cursor: pointer; }
 .rpt-table tbody tr:hover { background: var(--bg-2); }
 .rpt-table tbody tr:last-child td { border-bottom: none; }
 .rpt-table .num { text-align: right; 
+
+/* ═══════════════════════════════════════════════════════════════
+   SECURITY SETTINGS — Tabbed MFA & Passkey Management
+   ═══════════════════════════════════════════════════════════════ */
+
+.sec-page { max-width: 960px; }
+.sec-header { margin-bottom: 20px; }
+.sec-header-sub { color: var(--text-2); font-size: 13px; margin-top: 4px; }
+
+/* Tabs */
+.sec-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line-1); margin-bottom: 24px; overflow-x: auto; }
+.sec-tab {
+  display: flex; align-items: center; gap: 6px; padding: 10px 16px; border: none;
+  border-bottom: 2px solid transparent; background: none; color: var(--text-2);
+  font-family: inherit; font-size: 13px; font-weight: 500; cursor: pointer;
+  white-space: nowrap; transition: all 0.15s;
+}
+.sec-tab:hover { color: var(--text-1); }
+.sec-tab.active { color: var(--text-1); border-bottom-color: var(--accent); }
+.sec-tab svg { flex-shrink: 0; }
+
+/* Section */
+.sec-section { display: flex; flex-direction: column; gap: 20px; }
+.sec-section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.sec-section-title { font-size: 16px; font-weight: 600; }
+.sec-section-desc { color: var(--text-2); font-size: 13px; margin-top: 2px; }
+
+/* Policy Cards */
+.sec-policy-grid { display: flex; flex-direction: column; gap: 10px; }
+.sec-policy-card {
+  display: flex; align-items: center; gap: 16px; padding: 16px 20px;
+  background: var(--bg-1); border: 2px solid var(--line-1); border-radius: var(--radius);
+  cursor: pointer; transition: all 0.15s; text-align: left; width: 100%;
+}
+.sec-policy-card:hover { border-color: var(--line-2); background: var(--bg-2); }
+.sec-policy-card.active { border-color: var(--accent); background: rgba(232, 163, 61, 0.06); }
+.sec-policy-icon { font-size: 20px; color: var(--text-3); width: 28px; text-align: center; flex-shrink: 0; }
+.sec-policy-card.active .sec-policy-icon { color: var(--accent); }
+.sec-policy-info { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.sec-policy-name { font-size: 14px; font-weight: 600; color: var(--text-1); }
+.sec-policy-desc { font-size: 12px; color: var(--text-2); line-height: 1.4; }
+.sec-policy-check { color: var(--accent); font-size: 18px; font-weight: 700; }
+
+/* Stats */
+.sec-stats-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.sec-stat {
+  display: flex; align-items: center; gap: 8px; padding: 10px 16px;
+  background: var(--bg-1); border: 1px solid var(--line-1); border-radius: var(--radius);
+}
+.sec-stat-num { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text-1); }
+.sec-stat-label { font-size: 12px; color: var(--text-2); }
+.sec-stat-warn { border-color: rgba(217, 160, 60, 0.4); background: rgba(217, 160, 60, 0.06); }
+.sec-stat-warn .sec-stat-num { color: var(--warn); }
+
+/* Info Box */
+.sec-info-box {
+  background: var(--bg-1); border: 1px solid var(--line-1); border-radius: var(--radius);
+  padding: 16px 20px;
+}
+.sec-info-box h4 { font-size: 13px; font-weight: 600; margin-bottom: 10px; color: var(--text-1); }
+.sec-info-box ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
+.sec-info-box li { font-size: 12.5px; color: var(--text-2); line-height: 1.5; }
+.sec-info-box li strong { color: var(--text-1); }
+
+/* Filter Pills */
+.sec-filter-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.sec-filter-pill {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px;
+  border-radius: 20px; border: 1px solid var(--line-2); background: transparent;
+  color: var(--text-2); font-family: inherit; font-size: 12.5px; font-weight: 500;
+  cursor: pointer; transition: all 0.15s;
+}
+.sec-filter-pill:hover { background: var(--bg-2); color: var(--text-1); }
+.sec-filter-pill.active { background: var(--accent); color: #1b1408; border-color: var(--accent); }
+.sec-filter-ok.active { background: var(--ok); color: #fff; border-color: var(--ok); }
+.sec-filter-warn.active { background: var(--warn); color: #1b1408; border-color: var(--warn); }
+.sec-filter-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px;
+  background: rgba(0, 0, 0, 0.12); font-size: 11px; font-weight: 600;
+  font-family: var(--font-mono);
+}
+
+/* Table */
+.sec-table-wrap { overflow-x: auto; border: 1px solid var(--line-1); border-radius: var(--radius); background: var(--bg-1); }
+.sec-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.sec-table th {
+  text-align: left; font-size: 11px; font-weight: 600; color: var(--text-2);
+  text-transform: uppercase; letter-spacing: 0.06em; padding: 10px 16px;
+  border-bottom: 2px solid var(--line-1); background: var(--bg-2);
+}
+.sec-table td { padding: 12px 16px; border-bottom: 1px solid var(--line-1); color: var(--text-1); }
+.sec-table tbody tr:hover { background: var(--bg-2); }
+.sec-table tbody tr:last-child td { border-bottom: none; }
+.sec-empty { text-align: center; color: var(--text-3); padding: 32px !important; }
+
+/* User Cell */
+.sec-user-cell { display: flex; align-items: center; gap: 10px; }
+.sec-avatar {
+  width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center;
+  justify-content: center; background: var(--bg-2); border: 1px solid var(--line-2);
+  color: var(--accent); font-weight: 600; font-size: 13px; flex-shrink: 0;
+}
+.sec-user-name { display: block; font-weight: 500; font-size: 13px; color: var(--text-1); }
+.sec-user-email { display: block; font-size: 11.5px; color: var(--text-3); font-family: var(--font-mono); }
+
+/* Role Badge */
+.sec-role-badge {
+  display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px;
+  font-weight: 600; text-transform: capitalize;
+}
+.sec-role-owner { background: rgba(232, 163, 61, 0.15); color: #e8a33d; }
+.sec-role-admin { background: rgba(139, 92, 246, 0.15); color: #a78bfa; }
+.sec-role-manager { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
+.sec-role-technician { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+.sec-role-analyst { background: rgba(6, 182, 212, 0.15); color: #22d3ee; }
+.sec-role-end_user { background: var(--bg-2); color: var(--text-2); }
+
+/* Status Dot */
+.sec-status-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  margin-right: 6px; vertical-align: middle;
+}
+.sec-status-dot.on { background: var(--ok); box-shadow: 0 0 6px rgba(16, 185, 129, 0.4); }
+.sec-status-dot.off { background: var(--text-3); }
+.sec-status-text { font-size: 12.5px; color: var(--text-2); vertical-align: middle; }
+
+/* Actions */
+.sec-actions { display: flex; gap: 6px; }
+
+/* Passkey Card */
+.sec-passkey-list { display: flex; flex-direction: column; gap: 8px; }
+.sec-passkey-card {
+  display: flex; align-items: center; gap: 14px; padding: 14px 18px;
+  background: var(--bg-1); border: 1px solid var(--line-1); border-radius: var(--radius);
+}
+.sec-passkey-icon {
+  width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;
+  border-radius: 10px; background: var(--bg-2); color: var(--accent); flex-shrink: 0;
+}
+.sec-passkey-info { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.sec-passkey-name { font-size: 14px; font-weight: 500; color: var(--text-1); }
+.sec-passkey-meta { font-size: 11.5px; color: var(--text-3); }
+
+/* Passkey Device (org table) */
+.sec-pk-device { display: flex; align-items: center; gap: 8px; color: var(--text-1); font-weight: 500; }
+.sec-date { font-size: 12px; color: var(--text-2); font-family: var(--font-mono); }
+
+/* Register Row */
+.sec-register-row { display: flex; gap: 10px; align-items: center; }
+.sec-register-input { flex: 1; max-width: 320px; }
+
+/* Empty State */
+.sec-empty-state {
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  padding: 40px 20px; background: var(--bg-1); border: 1px dashed var(--line-2);
+  border-radius: var(--radius); color: var(--text-3); font-size: 13px; text-align: center;
+}
+
+/* Loading */
+.sec-loading { padding: 32px; text-align: center; color: var(--text-3); font-size: 13px; }
