@@ -1,58 +1,96 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useCallback } from 'react'
 import { Shell } from '../components/Shell.js'
 import { Alert } from '../components/ui.js'
 import { STATUS_LABELS } from '../lib/tickets.js'
-import { formatMinutes, getTicketReport, getAnalyticsReport, getComplianceReport, type TicketReport, type AnalyticsReport, type ComplianceReport } from '../lib/reports.js'
+import {
+  getOverviewReport, getTicketReport, getAnalyticsReport, getComplianceReport,
+  formatMinutes, exportCSV, exportJSON, exportHTML, printReport,
+  type OverviewReport, type TicketReport, type AnalyticsReport, type ComplianceReport,
+} from '../lib/reports.js'
 
 /* ═══════════════════════════════════════════════════════════════
-   SVG Mini-charts (no external dependencies)
+   Constants
    ═══════════════════════════════════════════════════════════════ */
 
-const CHART_COLORS = ['#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316']
+const COLORS = ['#e8a33d', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316', '#14b8a6', '#a855f7']
+const STATUS_COLORS: Record<string, string> = {
+  new: '#3b82f6', open: '#3b82f6', in_progress: '#e8a33d', pending_user: '#f59e0b',
+  pending_vendor: '#f59e0b', escalated: '#ef4444', resolved: '#10b981', closed: '#6b7280',
+}
+const PRIORITY_COLORS: Record<string, string> = { p1: '#ef4444', p2: '#f59e0b', p3: '#3b82f6', p4: '#10b981' }
+const PRIORITY_LABELS: Record<string, string> = { p1: 'Critical', p2: 'High', p3: 'Medium', p4: 'Low' }
 
-function LineChart({ data, width = 600, height = 200, color = 'var(--accent)', label }: {
-  data: Array<{ label: string; value: number }>; width?: number; height?: number; color?: string; label?: string
+type Tab = 'overview' | 'tickets' | 'agents' | 'sessions' | 'compliance'
+type DatePreset = 'today' | '7d' | '30d' | '90d' | 'all' | 'custom'
+
+function dateRange(preset: DatePreset, customFrom?: string, customTo?: string): { from?: string; to?: string } {
+  const now = new Date()
+  const end = now.toISOString()
+  switch (preset) {
+    case 'today': {
+      const start = new Date(now); start.setHours(0, 0, 0, 0)
+      return { from: start.toISOString(), to: end }
+    }
+    case '7d': {
+      const from = new Date(now); from.setDate(from.getDate() - 7)
+      return { from: from.toISOString(), to: end }
+    }
+    case '30d': {
+      const from = new Date(now); from.setDate(from.getDate() - 30)
+      return { from: from.toISOString(), to: end }
+    }
+    case '90d': {
+      const from = new Date(now); from.setDate(from.getDate() - 90)
+      return { from: from.toISOString(), to: end }
+    }
+    case 'all': return {}
+    case 'custom': return { from: customFrom, to: customTo }
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   SVG Charts
+   ═══════════════════════════════════════════════════════════════ */
+
+function LineChart({ data, width = 700, height = 220, color = 'var(--accent)', label, showArea = true, showDots = true }: {
+  data: Array<{ label: string; value: number }>; width?: number; height?: number; color?: string; label?: string; showArea?: boolean; showDots?: boolean
 }) {
-  if (data.length === 0) return null
-  const pad = { top: 20, right: 20, bottom: 40, left: 50 }
+  if (data.length === 0) return <div className="report-empty">No data available</div>
+  const pad = { top: 24, right: 16, bottom: 44, left: 56 }
   const w = width - pad.left - pad.right
   const h = height - pad.top - pad.bottom
-  const max = Math.max(1, ...data.map((d) => d.value))
+  const max = Math.max(1, ...data.map(d => d.value))
   const points = data.map((d, i) => ({
     x: pad.left + (data.length === 1 ? w / 2 : (i / (data.length - 1)) * w),
     y: pad.top + h - (d.value / max) * h,
   }))
   const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ')
   const areaD = `${pathD} L${points[points.length - 1].x},${pad.top + h} L${points[0].x},${pad.top + h} Z`
-  const xTicks = data.length <= 10 ? data : data.filter((_, i) => i % Math.ceil(data.length / 8) === 0 || i === data.length - 1)
+  const gradId = `grad-${color.replace(/[^a-z0-9]/gi, '')}-${label ?? 'main'}`
+  const ticks = data.length <= 12 ? data : data.filter((_, i) => i % Math.ceil(data.length / 10) === 0 || i === data.length - 1)
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="report-chart" preserveAspectRatio="xMidYMid meet">
-      {label && <text x={pad.left} y={14} className="chart-title">{label}</text>}
+    <svg viewBox={`0 0 ${width} ${height}`} className="rpt-chart" preserveAspectRatio="xMidYMid meet">
+      {label && <text x={pad.left} y={16} className="rpt-chart-title">{label}</text>}
       <defs>
-        <linearGradient id={`lg-${color.replace(/[^a-z0-9]/gi, '')}`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.2" />
-          <stop offset="100%" stopColor={color} stopOpacity="0.02" />
+        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.15" />
+          <stop offset="100%" stopColor={color} stopOpacity="0.01" />
         </linearGradient>
       </defs>
-      {/* Grid lines */}
-      {[0, 0.25, 0.5, 0.75, 1].map((f) => (
+      {[0, 0.25, 0.5, 0.75, 1].map(f => (
         <g key={f}>
-          <line x1={pad.left} y1={pad.top + h * (1 - f)} x2={pad.left + w} y2={pad.top + h * (1 - f)} className="chart-grid" />
-          <text x={pad.left - 8} y={pad.top + h * (1 - f) + 4} className="chart-tick" textAnchor="end">{Math.round(max * f)}</text>
+          <line x1={pad.left} y1={pad.top + h * (1 - f)} x2={pad.left + w} y2={pad.top + h * (1 - f)} className="rpt-grid" />
+          <text x={pad.left - 8} y={pad.top + h * (1 - f) + 4} className="rpt-tick" textAnchor="end">{Math.round(max * f)}</text>
         </g>
       ))}
-      {/* Area */}
-      <path d={areaD} fill={`url(#lg-${color.replace(/[^a-z0-9]/gi, '')})`} />
-      {/* Line */}
+      {showArea && <path d={areaD} fill={`url(#${gradId})`} />}
       <path d={pathD} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-      {/* Dots */}
-      {points.map((p, i) => (
-        <circle key={i} cx={p.x} cy={p.y} r="3.5" fill={color} stroke="var(--bg-1)" strokeWidth="2" />
+      {showDots && points.map((p, i) => (
+        <circle key={i} cx={p.x} cy={p.y} r="3" fill={color} stroke="var(--bg-1)" strokeWidth="2" />
       ))}
-      {/* X labels */}
-      {xTicks.map((d, i) => {
+      {ticks.map((d, i) => {
         const idx = data.indexOf(d)
-        return <text key={i} x={points[idx]?.x ?? 0} y={height - 8} className="chart-tick" textAnchor="middle">{d.label.length > 5 ? d.label.slice(5) : d.label}</text>
+        return <text key={i} x={points[idx]?.x ?? 0} y={height - 10} className="rpt-tick" textAnchor="middle">{d.label.length > 5 ? d.label.slice(5) : d.label}</text>
       })}
     </svg>
   )
@@ -62,75 +100,158 @@ function DonutChart({ segments, size = 180, thickness = 28, label }: {
   segments: Array<{ value: number; color: string; label: string }>; size?: number; thickness?: number; label?: string
 }) {
   const total = segments.reduce((s, seg) => s + seg.value, 0)
-  if (total === 0) return null
+  if (total === 0) return <div className="report-empty">No data</div>
   const r = (size - thickness) / 2
   const circ = 2 * Math.PI * r
   let acc = 0
   return (
-    <div className="donut-wrap">
-      {label && <span className="chart-title-text">{label}</span>}
-      <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size} className="report-chart">
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--line-1)" strokeWidth={thickness} />
-        {segments.map((seg) => {
-          const pct = seg.value / total
-          const dash = circ * pct
-          const dashOff = circ * (1 - acc / total) + circ * 0.25
-          acc += seg.value
-          return (
-            <circle key={seg.label} cx={size / 2} cy={size / 2} r={r} fill="none"
-              stroke={seg.color} strokeWidth={thickness} strokeDasharray={`${dash} ${circ - dash}`}
-              strokeDashoffset={dashOff} strokeLinecap="butt" />
-          )
-        })}
-        <text x={size / 2} y={size / 2 - 6} className="donut-center" textAnchor="middle">{total}</text>
-        <text x={size / 2} y={size / 2 + 14} className="donut-sub" textAnchor="middle">total</text>
-      </svg>
-      <div className="donut-legend">
-        {segments.map((seg) => (
-          <span key={seg.label} className="donut-legend-item">
-            <span className="donut-legend-dot" style={{ background: seg.color }} />
-            {seg.label} ({seg.value})
-          </span>
-        ))}
+    <div className="rpt-donut-wrap">
+      {label && <span className="rpt-card-subtitle">{label}</span>}
+      <div className="rpt-donut-inner">
+        <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size} className="rpt-chart">
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--line-1)" strokeWidth={thickness} />
+          {segments.map(seg => {
+            const pct = seg.value / total
+            const dash = circ * pct
+            const dashOff = circ * (1 - acc / total) + circ * 0.25
+            acc += seg.value
+            return (
+              <circle key={seg.label} cx={size / 2} cy={size / 2} r={r} fill="none"
+                stroke={seg.color} strokeWidth={thickness} strokeDasharray={`${dash} ${circ - dash}`}
+                strokeDashoffset={dashOff} strokeLinecap="butt" />
+            )
+          })}
+          <text x={size / 2} y={size / 2 - 6} className="rpt-donut-center" textAnchor="middle">{total}</text>
+          <text x={size / 2} y={size / 2 + 14} className="rpt-donut-sub" textAnchor="middle">total</text>
+        </svg>
+        <div className="rpt-donut-legend">
+          {segments.map(seg => (
+            <span key={seg.label} className="rpt-legend-item">
+              <span className="rpt-legend-dot" style={{ background: seg.color }} />
+              {seg.label} <span className="rpt-legend-count">({seg.value})</span>
+            </span>
+          ))}
+        </div>
       </div>
     </div>
   )
 }
 
-function HorizontalBarChart({ data, maxValue, color = 'var(--accent)' }: {
-  data: Array<{ label: string; value: number; sub?: string }>; maxValue?: number; color?: string
+function BarChart({ data, color = 'var(--accent)', horizontal = true }: {
+  data: Array<{ label: string; value: number; sub?: string; color?: string }>; color?: string; horizontal?: boolean
 }) {
-  const max = maxValue ?? Math.max(1, ...data.map((d) => d.value))
-  return (
-    <div className="hbar-list">
-      {data.map((d) => (
-        <div key={d.label} className="hbar-row">
-          <span className="hbar-label">{d.label}</span>
-          <div className="hbar-track">
-            <div className="hbar-fill" style={{ width: `${(d.value / max) * 100}%`, background: color }} />
+  const max = Math.max(1, ...data.map(d => d.value))
+  if (horizontal) {
+    return (
+      <div className="rpt-hbar">
+        {data.map(d => (
+          <div key={d.label} className="rpt-hbar-row">
+            <span className="rpt-hbar-label">{d.label}</span>
+            <div className="rpt-hbar-track">
+              <div className="rpt-hbar-fill" style={{ width: `${(d.value / max) * 100}%`, background: d.color ?? color }} />
+            </div>
+            <span className="rpt-hbar-value mono">{d.value}{d.sub ? <span className="rpt-hbar-sub"> {d.sub}</span> : null}</span>
           </div>
-          <span className="hbar-value mono">{d.value}{d.sub ? <span className="hbar-sub"> {d.sub}</span> : null}</span>
+        ))}
+      </div>
+    )
+  }
+  // Vertical bars
+  return (
+    <div className="rpt-vbar">
+      {data.map(d => (
+        <div key={d.label} className="rpt-vbar-col">
+          <span className="rpt-vbar-value mono">{d.value}</span>
+          <div className="rpt-vbar-track">
+            <div className="rpt-vbar-fill" style={{ height: `${(d.value / max) * 100}%`, background: d.color ?? color }} />
+          </div>
+          <span className="rpt-vbar-label">{d.label}</span>
         </div>
       ))}
     </div>
   )
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   Stat Card
-   ═══════════════════════════════════════════════════════════════ */
+function HeatmapChart({ data, width = 700, label }: {
+  data: Array<{ hour: number; n: number }>; width?: number; label?: string
+}) {
+  const max = Math.max(1, ...data.map(d => d.n))
+  const cellW = (width - 80) / 24
+  const cellH = 32
+  return (
+    <div className="rpt-heatmap-wrap">
+      {label && <span className="rpt-card-subtitle">{label}</span>}
+      <svg viewBox={`0 0 ${width} ${cellH + 40}`} className="rpt-chart" preserveAspectRatio="xMidYMid meet">
+        {Array.from({ length: 24 }, (_, h) => {
+          const d = data.find(x => x.hour === h)
+          const n = d?.n ?? 0
+          const intensity = max > 0 ? n / max : 0
+          const r = Math.round(232 * intensity + 26 * (1 - intensity))
+          const g = Math.round(163 * intensity + 32 * (1 - intensity))
+          const b = Math.round(61 * intensity + 39 * (1 - intensity))
+          return (
+            <g key={h}>
+              <rect x={80 + h * cellW} y={4} width={cellW - 2} height={cellH} rx={4}
+                fill={`rgb(${r},${g},${b})`} opacity={0.2 + intensity * 0.8} />
+              <text x={80 + h * cellW + cellW / 2} y={cellH + 20} className="rpt-tick" textAnchor="middle" fontSize="10">{h}</text>
+              <text x={80 + h * cellW + cellW / 2} y={cellH / 2 + 8} className="rpt-heatmap-val" textAnchor="middle"
+                fill={intensity > 0.5 ? '#fff' : 'var(--text-2)'} fontSize="11">{n}</text>
+            </g>
+          )
+        })}
+      </svg>
+    </div>
+  )
+}
 
-function StatCard({ label, value, sub, tone = 'default', icon }: {
-  label: string; value: string | number; sub?: string; tone?: 'default' | 'ok' | 'crit' | 'warn'; icon?: React.ReactNode
+function TrendIndicator({ value, label }: { value: number; label?: string }) {
+  const isPositive = value > 0
+  const isNegative = value < 0
+  return (
+    <span className={`rpt-trend ${isPositive ? 'rpt-trend-up' : isNegative ? 'rpt-trend-down' : 'rpt-trend-flat'}`}>
+      {isPositive ? '↑' : isNegative ? '↓' : '→'} {Math.abs(value).toFixed(1)}%{label ? ` ${label}` : ''}
+    </span>
+  )
+}
+
+function StatCard({ label, value, sub, tone = 'default', icon, trend }: {
+  label: string; value: string | number; sub?: string; tone?: 'default' | 'ok' | 'crit' | 'warn' | 'info'; icon?: React.ReactNode; trend?: number
 }) {
   return (
-    <div className={`report-stat-card stat-${tone}`}>
-      <div className="report-stat-header">
-        {icon && <span className="report-stat-icon">{icon}</span>}
-        <span className="report-stat-label">{label}</span>
+    <div className={`rpt-stat rpt-stat-${tone}`}>
+      <div className="rpt-stat-head">
+        {icon && <span className="rpt-stat-icon">{icon}</span>}
+        <span className="rpt-stat-label">{label}</span>
       </div>
-      <span className="report-stat-value">{value}</span>
-      {sub && <span className="report-stat-sub">{sub}</span>}
+      <div className="rpt-stat-body">
+        <span className="rpt-stat-value">{value}</span>
+        {trend !== undefined && <TrendIndicator value={trend} />}
+      </div>
+      {sub && <span className="rpt-stat-sub">{sub}</span>}
+    </div>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Export Helpers
+   ═══════════════════════════════════════════════════════════════ */
+
+function ExportMenu({ onExport }: { onExport: (format: string) => void }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="rpt-export-wrap">
+      <button className="btn btn-ghost btn-sm" onClick={() => setOpen(!open)}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Export
+      </button>
+      {open && (
+        <div className="rpt-export-dropdown">
+          <button onClick={() => { onExport('csv'); setOpen(false) }}>CSV Spreadsheet</button>
+          <button onClick={() => { onExport('json'); setOpen(false) }}>JSON Data</button>
+          <button onClick={() => { onExport('html'); setOpen(false) }}>HTML Report</button>
+          <button onClick={() => { onExport('print'); setOpen(false) }}>Print / PDF</button>
+        </div>
+      )}
     </div>
   )
 }
@@ -139,235 +260,475 @@ function StatCard({ label, value, sub, tone = 'default', icon }: {
    Main Page
    ═══════════════════════════════════════════════════════════════ */
 
-type Tab = 'overview' | 'tickets' | 'agents' | 'sessions' | 'compliance'
-
 export default function ReportsPage() {
   const [tab, setTab] = useState<Tab>('overview')
+  const [datePreset, setDatePreset] = useState<DatePreset>('30d')
+  const [customFrom, setCustomFrom] = useState('')
+  const [customTo, setCustomTo] = useState('')
+  const [overview, setOverview] = useState<OverviewReport | null>(null)
   const [ticketReport, setTicketReport] = useState<TicketReport | null>(null)
   const [analytics, setAnalytics] = useState<AnalyticsReport | null>(null)
   const [compliance, setCompliance] = useState<ComplianceReport | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    Promise.allSettled([getTicketReport(), getAnalyticsReport(), getComplianceReport()]).then(([t, a, c]) => {
-      if (t.status === 'fulfilled') setTicketReport(t.value)
-      if (a.status === 'fulfilled') setAnalytics(a.value)
-      if (c.status === 'fulfilled') setCompliance(c.value)
-      if (t.status === 'rejected') setError(t.reason instanceof Error ? t.reason.message : 'Failed to load reports')
-    })
-  }, [])
+  const range = useMemo(() => dateRange(datePreset, customFrom, customTo), [datePreset, customFrom, customTo])
 
-  const dailyData = useMemo(() => {
-    if (!ticketReport) return []
-    return ticketReport.createdDaily.map((d) => ({ label: d.day, value: d.n }))
+  const loadAll = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const [ov, tk, an, co] = await Promise.allSettled([
+        getOverviewReport(range),
+        getTicketReport(),
+        getAnalyticsReport(),
+        getComplianceReport(),
+      ])
+      if (ov.status === 'fulfilled') setOverview(ov.value)
+      if (tk.status === 'fulfilled') setTicketReport(tk.value)
+      if (an.status === 'fulfilled') setAnalytics(an.value)
+      if (co.status === 'fulfilled') setCompliance(co.value)
+      if (ov.status === 'rejected') setError(ov.reason instanceof Error ? ov.reason.message : 'Failed to load reports')
+    } finally { setLoading(false) }
+  }, [range.from, range.to])
+
+  useEffect(() => { loadAll() }, [loadAll])
+
+  /* ─── Export handlers ─── */
+  const handleExportOverview = useCallback((format: string) => {
+    if (!overview) return
+    const title = `DeskOS Overview Report`
+    if (format === 'csv') {
+      exportCSV(
+        ['Metric', 'Value'],
+        [
+          ['Total Tickets', overview.totals.total],
+          ['Open Tickets', overview.totals.open],
+          ['Resolved Tickets', overview.totals.resolved],
+          ['SLA Compliance', `${overview.sla.complianceRate}%`],
+          ['Avg Resolution Time', formatMinutes(overview.resolution.avg_minutes)],
+          ['Avg First Response', formatMinutes(overview.firstResponse.avg_minutes)],
+          ['Total Sessions', overview.sessions.total],
+          ['Live Sessions', overview.sessions.live],
+        ],
+        'deskos-overview',
+      )
+    } else if (format === 'json') {
+      exportJSON(overview, 'deskos-overview')
+    } else if (format === 'html') {
+      exportHTML(title, `
+        <table><tr><th>Metric</th><th class="num">Value</th></tr>
+        <tr><td>Total Tickets</td><td class="num">${overview.totals.total}</td></tr>
+        <tr><td>Open</td><td class="num">${overview.totals.open}</td></tr>
+        <tr><td>Resolved</td><td class="num">${overview.totals.resolved}</td></tr>
+        <tr><td>SLA Compliance</td><td class="num">${overview.sla.complianceRate}%</td></tr>
+        <tr><td>Avg Resolution</td><td class="num">${formatMinutes(overview.resolution.avg_minutes)}</td></tr>
+        <tr><td>Avg Response</td><td class="num">${formatMinutes(overview.firstResponse.avg_minutes)}</td></tr>
+        <tr><td>Total Sessions</td><td class="num">${overview.sessions.total}</td></tr>
+        <tr><td>Live Sessions</td><td class="num">${overview.sessions.live}</td></tr>
+        </table>`, 'deskos-overview')
+    } else if (format === 'print') {
+      printReport(title, `
+        <table><tr><th>Metric</th><th class="num">Value</th></tr>
+        <tr><td>Total Tickets</td><td class="num">${overview.totals.total}</td></tr>
+        <tr><td>Open</td><td class="num">${overview.totals.open}</td></tr>
+        <tr><td>Resolved</td><td class="num">${overview.totals.resolved}</td></tr>
+        <tr><td>SLA Compliance</td><td class="num">${overview.sla.complianceRate}%</td></tr>
+        <tr><td>Avg Resolution</td><td class="num">${formatMinutes(overview.resolution.avg_minutes)}</td></tr>
+        <tr><td>Avg Response</td><td class="num">${formatMinutes(overview.firstResponse.avg_minutes)}</td></tr></table>`)
+    }
+  }, [overview])
+
+  const handleExportTickets = useCallback((format: string) => {
+    if (!ticketReport) return
+    if (format === 'csv') {
+      exportCSV(
+        ['Status', 'Count'],
+        ticketReport.byStatus.map(s => [STATUS_LABELS[s.status] ?? s.status, s.n]),
+        'deskos-ticket-status',
+      )
+    } else if (format === 'json') {
+      exportJSON(ticketReport, 'deskos-tickets')
+    }
   }, [ticketReport])
 
-  const sessionDailyData = useMemo(() => {
-    if (!analytics) return []
-    return analytics.sessions.perDay.map((d) => ({ label: d.day, value: d.n }))
-  }, [analytics])
+  const handleExportAgents = useCallback((format: string) => {
+    if (!overview) return
+    if (format === 'csv') {
+      exportCSV(
+        ['Agent', 'Total', 'Open', 'Resolved', 'Avg Resolution', 'Avg Response'],
+        overview.byAssignee.map(a => [a.name, a.total, a.open, a.resolved, formatMinutes(a.avg_resolution_min), formatMinutes(a.avg_response_min)]),
+        'deskos-agent-performance',
+      )
+    } else if (format === 'json') {
+      exportJSON(overview.byAssignee, 'deskos-agents')
+    }
+  }, [overview])
+
+  /* ─── Helper ─── */
+  const TrendFromAvg = (vals: number[]): number | undefined => {
+    if (vals.length < 2) return undefined
+    const mid = Math.floor(vals.length / 2)
+    const first = vals.slice(0, mid).reduce((a, b) => a + b, 0) / mid
+    const second = vals.slice(mid).reduce((a, b) => a + b, 0) / (vals.length - mid)
+    if (first === 0) return undefined
+    return ((second - first) / first) * 100
+  }
 
   return (
     <Shell>
-      <div className="page-head">
-        <h1 className="page-title">Reports & Analytics</h1>
-        <div className="report-tabs">
-          {(['overview', 'tickets', 'agents', 'sessions', 'compliance'] as Tab[]).map((t) => (
-            <button key={t} className={`report-tab${tab === t ? ' active' : ''}`} onClick={() => setTab(t)}>
-              {t.charAt(0).toUpperCase() + t.slice(1)}
-            </button>
-          ))}
+      {/* ─── Header ─── */}
+      <div className="rpt-header">
+        <div className="rpt-header-left">
+          <h1 className="page-title">Reports & Analytics</h1>
+          <span className="rpt-header-sub">DeskOS · {datePreset === 'all' ? 'All time' : datePreset === 'custom' ? `${customFrom || '...'} to ${customTo || '...'}` : `Last ${datePreset.replace('d', ' days').replace('today', '24 hours')}`}</span>
+        </div>
+        <div className="rpt-header-right">
+          <ExportMenu onExport={() => handleExportOverview('csv')} />
         </div>
       </div>
 
-      {error ? <Alert kind="error">{error}</Alert> : null}
-      {!ticketReport && !error ? <div className="etch" style={{ padding: 24 }}>Loading reports…</div> : null}
+      {/* ─── Date Picker ─── */}
+      <div className="rpt-toolbar">
+        <div className="rpt-date-presets">
+          {(['today', '7d', '30d', '90d', 'all'] as DatePreset[]).map(p => (
+            <button key={p} className={`rpt-preset ${datePreset === p ? 'active' : ''}`}
+              onClick={() => { setDatePreset(p); }}>
+              {p === 'today' ? 'Today' : p === '7d' ? '7 Days' : p === '30d' ? '30 Days' : p === '90d' ? '90 Days' : 'All Time'}
+            </button>
+          ))}
+          <button className={`rpt-preset ${datePreset === 'custom' ? 'active' : ''}`}
+            onClick={() => setDatePreset('custom')}>
+            Custom
+          </button>
+          {datePreset === 'custom' && (
+            <div className="rpt-custom-dates">
+              <input type="date" className="rpt-date-input" value={customFrom} onChange={e => setCustomFrom(e.target.value)} />
+              <span className="rpt-date-sep">to</span>
+              <input type="date" className="rpt-date-input" value={customTo} onChange={e => setCustomTo(e.target.value)} />
+            </div>
+          )}
+        </div>
+        <button className="btn btn-ghost btn-sm" onClick={loadAll} disabled={loading}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          Refresh
+        </button>
+      </div>
 
-      {ticketReport && tab === 'overview' && (
-        <div className="report-sections">
+      {/* ─── Tabs ─── */}
+      <div className="rpt-tabs">
+        {([
+          { id: 'overview', label: 'Overview', icon: '◈' },
+          { id: 'tickets', label: 'Tickets', icon: '☐' },
+          { id: 'agents', label: 'Agents', icon: '◉' },
+          { id: 'sessions', label: 'Sessions', icon: '▶' },
+          { id: 'compliance', label: 'Compliance', icon: '⛨' },
+        ] as { id: Tab; label: string; icon: string }[]).map(t => (
+          <button key={t.id} className={`rpt-tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>
+            <span className="rpt-tab-icon">{t.icon}</span> {t.label}
+          </button>
+        ))}
+      </div>
+
+      {error && <Alert kind="error">{error}</Alert>}
+      {loading && !overview && <div className="rpt-loading">Loading report data…</div>}
+
+      {/* ═══════════════════════════════════════════════════════════
+         OVERVIEW TAB
+         ═══════════════════════════════════════════════════════════ */}
+      {overview && tab === 'overview' && (
+        <div className="rpt-sections">
           {/* KPI Row */}
-          <div className="report-kpi-row">
-            <StatCard label="Total tickets" value={ticketReport.totals.total} icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>} />
-            <StatCard label="Open now" value={ticketReport.totals.open} tone="warn" icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>} />
-            <StatCard label="Resolved" value={ticketReport.totals.resolved} tone="ok" icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>} />
-            <StatCard label="SLA compliance" value={analytics ? `${analytics.sla.complianceRate}%` : '—'} tone={analytics && analytics.sla.complianceRate >= 90 ? 'ok' : 'crit'} icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>} />
-            <StatCard label="Avg response" value={formatMinutes(ticketReport.firstResponse.avg_minutes)} sub={`${ticketReport.firstResponse.n} responses`} icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>} />
-            <StatCard label="Avg resolution" value={formatMinutes(ticketReport.resolution.avg_minutes)} sub={`${ticketReport.resolution.n} resolved`} icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>} />
+          <div className="rpt-kpi-row">
+            <StatCard label="Total Tickets" value={overview.totals.total}
+              icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>} />
+            <StatCard label="Open" value={overview.totals.open} tone="warn"
+              icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>}
+              sub={`${overview.totals.new_count} new · ${overview.totals.escalated} escalated`} />
+            <StatCard label="Resolved" value={overview.totals.resolved} tone="ok"
+              icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>} />
+            <StatCard label="SLA Compliance" value={`${overview.sla.complianceRate}%`}
+              tone={overview.sla.complianceRate >= 90 ? 'ok' : overview.sla.complianceRate >= 70 ? 'warn' : 'crit'}
+              icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>}
+              sub={`${overview.sla.response_breached} response · ${overview.sla.resolution_breached} resolution breaches`} />
+            <StatCard label="Avg Response" value={formatMinutes(overview.firstResponse.avg_minutes)}
+              sub={`Median ${formatMinutes(overview.firstResponse.median_minutes)}`}
+              icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>} />
+            <StatCard label="Avg Resolution" value={formatMinutes(overview.resolution.avg_minutes)}
+              sub={`Median ${formatMinutes(overview.resolution.median_minutes)} · P95 ${formatMinutes(overview.resolution.p95_minutes)}`}
+              icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>} />
           </div>
 
-          {/* Charts Row */}
-          <div className="report-charts-row">
-            <div className="report-chart-card wide">
-              <h3 className="report-card-title">Ticket volume (30 days)</h3>
-              <LineChart data={dailyData} color="var(--accent)" />
+          {/* Trend line */}
+          <div className="rpt-charts-row">
+            <div className="rpt-chart-card rpt-wide">
+              <h3 className="rpt-card-title">Ticket Volume (90 days)</h3>
+              <LineChart data={overview.daily.map(d => ({ label: d.day, value: d.n }))} color="var(--accent)" />
             </div>
-            <div className="report-chart-card">
-              <h3 className="report-card-title">By status</h3>
+          </div>
+
+          {/* Charts grid */}
+          <div className="rpt-charts-row">
+            <div className="rpt-chart-card">
+              <h3 className="rpt-card-title">By Status</h3>
               <DonutChart
-                segments={ticketReport.byStatus.map((s, i) => ({
-                  value: s.n, color: CHART_COLORS[i % CHART_COLORS.length], label: STATUS_LABELS[s.status] ?? s.status,
+                segments={overview.byStatus.map(s => ({
+                  value: s.n, color: STATUS_COLORS[s.status] ?? '#6b7280', label: STATUS_LABELS[s.status] ?? s.status,
+                }))}
+              />
+            </div>
+            <div className="rpt-chart-card">
+              <h3 className="rpt-card-title">By Priority</h3>
+              <DonutChart
+                segments={overview.byPriority.map(p => ({
+                  value: p.n, color: PRIORITY_COLORS[p.priority] ?? '#6b7280', label: PRIORITY_LABELS[p.priority] ?? p.priority,
+                }))}
+              />
+            </div>
+            <div className="rpt-chart-card">
+              <h3 className="rpt-card-title">By Source</h3>
+              <DonutChart
+                segments={overview.bySource.map((s, i) => ({
+                  value: s.n, color: COLORS[i % COLORS.length], label: s.source,
                 }))}
               />
             </div>
           </div>
 
-          <div className="report-charts-row">
-            <div className="report-chart-card">
-              <h3 className="report-card-title">By priority</h3>
-              <HorizontalBarChart
-                data={ticketReport.byPriority.map((p) => ({ label: p.priority.toUpperCase(), value: p.n }))}
-                color="var(--accent)"
-              />
+          {/* Hourly heatmap */}
+          <div className="rpt-charts-row">
+            <div className="rpt-chart-card rpt-wide">
+              <HeatmapChart data={overview.hourly.map(h => ({ hour: h.hour, n: h.n }))} label="Hourly Distribution (All Time)" />
             </div>
-            <div className="report-chart-card">
-              <h3 className="report-card-title">Agent workload</h3>
-              <HorizontalBarChart
-                data={ticketReport.byAssignee.slice(0, 8).map((a) => ({ label: a.name, value: a.open_tickets, sub: 'open' }))}
-                color="#3b82f6"
-              />
+          </div>
+
+          {/* Bar charts */}
+          <div className="rpt-charts-row">
+            <div className="rpt-chart-card">
+              <h3 className="rpt-card-title">By Category</h3>
+              <BarChart data={overview.byCategory.map((c, i) => ({ label: c.category, value: c.n, color: COLORS[i % COLORS.length] }))} />
+            </div>
+            <div className="rpt-chart-card">
+              <h3 className="rpt-card-title">By Team</h3>
+              <BarChart data={overview.byTeam.map((t, i) => ({ label: t.team, value: t.n, color: COLORS[(i + 3) % COLORS.length] }))} />
+            </div>
+          </div>
+
+          {/* Summary grid */}
+          <div className="rpt-summary-grid">
+            <div className="rpt-summary-card">
+              <span className="rpt-summary-label">Sessions</span>
+              <span className="rpt-summary-value">{overview.sessions.total}</span>
+              <span className="rpt-summary-sub">{overview.sessions.live} live · {formatMinutes(overview.sessions.avg_duration_min)} avg</span>
+            </div>
+            <div className="rpt-summary-card">
+              <span className="rpt-summary-label">Audit Events</span>
+              <span className="rpt-summary-value">{overview.auditTotal.toLocaleString()}</span>
+              <span className="rpt-summary-sub">Full audit trail</span>
+            </div>
+            <div className="rpt-summary-card">
+              <span className="rpt-summary-label">SLA Breaches</span>
+              <span className="rpt-summary-value rpt-crit">{overview.totals.breached}</span>
+              <span className="rpt-summary-sub">{overview.totals.total ? ((overview.totals.breached / overview.totals.total) * 100).toFixed(1) : 0}% breach rate</span>
+            </div>
+            <div className="rpt-summary-card">
+              <span className="rpt-summary-label">Active Agents</span>
+              <span className="rpt-summary-value">{overview.byAssignee.length}</span>
+              <span className="rpt-summary-sub">{overview.byAssignee.filter(a => a.open > 0).length} with open tickets</span>
             </div>
           </div>
         </div>
       )}
 
+      {/* ═══════════════════════════════════════════════════════════
+         TICKETS TAB
+         ═══════════════════════════════════════════════════════════ */}
       {ticketReport && tab === 'tickets' && (
-        <div className="report-sections">
-          <div className="report-charts-row">
-            <div className="report-chart-card wide">
-              <h3 className="report-card-title">Daily ticket creation trend</h3>
-              <LineChart data={dailyData} color="#3b82f6" />
+        <div className="rpt-sections">
+          <div className="rpt-section-head">
+            <h2 className="rpt-section-title">Ticket Analytics</h2>
+            <ExportMenu onExport={handleExportTickets} />
+          </div>
+
+          <div className="rpt-kpi-row">
+            <StatCard label="Total Tickets" value={ticketReport.totals.total} />
+            <StatCard label="Open" value={ticketReport.totals.open} tone="warn" />
+            <StatCard label="Resolved" value={ticketReport.totals.resolved} tone="ok" />
+            <StatCard label="SLA Breaches" value={ticketReport.totals.breached} tone="crit" />
+            <StatCard label="Avg Response" value={formatMinutes(ticketReport.firstResponse.avg_minutes)} />
+            <StatCard label="Avg Resolution" value={formatMinutes(ticketReport.resolution.avg_minutes)} />
+          </div>
+
+          <div className="rpt-charts-row">
+            <div className="rpt-chart-card rpt-wide">
+              <h3 className="rpt-card-title">Daily Ticket Creation (14 days)</h3>
+              <LineChart data={ticketReport.createdDaily.map(d => ({ label: d.day, value: d.n }))} color="#3b82f6" />
             </div>
           </div>
-          <div className="report-charts-row">
-            <div className="report-chart-card">
-              <h3 className="report-card-title">Status distribution</h3>
+
+          <div className="rpt-charts-row">
+            <div className="rpt-chart-card">
+              <h3 className="rpt-card-title">Status Distribution</h3>
               <DonutChart
-                segments={ticketReport.byStatus.map((s, i) => ({
-                  value: s.n, color: CHART_COLORS[i % CHART_COLORS.length], label: STATUS_LABELS[s.status] ?? s.status,
+                segments={ticketReport.byStatus.map(s => ({
+                  value: s.n, color: STATUS_COLORS[s.status] ?? '#6b7280', label: STATUS_LABELS[s.status] ?? s.status,
                 }))}
                 size={200}
               />
             </div>
-            <div className="report-chart-card">
-              <h3 className="report-card-title">Priority breakdown</h3>
+            <div className="rpt-chart-card">
+              <h3 className="rpt-card-title">Priority Breakdown</h3>
               <DonutChart
-                segments={ticketReport.byPriority.map((p, i) => ({
-                  value: p.n, color: ['#ef4444', '#f59e0b', '#3b82f6', '#10b981'][i] ?? '#999', label: p.priority.toUpperCase(),
+                segments={ticketReport.byPriority.map(p => ({
+                  value: p.n, color: PRIORITY_COLORS[p.priority] ?? '#6b7280', label: PRIORITY_LABELS[p.priority] ?? p.priority,
                 }))}
                 size={200}
               />
             </div>
           </div>
-          <div className="report-charts-row">
-            <div className="report-chart-card">
-              <h3 className="report-card-title">SLA performance</h3>
-              <div className="report-sla-grid">
-                <div className="report-sla-item">
-                  <span className="report-sla-num">{formatMinutes(ticketReport.firstResponse.avg_minutes)}</span>
-                  <span className="report-sla-label">Avg first response</span>
-                </div>
-                <div className="report-sla-item">
-                  <span className="report-sla-num">{formatMinutes(ticketReport.resolution.avg_minutes)}</span>
-                  <span className="report-sla-label">Avg resolution time</span>
-                </div>
-                <div className="report-sla-item">
-                  <span className="report-sla-num report-sla-crit">{ticketReport.totals.breached}</span>
-                  <span className="report-sla-label">SLA breaches</span>
-                </div>
-                <div className="report-sla-item">
-                  <span className="report-sla-num report-sla-ok">{ticketReport.totals.resolved}</span>
-                  <span className="report-sla-label">Total resolved</span>
-                </div>
-              </div>
-            </div>
-            <div className="report-chart-card">
-              <h3 className="report-card-title">Tickets by assignee</h3>
-              <HorizontalBarChart
-                data={ticketReport.byAssignee.map((a) => ({ label: a.name, value: a.open_tickets, sub: 'open' }))}
-                color="#f59e0b"
-              />
+
+          {/* Ticket data table */}
+          <div className="rpt-chart-card rpt-wide">
+            <h3 className="rpt-card-title">Assignee Breakdown</h3>
+            <div className="rpt-table-wrap">
+              <table className="rpt-table">
+                <thead>
+                  <tr><th>Agent</th><th className="num">Open</th><th className="num">Total</th></tr>
+                </thead>
+                <tbody>
+                  {ticketReport.byAssignee.map(a => (
+                    <tr key={a.id}><td>{a.name}</td><td className="num">{a.open_tickets}</td><td className="num">{a.open_tickets}</td></tr>
+                  ))}
+                  {ticketReport.byAssignee.length === 0 && <tr><td colSpan={3} className="rpt-empty">No assignees</td></tr>}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
       )}
 
-      {analytics && ticketReport && tab === 'agents' && (
-        <div className="report-sections">
-          <div className="report-kpi-row">
-            <StatCard label="Active agents" value={analytics.workload.length} icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>} />
-            <StatCard label="Avg resolution" value={formatMinutes(ticketReport.resolution.avg_minutes)} tone="ok" />
-            <StatCard label="Avg response" value={formatMinutes(ticketReport.firstResponse.avg_minutes)} />
+      {/* ═══════════════════════════════════════════════════════════
+         AGENTS TAB
+         ═══════════════════════════════════════════════════════════ */}
+      {overview && tab === 'agents' && (
+        <div className="rpt-sections">
+          <div className="rpt-section-head">
+            <h2 className="rpt-section-title">Agent Performance</h2>
+            <ExportMenu onExport={handleExportAgents} />
           </div>
 
-          <div className="report-chart-card wide">
-            <h3 className="report-card-title">Agent performance</h3>
-            <div className="agent-perf-table">
-              <div className="agent-perf-head">
-                <span>Agent</span><span>Open</span><span>Resolved</span><span>Avg resolution</span>
-              </div>
-              {analytics.workload.map((w) => (
-                <div key={w.id} className="agent-perf-row">
-                  <span className="agent-perf-name">{w.name}</span>
-                  <span className="mono">{w.open}</span>
-                  <span className="mono" style={{ color: 'var(--color-ok)' }}>{w.resolved}</span>
-                  <span className="mono">{formatMinutes(w.avg_resolution_min)}</span>
-                </div>
-              ))}
+          <div className="rpt-kpi-row">
+            <StatCard label="Active Agents" value={overview.byAssignee.length}
+              icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>} />
+            <StatCard label="Avg Resolution" value={formatMinutes(overview.resolution.avg_minutes)} tone="ok" />
+            <StatCard label="Avg Response" value={formatMinutes(overview.firstResponse.avg_minutes)} />
+          </div>
+
+          <div className="rpt-chart-card rpt-wide">
+            <h3 className="rpt-card-title">Agent Performance Table</h3>
+            <div className="rpt-table-wrap">
+              <table className="rpt-table">
+                <thead>
+                  <tr>
+                    <th>Agent</th><th className="num">Total</th><th className="num">Open</th>
+                    <th className="num">Resolved</th><th className="num">Avg Resolution</th><th className="num">Avg Response</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {overview.byAssignee.map(a => (
+                    <tr key={a.id}>
+                      <td className="rpt-agent-name">{a.name}</td>
+                      <td className="num">{a.total}</td>
+                      <td className="num">{a.open}</td>
+                      <td className="num" style={{ color: 'var(--ok)' }}>{a.resolved}</td>
+                      <td className="num">{formatMinutes(a.avg_resolution_min)}</td>
+                      <td className="num">{formatMinutes(a.avg_response_min)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
+          </div>
+
+          {/* Agent workload bar chart */}
+          <div className="rpt-chart-card rpt-wide">
+            <h3 className="rpt-card-title">Workload Distribution</h3>
+            <BarChart
+              data={overview.byAssignee.slice(0, 10).map(a => ({
+                label: a.name, value: a.open, sub: 'open', color: 'var(--accent)',
+              }))}
+            />
           </div>
         </div>
       )}
 
+      {/* ═══════════════════════════════════════════════════════════
+         SESSIONS TAB
+         ═══════════════════════════════════════════════════════════ */}
       {analytics && tab === 'sessions' && (
-        <div className="report-sections">
-          <div className="report-kpi-row">
-            <StatCard label="Total sessions" value={analytics.sessions.total} icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>} />
-            <StatCard label="Live now" value={analytics.sessions.live} tone={analytics.sessions.live > 0 ? 'ok' : 'default'} />
-            <StatCard label="Avg duration" value={formatMinutes(analytics.sessions.avg_duration_min)} />
+        <div className="rpt-sections">
+          <div className="rpt-section-head">
+            <h2 className="rpt-section-title">Remote Sessions</h2>
           </div>
 
-          <div className="report-charts-row">
-            <div className="report-chart-card wide">
-              <h3 className="report-card-title">Sessions (30 days)</h3>
-              <LineChart data={sessionDailyData} color="#8b5cf6" />
+          <div className="rpt-kpi-row">
+            <StatCard label="Total Sessions" value={analytics.sessions.total}
+              icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>} />
+            <StatCard label="Live Now" value={analytics.sessions.live} tone={analytics.sessions.live > 0 ? 'ok' : 'default'} />
+            <StatCard label="Avg Duration" value={formatMinutes(analytics.sessions.avg_duration_min)} />
+            <StatCard label="SLA Compliance" value={`${analytics.sla.complianceRate}%`}
+              tone={analytics.sla.complianceRate >= 90 ? 'ok' : 'crit'} />
+          </div>
+
+          <div className="rpt-charts-row">
+            <div className="rpt-chart-card rpt-wide">
+              <h3 className="rpt-card-title">Sessions (30 days)</h3>
+              <LineChart data={analytics.sessions.perDay.map(d => ({ label: d.day, value: d.n }))} color="#8b5cf6" />
             </div>
-            <div className="report-chart-card">
-              <h3 className="report-card-title">By type</h3>
+          </div>
+
+          <div className="rpt-charts-row">
+            <div className="rpt-chart-card">
+              <h3 className="rpt-card-title">By Type</h3>
               <DonutChart
                 segments={analytics.sessions.byType.map((t, i) => ({
-                  value: t.n, color: CHART_COLORS[i % CHART_COLORS.length], label: t.type,
+                  value: t.n, color: COLORS[i % COLORS.length], label: t.type,
+                }))}
+              />
+            </div>
+            <div className="rpt-chart-card">
+              <h3 className="rpt-card-title">By State</h3>
+              <BarChart
+                data={analytics.sessions.byState.map((s, i) => ({
+                  label: s.state, value: s.n, color: COLORS[i % COLORS.length],
                 }))}
               />
             </div>
           </div>
-
-          <div className="report-chart-card wide">
-            <h3 className="report-card-title">By state</h3>
-            <HorizontalBarChart
-              data={analytics.sessions.byState.map((s) => ({ label: s.state, value: s.n }))}
-              color="#8b5cf6"
-            />
-          </div>
         </div>
       )}
 
+      {/* ═══════════════════════════════════════════════════════════
+         COMPLIANCE TAB
+         ═══════════════════════════════════════════════════════════ */}
       {compliance && tab === 'compliance' && (
-        <div className="report-sections">
-          <div className="report-kpi-row">
-            <StatCard
-              label="Audit log integrity"
-              value={compliance.audit.integrityOk ? 'Intact' : 'Broken'}
+        <div className="rpt-sections">
+          <div className="rpt-section-head">
+            <h2 className="rpt-section-title">Compliance & Security</h2>
+          </div>
+
+          <div className="rpt-kpi-row">
+            <StatCard label="Audit Integrity" value={compliance.audit.integrityOk ? 'Intact' : 'Broken'}
               tone={compliance.audit.integrityOk ? 'ok' : 'crit'}
-              icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>}
-            />
-            <StatCard label="Audit events (24h)" value={compliance.audit.last24h} sub={`${compliance.audit.total} total`} />
-            <StatCard label="JIT grants" value={compliance.jit.total} sub={`${compliance.jit.active} active`} />
+              icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>} />
+            <StatCard label="Audit Events" value={compliance.audit.total.toLocaleString()} sub={`${compliance.audit.last24h} in last 24h`} />
+            <StatCard label="JIT Access Grants" value={compliance.jit.total} sub={`${compliance.jit.active} active`} />
             <StatCard label="Recordings" value={compliance.recordings.sessions} sub={`${compliance.recordings.video} video`} />
           </div>
 
-          <div className="report-charts-row">
-            <div className="report-chart-card">
-              <h3 className="report-card-title">JIT access grants</h3>
+          <div className="rpt-charts-row">
+            <div className="rpt-chart-card">
+              <h3 className="rpt-card-title">JIT Access Grants</h3>
               <DonutChart
                 segments={[
                   { value: compliance.jit.active, color: '#10b981', label: 'Active' },
@@ -377,8 +738,8 @@ export default function ReportsPage() {
                 size={160}
               />
             </div>
-            <div className="report-chart-card">
-              <h3 className="report-card-title">Session recordings</h3>
+            <div className="rpt-chart-card">
+              <h3 className="rpt-card-title">Session Recordings</h3>
               <DonutChart
                 segments={[
                   { value: compliance.recordings.video, color: '#8b5cf6', label: 'Video' },
@@ -389,29 +750,32 @@ export default function ReportsPage() {
             </div>
           </div>
 
-          <div className="report-chart-card wide">
-            <h3 className="report-card-title">Security summary</h3>
-            <div className="report-sla-grid">
-              <div className="report-sla-item">
-                <span className={`report-sla-num ${compliance.audit.integrityOk ? 'report-sla-ok' : 'report-sla-crit'}`}>
-                  {compliance.audit.integrityOk ? '✓' : '✗'}
-                </span>
-                <span className="report-sla-label">Audit chain integrity</span>
-              </div>
-              <div className="report-sla-item">
-                <span className="report-sla-num">{analytics?.sla.complianceRate ?? '—'}%</span>
-                <span className="report-sla-label">SLA compliance rate</span>
-              </div>
-              <div className="report-sla-item">
-                <span className="report-sla-num">{compliance.jit.total}</span>
-                <span className="report-sla-label">Privileged access grants</span>
-              </div>
-              <div className="report-sla-item">
-                <span className="report-sla-num">{compliance.recordings.sessions}</span>
-                <span className="report-sla-label">Recorded sessions</span>
-              </div>
+          <div className="rpt-summary-grid">
+            <div className="rpt-summary-card">
+              <span className="rpt-summary-label">Audit Chain</span>
+              <span className={`rpt-summary-value ${compliance.audit.integrityOk ? 'rpt-ok' : 'rpt-crit'}`}>
+                {compliance.audit.integrityOk ? '✓ Verified' : '✗ Broken'}
+              </span>
+              <span className="rpt-summary-sub">Hash-chain integrity check</span>
+            </div>
+            <div className="rpt-summary-card">
+              <span className="rpt-summary-label">SLA Compliance</span>
+              <span className="rpt-summary-value">{analytics?.sla.complianceRate ?? '—'}%</span>
+              <span className="rpt-summary-sub">{compliance.jit.total} privileged access grants</span>
+            </div>
+            <div className="rpt-summary-card">
+              <span className="rpt-summary-label">Video Recordings</span>
+              <span className="rpt-summary-value">{compliance.recordings.video}</span>
+              <span className="rpt-summary-sub">{compliance.recordings.sessions} total sessions recorded</span>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Loading overlay */}
+      {loading && overview && (
+        <div className="rpt-refresh-overlay">
+          <div className="rpt-spinner" />
         </div>
       )}
     </Shell>

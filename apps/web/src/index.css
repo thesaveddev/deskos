@@ -8150,3 +8150,145 @@ select.ts-input { cursor: pointer; }
 
 /* Empty */
 .ts-empty { font-size: 0.85rem; color: var(--text-3); padding: 1rem; text-align: center; }
+
+/* ═══════════════════════════════════════════════════════════════
+   REPORTS — Enterprise Reporting Suite
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Header */
+.rpt-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.rpt-header-left { display: flex; flex-direction: column; gap: 2px; }
+.rpt-header-sub { font-size: 12px; color: var(--text-3); }
+.rpt-header-right { display: flex; align-items: center; gap: 8px; }
+
+/* Toolbar / Date picker */
+.rpt-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.rpt-date-presets { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.rpt-preset {
+  height: 30px; padding: 0 12px; border-radius: var(--radius-sm); border: 1px solid var(--line-2);
+  background: transparent; color: var(--text-2); font-family: inherit; font-size: 12.5px; font-weight: 500;
+  cursor: pointer; transition: all 0.15s;
+}
+.rpt-preset:hover { background: var(--bg-2); color: var(--text-1); }
+.rpt-preset.active { background: var(--accent); color: #1b1408; border-color: var(--accent); }
+.rpt-custom-dates { display: flex; align-items: center; gap: 8px; margin-left: 8px; }
+.rpt-date-input {
+  height: 30px; padding: 0 10px; border-radius: var(--radius-sm); border: 1px solid var(--line-2);
+  background: var(--bg-0); color: var(--text-1); font-family: inherit; font-size: 12px;
+}
+.rpt-date-sep { color: var(--text-3); font-size: 12px; }
+
+/* Tabs */
+.rpt-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line-1); margin-bottom: 20px; }
+.rpt-tab {
+  display: flex; align-items: center; gap: 6px; padding: 9px 16px; border: none; border-bottom: 2px solid transparent;
+  background: none; color: var(--text-2); font-family: inherit; font-size: 13px; font-weight: 500; cursor: pointer;
+  transition: all 0.15s;
+}
+.rpt-tab:hover { color: var(--text-1); }
+.rpt-tab.active { color: var(--text-1); border-bottom-color: var(--accent); }
+.rpt-tab-icon { font-size: 11px; opacity: 0.7; }
+
+/* Sections */
+.rpt-sections { display: flex; flex-direction: column; gap: 20px; }
+.rpt-section-head { display: flex; align-items: center; justify-content: space-between; }
+.rpt-section-title { font-size: 15px; font-weight: 600; }
+
+/* KPI Row */
+.rpt-kpi-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+
+/* Stat Card */
+.rpt-stat {
+  background: var(--bg-1); border: 1px solid var(--line-1); border-radius: var(--radius); padding: 14px 16px;
+  display: flex; flex-direction: column; gap: 6px; transition: border-color 0.15s;
+}
+.rpt-stat:hover { border-color: var(--line-2); }
+.rpt-stat-head { display: flex; align-items: center; gap: 6px; }
+.rpt-stat-icon { color: var(--text-3); display: flex; align-items: center; }
+.rpt-stat-label { font-size: 11.5px; color: var(--text-2); font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; }
+.rpt-stat-body { display: flex; align-items: baseline; gap: 8px; }
+.rpt-stat-value { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.rpt-stat-sub { font-size: 11.5px; color: var(--text-3); }
+.rpt-stat-ok .rpt-stat-value { color: var(--ok); }
+.rpt-stat-crit .rpt-stat-value { color: var(--crit); }
+.rpt-stat-warn .rpt-stat-value { color: var(--warn); }
+.rpt-stat-info .rpt-stat-value { color: var(--info); }
+
+/* Trend Indicator */
+.rpt-trend { font-size: 11px; font-weight: 600; padding: 2px 6px; border-radius: 4px; }
+.rpt-trend-up { color: var(--ok); background: rgba(16, 185, 129, 0.1); }
+.rpt-trend-down { color: var(--crit); background: rgba(224, 86, 79, 0.1); }
+.rpt-trend-flat { color: var(--text-3); background: var(--bg-2); }
+
+/* Charts Row */
+.rpt-charts-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+
+/* Chart Card */
+.rpt-chart-card {
+  background: var(--bg-1); border: 1px solid var(--line-1); border-radius: var(--radius); padding: 20px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.rpt-chart-card.rpt-wide { grid-column: 1 / -1; }
+.rpt-card-title { font-size: 13px; font-weight: 600; color: var(--text-1); margin: 0; }
+.rpt-card-subtitle { font-size: 12px; color: var(--text-3); margin-bottom: 8px; }
+
+/* SVG Charts */
+.rpt-chart { width: 100%; height: auto; display: block; }
+.rpt-chart-title { font-size: 12px; font-weight: 600; fill: var(--text-2); }
+.rpt-grid { stroke: var(--line-1); stroke-width: 0.5; stroke-dasharray: 4 4; }
+.rpt-tick { font-size: 11px; fill: var(--text-3); font-family: var(--font-mono); }
+
+/* Donut */
+.rpt-donut-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.rpt-donut-inner { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; justify-content: center; }
+.rpt-donut-center { font-size: 24px; font-weight: 700; fill: var(--text-1); font-family: var(--font-sans); }
+.rpt-donut-sub { font-size: 11px; fill: var(--text-3); }
+.rpt-donut-legend { display: flex; flex-direction: column; gap: 6px; }
+.rpt-legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2); }
+.rpt-legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.rpt-legend-count { color: var(--text-3); font-family: var(--font-mono); font-size: 11px; }
+
+/* Horizontal Bar Chart */
+.rpt-hbar { display: flex; flex-direction: column; gap: 8px; }
+.rpt-hbar-row { display: flex; align-items: center; gap: 10px; }
+.rpt-hbar-label { width: 120px; font-size: 12px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rpt-hbar-track { flex: 1; height: 8px; background: var(--bg-2); border-radius: 4px; overflow: hidden; }
+.rpt-hbar-fill { height: 100%; border-radius: 4px; transition: width 0.3s ease; }
+.rpt-hbar-value { width: 48px; text-align: right; font-size: 12px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.rpt-hbar-sub { color: var(--text-3); }
+
+/* Vertical Bar Chart */
+.rpt-vbar { display: flex; align-items: flex-end; gap: 8px; height: 180px; padding-top: 24px; }
+.rpt-vbar-col { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; flex: 1; height: 100%; gap: 4px; }
+.rpt-vbar-value { font-size: 10px; color: var(--text-3); font-family: var(--font-mono); }
+.rpt-vbar-track { width: 100%; max-width: 40px; flex: 1; display: flex; align-items: flex-end; }
+.rpt-vbar-fill { width: 100%; border-radius: 4px 4px 0 0; min-height: 4px; transition: height 0.3s ease; }
+.rpt-vbar-label { font-size: 10px; color: var(--text-3); text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60px; }
+
+/* Heatmap */
+.rpt-heatmap-wrap { display: flex; flex-direction: column; gap: 8px; }
+.rpt-heatmap-val { font-family: var(--font-mono); font-weight: 500; }
+
+/* Summary Grid */
+.rpt-summary-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.rpt-summary-card {
+  background: var(--bg-1); border: 1px solid var(--line-1); border-radius: var(--radius); padding: 16px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.rpt-summary-label { font-size: 11.5px; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 500; }
+.rpt-summary-value { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.rpt-summary-sub { font-size: 11.5px; color: var(--text-3); }
+.rpt-ok { color: var(--ok); }
+.rpt-crit { color: var(--crit); }
+
+/* Tables */
+.rpt-table-wrap { overflow-x: auto; }
+.rpt-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.rpt-table th {
+  text-align: left; font-size: 11px; font-weight: 500; color: var(--text-3); text-transform: uppercase;
+  letter-spacing: 0.06em; padding: 8px 12px; border-bottom: 2px solid var(--line-1); background: var(--bg-2);
+}
+.rpt-table td { padding: 9px 12px; border-bottom: 1px solid var(--line-1); }
+.rpt-table tbody tr:hover { background: var(--bg-2); }
+.rpt-table tbody tr:last-child td { border-bottom: none; }
+.rpt-table .num { text-align: right; 
