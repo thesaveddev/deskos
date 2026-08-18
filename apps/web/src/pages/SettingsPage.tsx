@@ -1,10 +1,15 @@
 import { useEffect, useState } from 'react'
-import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 import { Shell } from '../components/Shell.js'
 import { Alert, Field } from '../components/ui.js'
 import { getTenant, updateTenant } from '../lib/tenant.js'
 import { getIdleTimeoutMinutes, setIdleTimeoutMinutes } from '../lib/idle.js'
 import TicketSettingsPage from './TicketSettingsPage.js'
+import EmailSettingsPage from './EmailSettingsPage.js'
+import CannedResponsesPage from './CannedResponsesPage.js'
+import NotificationSettingsPage from './NotificationSettingsPage.js'
+import SecuritySettingsPage from './SecuritySettingsPage.js'
+import EntraSettingsPage from './EntraSettingsPage.js'
 function BasicSettings() {
   const [form, setForm] = useState<{ name: string; slug: string; region: string } | null>(null)
   const [busy, setBusy] = useState(false)
@@ -168,7 +173,28 @@ export default function SettingsPage() {
           Public API
         </NavLink>
       </div>
-      <div className="settings-body">{tab === 'basic' ? <BasicSettings /> : tab === 'preferences' ? <PreferencesSettings /> : tab === 'tickets' ? <TicketSettingsPage /> : <Outlet />}</div>
+      <div className="settings-body">
+        {tab === 'basic' && <BasicSettings />}
+        {tab === 'preferences' && <PreferencesSettings />}
+        {tab === 'tickets' && <TicketSettingsPage />}
+        {tab === 'email' && <EmailSettingsPage />}
+        {tab === 'canned' && <CannedResponsesPage />}
+        {tab === 'notifications' && <NotificationSettingsPage />}
+        {tab === 'security' && <SecuritySettingsPage />}
+        {tab === 'active-directory' && <EntraSettingsPage />}
+        {tab === 'integrations' && (
+          <div className="form-panel">
+            <h2 className="channel-form-title">Integrations</h2>
+            <p className="muted">Connect third-party services and webhooks to DeskOS.</p>
+          </div>
+        )}
+        {tab === 'api' && (
+          <div className="form-panel">
+            <h2 className="channel-form-title">Public API</h2>
+            <p className="muted">Manage API keys and OAuth applications.</p>
+          </div>
+        )}
+      </div>
     </Shell>
   )
 }
