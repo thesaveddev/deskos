@@ -7999,3 +7999,154 @@ select.field-input {
   font-weight: 500;
   color: var(--text-1);
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   Ticket Settings (ts-*) — Tabbed, clean design
+   ═══════════════════════════════════════════════════════════════ */
+
+.ts-page { padding: 0; }
+
+/* Tabs */
+.ts-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--line-1);
+  margin-bottom: 1.5rem;
+}
+.ts-tab {
+  padding: 0.65rem 1.25rem;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.ts-tab:hover { color: var(--text-1); }
+.ts-tab.active { color: var(--text-1); border-bottom-color: var(--accent); font-weight: 600; }
+
+/* Sections */
+.ts-sections { display: flex; flex-direction: column; gap: 1.5rem; }
+.ts-section { background: var(--bg-2); border: 1px solid var(--line-1); border-radius: 12px; padding: 1.25rem; }
+.ts-section-title { margin: 0 0 0.75rem 0; font-size: 0.95rem; font-weight: 600; color: var(--text-1); }
+.ts-section-desc { margin: 0 0 0.75rem 0; font-size: 0.82rem; color: var(--text-2); }
+.ts-section-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+
+/* Grids */
+.ts-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+.ts-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+
+/* Fields */
+.ts-field { display: flex; flex-direction: column; gap: 0.3rem; }
+.ts-label { font-size: 0.8rem; font-weight: 600; color: var(--text-2); }
+.ts-hint { font-size: 0.72rem; color: var(--text-3); }
+.ts-input {
+  height: 36px;
+  padding: 0 0.65rem;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-1);
+  color: var(--text-1);
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.ts-input:focus { border-color: var(--accent); }
+.ts-input-sm { height: 32px; font-size: 12px; padding: 0 0.5rem; }
+select.ts-input { cursor: pointer; }
+
+/* Toggles */
+.ts-toggles { display: flex; flex-direction: column; gap: 0; }
+.ts-toggle {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.7rem 0;
+  border-bottom: 1px solid var(--line-1);
+  cursor: pointer;
+}
+.ts-toggle:last-child { border-bottom: none; }
+.ts-toggle.disabled { opacity: 0.5; pointer-events: none; }
+.ts-toggle-text { display: flex; flex-direction: column; gap: 0.1rem; }
+.ts-toggle-label { font-size: 0.85rem; font-weight: 500; color: var(--text-1); }
+.ts-toggle-desc { font-size: 0.75rem; color: var(--text-2); }
+.ts-toggle-track {
+  width: 40px; height: 22px; border-radius: 11px;
+  cursor: pointer; position: relative;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+.ts-toggle-track.on { background: var(--accent); }
+.ts-toggle-track.off { background: var(--line-2); }
+.ts-toggle-thumb {
+  width: 18px; height: 18px; border-radius: 50%;
+  background: #fff; position: absolute;
+  top: 2px; left: 2px;
+  transition: transform 0.2s;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+.ts-toggle-track.on .ts-toggle-thumb { transform: translateX(18px); }
+
+/* Cards */
+.ts-card {
+  background: var(--bg-1);
+  border: 1px solid var(--line-1);
+  border-radius: 10px;
+  padding: 1rem 1.1rem;
+}
+.ts-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.6rem; }
+.ts-card-name { font-weight: 600; font-size: 0.9rem; color: var(--text-1); }
+.ts-card-actions { display: flex; gap: 0.35rem; align-items: center; }
+.ts-card-meta { font-size: 0.78rem; color: var(--text-2); }
+
+/* Matrix table */
+.ts-matrix { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.ts-matrix th { text-align: left; font-weight: 600; color: var(--text-2); padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line-1); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.ts-matrix td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line-1); color: var(--text-1); }
+.ts-matrix tr:last-child td { border-bottom: none; }
+.ts-matrix-prio { font-weight: 600; font-family: var(--font-mono); }
+.ts-matrix-edit .ts-input { width: 90px; margin: 0; }
+
+/* List */
+.ts-list { display: flex; flex-direction: column; }
+.ts-list-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.65rem 1rem;
+  border: 1px solid var(--line-1);
+  border-radius: 8px;
+  margin-bottom: 0.4rem;
+  background: var(--bg-1);
+}
+.ts-list-info { display: flex; flex-direction: column; gap: 0.15rem; }
+.ts-list-name { font-weight: 500; font-size: 0.88rem; color: var(--text-1); }
+.ts-list-desc { font-size: 0.75rem; color: var(--text-2); }
+.ts-list-actions { display: flex; gap: 0.35rem; align-items: center; }
+
+/* Badges */
+.ts-badge { font-size: 0.68rem; font-weight: 600; padding: 0.15rem 0.5rem; border-radius: 10px; }
+.ts-badge-accent { background: var(--accent); color: #1b1408; }
+.ts-badge-ok { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+.ts-badge-muted { background: var(--bg-2); color: var(--text-3); }
+
+/* Form card */
+.ts-form-card {
+  background: var(--bg-1);
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.ts-form-title { margin: 0; font-size: 0.9rem; font-weight: 600; color: var(--text-1); }
+.ts-form-actions { display: flex; gap: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--line-1); margin-top: 0.25rem; }
+
+/* Checkbox row */
+.ts-checkbox-row { display: flex; gap: 1rem; flex-wrap: wrap; }
+.ts-checkbox { display: flex; align-items: center; gap: 0.35rem; font-size: 0.82rem; color: var(--text-1); cursor: pointer; }
+.ts-checkbox input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); }
+
+/* Empty */
+.ts-empty { font-size: 0.85rem; color: var(--text-3); padding: 1rem; text-align: center; }
