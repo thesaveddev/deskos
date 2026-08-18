@@ -8291,7 +8291,7 @@ select.ts-input { cursor: pointer; }
 .rpt-table td { padding: 9px 12px; border-bottom: 1px solid var(--line-1); }
 .rpt-table tbody tr:hover { background: var(--bg-2); }
 .rpt-table tbody tr:last-child td { border-bottom: none; }
-.rpt-table .num { text-align: right; 
+.rpt-table .num { text-align: right; }
 
 /* ═══════════════════════════════════════════════════════════════
    SECURITY SETTINGS — Tabbed MFA & Passkey Management
