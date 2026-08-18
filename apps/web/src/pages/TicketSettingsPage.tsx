@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Alert } from '../components/ui.js'
+import { Alert, Modal } from '../components/ui.js'
 import { useAuth } from '../lib/auth.js'
 import { api } from '../lib/api.js'
 
@@ -253,31 +253,28 @@ export default function TicketSettingsPage() {
             </div>
           ))}
 
-          {showSlaForm && (
-            <div className="ts-form-card">
-              <h4 className="ts-form-title">{slaEdit ? 'Edit' : 'New'} SLA Policy</h4>
-              <div className="ts-field" style={{ maxWidth: 300 }}>
-                <label className="ts-label">Name</label>
-                <input className="ts-input" value={slaName} onChange={(e) => setSlaName(e.target.value)} placeholder="e.g. Standard SLA" autoFocus />
-              </div>
-              <table className="ts-matrix ts-matrix-edit">
-                <thead><tr><th>Priority</th><th>Response (min)</th><th>Resolution (min)</th></tr></thead>
-                <tbody>
-                  {PRIO.map((p) => (
-                    <tr key={p}>
-                      <td className="ts-matrix-prio">{p.toUpperCase()}</td>
-                      <td><input className="ts-input ts-input-sm" type="number" min={0} value={slaMatrix[p]?.response ?? 0} onChange={(e) => setSlaMatrix((m) => ({ ...m, [p]: { ...m[p], response: Number(e.target.value) } }))} /></td>
-                      <td><input className="ts-input ts-input-sm" type="number" min={0} value={slaMatrix[p]?.resolution ?? 0} onChange={(e) => setSlaMatrix((m) => ({ ...m, [p]: { ...m[p], resolution: Number(e.target.value) } }))} /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <div className="ts-form-actions">
-                <button className="btn btn-primary btn-sm" onClick={() => void saveSla()} disabled={busy || !slaName.trim()}>{busy ? 'Saving…' : 'Save'}</button>
-                <button className="btn btn-ghost btn-sm" onClick={() => { setShowSlaForm(false); setSlaEdit(null) }}>Cancel</button>
-              </div>
+          <Modal open={showSlaForm} onClose={() => { if (!busy) { setShowSlaForm(false); setSlaEdit(null) } }} title={`${slaEdit ? 'Edit' : 'New'} SLA Policy`} width={640}>
+            <div className="ts-field" style={{ maxWidth: 300, marginBottom: '1rem' }}>
+              <label className="ts-label">Name</label>
+              <input className="ts-input" value={slaName} onChange={(e) => setSlaName(e.target.value)} placeholder="e.g. Standard SLA" autoFocus />
             </div>
-          )}
+            <table className="ts-matrix ts-matrix-edit">
+              <thead><tr><th>Priority</th><th>Response (min)</th><th>Resolution (min)</th></tr></thead>
+              <tbody>
+                {PRIO.map((p) => (
+                  <tr key={p}>
+                    <td className="ts-matrix-prio">{p.toUpperCase()}</td>
+                    <td><input className="ts-input ts-input-sm" type="number" min={0} value={slaMatrix[p]?.response ?? 0} onChange={(e) => setSlaMatrix((m) => ({ ...m, [p]: { ...m[p], response: Number(e.target.value) } }))} /></td>
+                    <td><input className="ts-input ts-input-sm" type="number" min={0} value={slaMatrix[p]?.resolution ?? 0} onChange={(e) => setSlaMatrix((m) => ({ ...m, [p]: { ...m[p], resolution: Number(e.target.value) } }))} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="ts-form-actions" style={{ marginTop: '1rem' }}>
+              <button className="btn btn-primary btn-sm" onClick={() => void saveSla()} disabled={busy || !slaName.trim()}>{busy ? 'Saving…' : 'Save'}</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => { setShowSlaForm(false); setSlaEdit(null) }}>Cancel</button>
+            </div>
+          </Modal>
         </div>
       )}
 
@@ -306,23 +303,20 @@ export default function TicketSettingsPage() {
             ))}
           </div>
 
-          {showCatForm && (
-            <div className="ts-form-card">
-              <h4 className="ts-form-title">{catEdit ? 'Edit' : 'New'} Category</h4>
-              <div className="ts-field" style={{ maxWidth: 300 }}>
-                <label className="ts-label">Name</label>
-                <input className="ts-input" value={catName} onChange={(e) => setCatName(e.target.value)} placeholder="e.g. Hardware, Software" autoFocus />
-              </div>
-              <div className="ts-field" style={{ maxWidth: 400 }}>
-                <label className="ts-label">Description</label>
-                <input className="ts-input" value={catDesc} onChange={(e) => setCatDesc(e.target.value)} placeholder="Optional" />
-              </div>
-              <div className="ts-form-actions">
-                <button className="btn btn-primary btn-sm" onClick={() => void saveCat()} disabled={busy || !catName.trim()}>{busy ? 'Saving…' : 'Save'}</button>
-                <button className="btn btn-ghost btn-sm" onClick={() => { setShowCatForm(false); setCatEdit(null) }}>Cancel</button>
-              </div>
+          <Modal open={showCatForm} onClose={() => { if (!busy) { setShowCatForm(false); setCatEdit(null) } }} title={`${catEdit ? 'Edit' : 'New'} Category`}>
+            <div className="ts-field" style={{ marginBottom: '1rem' }}>
+              <label className="ts-label">Name</label>
+              <input className="ts-input" value={catName} onChange={(e) => setCatName(e.target.value)} placeholder="e.g. Hardware, Software" autoFocus />
             </div>
-          )}
+            <div className="ts-field" style={{ marginBottom: '1rem' }}>
+              <label className="ts-label">Description</label>
+              <input className="ts-input" value={catDesc} onChange={(e) => setCatDesc(e.target.value)} placeholder="Optional" />
+            </div>
+            <div className="ts-form-actions">
+              <button className="btn btn-primary btn-sm" onClick={() => void saveCat()} disabled={busy || !catName.trim()}>{busy ? 'Saving…' : 'Save'}</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => { setShowCatForm(false); setCatEdit(null) }}>Cancel</button>
+            </div>
+          </Modal>
         </div>
       )}
 
@@ -356,44 +350,41 @@ export default function TicketSettingsPage() {
             ))}
           </div>
 
-          {showEscForm && (
-            <div className="ts-form-card">
-              <h4 className="ts-form-title">New Escalation Policy</h4>
-              <div className="ts-grid-2">
-                <div className="ts-field">
-                  <label className="ts-label">Name</label>
-                  <input className="ts-input" value={escName} onChange={(e) => setEscName(e.target.value)} placeholder="e.g. Critical response" autoFocus />
-                </div>
-                <div className="ts-field">
-                  <label className="ts-label">Trigger after (minutes)</label>
-                  <input className="ts-input" type="number" min={1} value={escMinutes} onChange={(e) => setEscMinutes(Number(e.target.value))} />
-                </div>
+          <Modal open={showEscForm} onClose={() => { if (!busy) setShowEscForm(false) }} title="New Escalation Policy" width={560}>
+            <div className="ts-grid-2" style={{ marginBottom: '1rem' }}>
+              <div className="ts-field">
+                <label className="ts-label">Name</label>
+                <input className="ts-input" value={escName} onChange={(e) => setEscName(e.target.value)} placeholder="e.g. Critical response" autoFocus />
               </div>
               <div className="ts-field">
-                <label className="ts-label">Trigger on priorities</label>
-                <div className="ts-checkbox-row">
-                  {PRIO.map((p) => (
-                    <label key={p} className="ts-checkbox">
-                      <input type="checkbox" checked={escPriorities.includes(p)} onChange={() => setEscPriorities((prev) => prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p])} />
-                      <span>{p.toUpperCase()}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-              <div className="ts-field" style={{ maxWidth: 300 }}>
-                <label className="ts-label">Target team</label>
-                <select className="ts-input" value={escTeam} onChange={(e) => setEscTeam(e.target.value)}>
-                  <option value="">Keep current team</option>
-                  {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                </select>
-              </div>
-              <Toggle label="Auto-assign to team members" checked={escAutoAssign} onChange={setEscAutoAssign} />
-              <div className="ts-form-actions">
-                <button className="btn btn-primary btn-sm" onClick={() => void saveEsc()} disabled={busy || !escName.trim()}>{busy ? 'Saving…' : 'Create'}</button>
-                <button className="btn btn-ghost btn-sm" onClick={() => setShowEscForm(false)}>Cancel</button>
+                <label className="ts-label">Trigger after (minutes)</label>
+                <input className="ts-input" type="number" min={1} value={escMinutes} onChange={(e) => setEscMinutes(Number(e.target.value))} />
               </div>
             </div>
-          )}
+            <div className="ts-field" style={{ marginBottom: '1rem' }}>
+              <label className="ts-label">Trigger on priorities</label>
+              <div className="ts-checkbox-row">
+                {PRIO.map((p) => (
+                  <label key={p} className="ts-checkbox">
+                    <input type="checkbox" checked={escPriorities.includes(p)} onChange={() => setEscPriorities((prev) => prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p])} />
+                    <span>{p.toUpperCase()}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="ts-field" style={{ maxWidth: 300, marginBottom: '1rem' }}>
+              <label className="ts-label">Target team</label>
+              <select className="ts-input" value={escTeam} onChange={(e) => setEscTeam(e.target.value)}>
+                <option value="">Keep current team</option>
+                {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </div>
+            <Toggle label="Auto-assign to team members" checked={escAutoAssign} onChange={setEscAutoAssign} />
+            <div className="ts-form-actions" style={{ marginTop: '1rem' }}>
+              <button className="btn btn-primary btn-sm" onClick={() => void saveEsc()} disabled={busy || !escName.trim()}>{busy ? 'Saving…' : 'Create'}</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowEscForm(false)}>Cancel</button>
+            </div>
+          </Modal>
         </div>
       )}
     </div>

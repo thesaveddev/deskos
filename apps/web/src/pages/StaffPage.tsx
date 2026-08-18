@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Shell } from '../components/Shell.js'
-import { Alert, PageHeader } from '../components/ui.js'
+import { Alert, Modal, PageHeader } from '../components/ui.js'
 import { api } from '../lib/api.js'
 import { useAuth } from '../lib/auth.js'
 
@@ -36,6 +36,7 @@ export default function StaffPage() {
   const [inviteRole, setInviteRole] = useState('analyst')
   const [inviting, setInviting] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+  const [showInvite, setShowInvite] = useState(false)
   const auth = useAuth()
   const myRole = auth.memberships.find((m) => m.tenant.id === auth.activeTenantId)?.orgRole
   const canManage = myRole === 'owner' || myRole === 'it_manager'
@@ -97,42 +98,49 @@ export default function StaffPage() {
       {error && <Alert kind="error">{error}</Alert>}
       {notice && <Alert kind="info">{notice}</Alert>}
 
-      {/* Invite form */}
+      {/* Invite button */}
       {canManage && (
-        <div className="form-panel" style={{ marginBottom: 20 }}>
-          <h2 className="channel-form-title">Invite a team member</h2>
-          <form onSubmit={handleInvite} style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
-            <div className="field" style={{ flex: 1, marginBottom: 0 }}>
-              <label className="field-label" htmlFor="invite-email">Email address</label>
-              <input
-                className="field-input"
-                id="invite-email"
-                type="email"
-                required
-                value={inviteEmail}
-                onChange={(e) => setInviteEmail(e.target.value)}
-                placeholder="colleague@company.com"
-              />
-            </div>
-            <div className="field" style={{ width: 180, marginBottom: 0 }}>
-              <label className="field-label" htmlFor="invite-role">Role</label>
-              <select
-                className="field-input"
-                id="invite-role"
-                value={inviteRole}
-                onChange={(e) => setInviteRole(e.target.value)}
-              >
-                {ROLES.filter((r) => r.value !== 'owner').map((r) => (
-                  <option key={r.value} value={r.value}>{r.label}</option>
-                ))}
-              </select>
-            </div>
+        <div style={{ marginBottom: 16 }}>
+          <button className="btn btn-primary btn-sm" onClick={() => { setShowInvite(true); setInviteEmail(''); setInviteRole('analyst') }}>+ Invite member</button>
+        </div>
+      )}
+
+      {/* Invite modal */}
+      <Modal open={showInvite} onClose={() => { if (!inviting) setShowInvite(false) }} title="Invite a team member">
+        <form onSubmit={handleInvite}>
+          <div className="field" style={{ marginBottom: '1rem' }}>
+            <label className="field-label" htmlFor="invite-email">Email address</label>
+            <input
+              className="field-input"
+              id="invite-email"
+              type="email"
+              required
+              value={inviteEmail}
+              onChange={(e) => setInviteEmail(e.target.value)}
+              placeholder="colleague@company.com"
+            />
+          </div>
+          <div className="field" style={{ maxWidth: 220, marginBottom: '1rem' }}>
+            <label className="field-label" htmlFor="invite-role">Role</label>
+            <select
+              className="field-input"
+              id="invite-role"
+              value={inviteRole}
+              onChange={(e) => setInviteRole(e.target.value)}
+            >
+              {ROLES.filter((r) => r.value !== 'owner').map((r) => (
+                <option key={r.value} value={r.value}>{r.label}</option>
+              ))}
+            </select>
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+            <button className="btn btn-ghost" type="button" onClick={() => setShowInvite(false)} disabled={inviting}>Cancel</button>
             <button className="btn btn-primary" type="submit" disabled={inviting}>
               {inviting ? 'Sending…' : 'Invite'}
             </button>
-          </form>
-        </div>
-      )}
+          </div>
+        </form>
+      </Modal>
 
       {/* Members table */}
       {loading ? (

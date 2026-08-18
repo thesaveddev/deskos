@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import LandingLayout from '../components/LandingLayout'
+import { Modal } from '../components/ui.js'
 import { api } from '../lib/api.js'
 
 interface SupportTicket {
@@ -131,48 +132,48 @@ export default function SupportPage() {
 
           {/* Action bar */}
           <div className="support-actions">
-            <button className="btn btn-primary" onClick={() => { setShowForm(!showForm); setSelected(null) }}>
-              {showForm ? 'Cancel' : '+ New ticket'}
+            <button className="btn btn-primary" onClick={() => { setShowForm(true); setSelected(null) }}>
+              + New ticket
             </button>
           </div>
 
-          {/* New ticket form */}
-          {showForm && (
-            <div className="support-form-panel">
-              <h3>Submit a support ticket</h3>
-              <form onSubmit={handleSubmit}>
+          {/* New ticket modal */}
+          <Modal open={showForm} onClose={() => { if (!submitting) setShowForm(false) }} title="Submit a support ticket">
+            <form onSubmit={handleSubmit}>
+              <div className="field" style={{ marginBottom: '1rem' }}>
+                <label className="field-label" htmlFor="sup-subject">Subject</label>
+                <input className="field-input" id="sup-subject" required minLength={3} maxLength={300}
+                  value={form.subject} onChange={(e) => setForm((f) => ({ ...f, subject: e.target.value }))} />
+              </div>
+              <div className="form-row" style={{ marginBottom: '1rem' }}>
                 <div className="field">
-                  <label className="field-label" htmlFor="sup-subject">Subject</label>
-                  <input className="field-input" id="sup-subject" required minLength={3} maxLength={300}
-                    value={form.subject} onChange={(e) => setForm((f) => ({ ...f, subject: e.target.value }))} />
-                </div>
-                <div className="form-row">
-                  <div className="field">
-                    <label className="field-label" htmlFor="sup-category">Category</label>
-                    <select className="field-input" id="sup-category"
-                      value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}>
-                      {CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-                    </select>
-                  </div>
-                  <div className="field">
-                    <label className="field-label" htmlFor="sup-priority">Priority</label>
-                    <select className="field-input" id="sup-priority"
-                      value={form.priority} onChange={(e) => setForm((f) => ({ ...f, priority: e.target.value }))}>
-                      {Object.entries(PRIORITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                    </select>
-                  </div>
+                  <label className="field-label" htmlFor="sup-category">Category</label>
+                  <select className="field-input" id="sup-category"
+                    value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}>
+                    {CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                  </select>
                 </div>
                 <div className="field">
-                  <label className="field-label" htmlFor="sup-desc">Description</label>
-                  <textarea className="field-input" id="sup-desc" rows={5}
-                    value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
+                  <label className="field-label" htmlFor="sup-priority">Priority</label>
+                  <select className="field-input" id="sup-priority"
+                    value={form.priority} onChange={(e) => setForm((f) => ({ ...f, priority: e.target.value }))}>
+                    {Object.entries(PRIORITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
                 </div>
+              </div>
+              <div className="field" style={{ marginBottom: '1rem' }}>
+                <label className="field-label" htmlFor="sup-desc">Description</label>
+                <textarea className="field-input" id="sup-desc" rows={5}
+                  value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                <button className="btn btn-ghost" type="button" onClick={() => setShowForm(false)} disabled={submitting}>Cancel</button>
                 <button className="btn btn-primary" type="submit" disabled={submitting}>
                   {submitting ? 'Submitting…' : 'Submit ticket'}
                 </button>
-              </form>
-            </div>
-          )}
+              </div>
+            </form>
+          </Modal>
 
           {/* Ticket list / detail */}
           <div className="support-layout">

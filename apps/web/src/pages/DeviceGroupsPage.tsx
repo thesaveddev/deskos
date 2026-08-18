@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { Shell } from '../components/Shell.js'
-import { Alert, Field, SubmitButton } from '../components/ui.js'
+import { Alert, Field, Modal, SubmitButton } from '../components/ui.js'
 import { useAuth } from '../lib/auth.js'
 import {
   createDeviceGroup,
@@ -22,6 +22,7 @@ export default function DeviceGroupsPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [showCreate, setShowCreate] = useState(false)
 
   const load = useCallback(async () => {
     setError(null)
@@ -120,23 +121,29 @@ export default function DeviceGroupsPage() {
       {error ? <Alert kind="error">{error}</Alert> : null}
       {notice ? <Alert kind="info">{notice}</Alert> : null}
 
-      {canManage ? (
-        <section className="form-panel group-create-panel">
-          <div className="detail-card-head"><h2>New device group</h2><span className="muted mono">tenant-scoped</span></div>
-          <form className="group-create-form" onSubmit={saveNew}>
-            <Field label="Group name">
-              <input className="field-input" value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. London laptops" required />
-            </Field>
-            <Field label="Parent group" hint="Optional hierarchy.">
-              <select className="field-input" value={parentId} onChange={(event) => setParentId(event.target.value)}>
-                <option value="">No parent</option>
-                {groups?.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
-              </select>
-            </Field>
+      {canManage && (
+        <div style={{ marginBottom: 16 }}>
+          <button className="btn btn-primary btn-sm" onClick={() => { setShowCreate(true); setName(''); setParentId('') }}>+ New group</button>
+        </div>
+      )}
+
+      <Modal open={showCreate} onClose={() => { if (!busy) { setShowCreate(false); setName(''); setParentId('') } }} title="New device group">
+        <form onSubmit={saveNew}>
+          <Field label="Group name">
+            <input className="field-input" value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. London laptops" required />
+          </Field>
+          <Field label="Parent group" hint="Optional hierarchy.">
+            <select className="field-input" value={parentId} onChange={(event) => setParentId(event.target.value)}>
+              <option value="">No parent</option>
+              {groups?.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+            </select>
+          </Field>
+          <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '1rem' }}>
+            <button type="button" className="btn btn-ghost" onClick={() => setShowCreate(false)} disabled={busy}>Cancel</button>
             <SubmitButton busy={busy}>Create group</SubmitButton>
-          </form>
-        </section>
-      ) : null}
+          </div>
+        </form>
+      </Modal>
 
       {groups === null ? <span className="etch">Loading groups…</span> : null}
       {groups && groups.length === 0 ? <div className="empty-state">No device groups yet.</div> : null}

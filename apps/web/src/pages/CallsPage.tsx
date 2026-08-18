@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Shell } from '../components/Shell.js'
-import { Alert } from '../components/ui.js'
+import { Alert, Modal } from '../components/ui.js'
 import { listCalls, logCall, type CallDirection, type CallLog, type CallStatus } from '../lib/telephony.js'
 
 const DIRECTIONS: CallDirection[] = ['inbound', 'outbound', 'internal']
@@ -36,6 +36,7 @@ export default function CallsPage() {
   const [form, setForm] = useState<CallForm>(EMPTY_FORM)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [logModal, setLogModal] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -82,34 +83,44 @@ export default function CallsPage() {
 
       {error ? <Alert kind="error">{error}</Alert> : null}
 
-      <div className="kb-layout">
-        <section className="form-panel">
-          <h2 className="channel-form-title">Log a call</h2>
-          <form onSubmit={(e) => void submit(e)}>
-            <div className="form-row">
-              <select className="field-input" value={form.direction} onChange={(e) => setForm({ ...form, direction: e.target.value as CallDirection })} aria-label="Direction">
+      <div style={{ marginBottom: 16 }}>
+        <button className="btn btn-primary btn-sm" onClick={() => setLogModal(true)}>+ Log call</button>
+      </div>
+
+      <Modal open={logModal} onClose={() => { if (!busy) setLogModal(false) }} title="Log a call">
+        <form onSubmit={(e) => { void submit(e); setLogModal(false) }}>
+          <div className="form-row" style={{ marginBottom: '0.75rem' }}>
+            <div className="field"><label className="field-label">Direction</label>
+              <select className="field-input" value={form.direction} onChange={(e) => setForm({ ...form, direction: e.target.value as CallDirection })}>
                 {DIRECTIONS.map((d) => <option key={d} value={d}>{d}</option>)}
               </select>
-              <select className="field-input" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as CallStatus })} aria-label="Status">
+            </div>
+            <div className="field"><label className="field-label">Status</label>
+              <select className="field-input" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as CallStatus })}>
                 {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
-            <div className="form-row">
-              <input className="field-input mono" placeholder="From number" value={form.fromNumber} onChange={(e) => setForm({ ...form, fromNumber: e.target.value })} />
-              <input className="field-input mono" placeholder="To number" value={form.toNumber} onChange={(e) => setForm({ ...form, toNumber: e.target.value })} />
-            </div>
-            <div className="form-row">
-              <input className="field-input" placeholder="Caller name" value={form.callerName} onChange={(e) => setForm({ ...form, callerName: e.target.value })} />
-              <input className="field-input mono" placeholder="Duration (sec)" value={form.durationSec} onChange={(e) => setForm({ ...form, durationSec: e.target.value })} />
-            </div>
-            <div className="form-row">
-              <input className="field-input mono" placeholder="Link ticket id (optional)" value={form.ticketId} onChange={(e) => setForm({ ...form, ticketId: e.target.value })} />
-            </div>
-            <div className="form-actions">
-              <button type="submit" className="btn btn-primary" disabled={busy}>{busy ? 'Saving…' : 'Log call'}</button>
-            </div>
-          </form>
-        </section>
+          </div>
+          <div className="form-row" style={{ marginBottom: '0.75rem' }}>
+            <div className="field"><label className="field-label">From</label><input className="field-input mono" placeholder="Number" value={form.fromNumber} onChange={(e) => setForm({ ...form, fromNumber: e.target.value })} /></div>
+            <div className="field"><label className="field-label">To</label><input className="field-input mono" placeholder="Number" value={form.toNumber} onChange={(e) => setForm({ ...form, toNumber: e.target.value })} /></div>
+          </div>
+          <div className="form-row" style={{ marginBottom: '0.75rem' }}>
+            <div className="field"><label className="field-label">Caller name</label><input className="field-input" value={form.callerName} onChange={(e) => setForm({ ...form, callerName: e.target.value })} /></div>
+            <div className="field"><label className="field-label">Duration (sec)</label><input className="field-input mono" value={form.durationSec} onChange={(e) => setForm({ ...form, durationSec: e.target.value })} /></div>
+          </div>
+          <div className="field" style={{ marginBottom: '1rem' }}>
+            <label className="field-label">Link ticket id (optional)</label>
+            <input className="field-input mono" value={form.ticketId} onChange={(e) => setForm({ ...form, ticketId: e.target.value })} />
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+            <button type="button" className="btn btn-ghost" onClick={() => setLogModal(false)} disabled={busy}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={busy}>{busy ? 'Saving…' : 'Log call'}</button>
+          </div>
+        </form>
+      </Modal>
+
+      <div className="kb-layout">
 
         <section className="form-panel">
           <div className="kb-toolbar">

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Shell } from '../components/Shell.js'
-import { Alert, Field } from '../components/ui.js'
+import { Alert, Field, Modal } from '../components/ui.js'
 import {
   createArticle, createFolder, getArticle, listArticles, listFolders, setArticleStatus, updateArticle,
   type KbArticle, type KbFolder, type KbStatus, type KbVisibility,
@@ -45,6 +45,7 @@ export default function KnowledgeBasePage() {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [newFolder, setNewFolder] = useState('')
+  const [showForm, setShowForm] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -138,6 +139,7 @@ export default function KnowledgeBasePage() {
       tags: (article.tags ?? []).join(', '),
     })
     setError(null)
+    setShowForm(true)
   }
 
   async function openArticle(id: string) {
@@ -163,84 +165,12 @@ export default function KnowledgeBasePage() {
 
       <div className="kb-layout">
         <section className="form-panel">
-          <h2 className="channel-form-title">{editing ? 'Edit article' : 'New article'}</h2>
-          <form onSubmit={handleSubmit} className="channel-form">
-            <Field label="Title">
-              <input
-                className="field-input"
-                value={form.title}
-                onChange={(e) => setForm({ ...form, title: e.target.value })}
-                minLength={1}
-                maxLength={300}
-                required
-              />
-            </Field>
-            <Field label="Body" hint="Plain text / markdown">
-              <textarea
-                className="field-input"
-                rows={10}
-                value={form.body}
-                onChange={(e) => setForm({ ...form, body: e.target.value })}
-                maxLength={200000}
-              />
-            </Field>
-            <div className="form-row">
-              <Field label="Folder">
-                <select
-                  className="field-input"
-                  value={form.folderId}
-                  onChange={(e) => setForm({ ...form, folderId: e.target.value })}
-                >
-                  <option value="">— none —</option>
-                  {folders.map((f) => (
-                    <option key={f.id} value={f.id}>{f.name}</option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Visibility">
-                <select
-                  className="field-input"
-                  value={form.visibility}
-                  onChange={(e) => setForm({ ...form, visibility: e.target.value as KbVisibility })}
-                >
-                  {VISIBILITIES.map((v) => <option key={v} value={v}>{v}</option>)}
-                </select>
-              </Field>
-            </div>
-            <div className="form-row">
-              {!editing ? (
-                <Field label="Status">
-                  <select
-                    className="field-input"
-                    value={form.status}
-                    onChange={(e) => setForm({ ...form, status: e.target.value as KbStatus })}
-                  >
-                    {STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
-                  </select>
-                </Field>
-              ) : null}
-              <Field label="Tags" hint="comma-separated">
-                <input
-                  className="field-input mono"
-                  value={form.tags}
-                  onChange={(e) => setForm({ ...form, tags: e.target.value })}
-                  placeholder="vpn, password"
-                />
-              </Field>
-            </div>
-            <div className="form-actions">
-              {editing ? (
-                <button type="button" className="btn btn-ghost" onClick={() => { setEditing(null); setForm(EMPTY_FORM) }}>
-                  Cancel edit
-                </button>
-              ) : null}
-              <button type="submit" className="btn btn-primary" disabled={busy}>
-                {busy ? 'Saving…' : editing ? 'Save changes' : 'Create article'}
-              </button>
-            </div>
-          </form>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <h3 className="channel-form-title">Articles</h3>
+            <button className="btn btn-primary btn-sm" onClick={() => { setEditing(null); setForm(EMPTY_FORM); setShowForm(true) }}>+ New article</button>
+          </div>
 
-          <h3 className="channel-title" style={{ marginTop: 28 }}>Folders</h3>
+          <h3 className="channel-title">Folders</h3>
           <form onSubmit={handleAddFolder} className="channel-form">
             <div className="form-row">
               <Field label="New folder">
@@ -347,6 +277,61 @@ export default function KnowledgeBasePage() {
           )}
         </section>
       </div>
+
+      <Modal open={showForm} onClose={() => { if (!busy) { setShowForm(false); setEditing(null); setForm(EMPTY_FORM) } }} title={editing ? 'Edit article' : 'New article'} width={640}>
+        <form onSubmit={handleSubmit}>
+          <Field label="Title">
+            <input
+              className="field-input"
+              value={form.title}
+              onChange={(e) => setForm({ ...form, title: e.target.value })}
+              minLength={1}
+              maxLength={300}
+              required
+            />
+          </Field>
+          <Field label="Body" hint="Plain text / markdown">
+            <textarea
+              className="field-input"
+              rows={10}
+              value={form.body}
+              onChange={(e) => setForm({ ...form, body: e.target.value })}
+              maxLength={200000}
+            />
+          </Field>
+          <div className="form-row">
+            <Field label="Folder">
+              <select className="field-input" value={form.folderId} onChange={(e) => setForm({ ...form, folderId: e.target.value })}>
+                <option value="">— none —</option>
+                {folders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+              </select>
+            </Field>
+            <Field label="Visibility">
+              <select className="field-input" value={form.visibility} onChange={(e) => setForm({ ...form, visibility: e.target.value as KbVisibility })}>
+                {VISIBILITIES.map((v) => <option key={v} value={v}>{v}</option>)}
+              </select>
+            </Field>
+          </div>
+          <div className="form-row">
+            {!editing ? (
+              <Field label="Status">
+                <select className="field-input" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as KbStatus })}>
+                  {STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
+                </select>
+              </Field>
+            ) : null}
+            <Field label="Tags" hint="comma-separated">
+              <input className="field-input mono" value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} placeholder="vpn, password" />
+            </Field>
+          </div>
+          <div className="form-actions">
+            <button type="button" className="btn btn-ghost" onClick={() => { setShowForm(false); setEditing(null); setForm(EMPTY_FORM) }} disabled={busy}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={busy}>
+              {busy ? 'Saving…' : editing ? 'Save changes' : 'Create article'}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </Shell>
   )
 }
