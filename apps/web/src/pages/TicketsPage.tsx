@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Shell } from '../components/Shell.js'
 import { Pagination, useOffsetPagination } from '../components/Pagination.js'
-import { listTickets, slaSummary, STATUS_LABELS, formatWhen, bulkUpdateTickets, listTeams, type Ticket, type Team } from '../lib/tickets.js'
+import { listTickets, ticketCounts, slaSummary, STATUS_LABELS, formatWhen, bulkUpdateTickets, listTeams, type Ticket, type Team } from '../lib/tickets.js'
 import { useAuth } from '../lib/auth.js'
 
 type QuickFilter = 'all' | 'mine' | 'unassigned' | 'escalated'
@@ -49,12 +49,21 @@ export default function TicketsPage() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
+  // Tab counts
+  const [tabCounts, setTabCounts] = useState({ all: 0, mine: 0, unassigned: 0, escalated: 0 })
+
   // Bulk selection
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
   // Load teams
   useEffect(() => {
     listTeams().then((r) => setTeams(r.teams)).catch(() => {})
+    // Fetch tab counts
+    ticketCounts().then((c) => {
+      const escalated = c.byStatus.find((s) => s.status === 'escalated')?.n ?? 0
+      const open = c.byStatus.filter((s) => !['resolved', 'closed'].includes(s.status)).reduce((sum, s) => sum + s.n, 0)
+      setTabCounts({ all: open, mine: c.mine, unassigned: c.unassigned, escalated })
+    }).catch(() => {})
   }, [])
 
   const load = useCallback(async () => {
@@ -175,6 +184,7 @@ export default function TicketsPage() {
             onClick={() => { setQuickFilter(f.key); pagination.goToPage(0) }}
           >
             {f.label}
+            <span className="tab-count">{tabCounts[f.key as keyof typeof tabCounts] ?? 0}</span>
           </button>
         ))}
       </div>
