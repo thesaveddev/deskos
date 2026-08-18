@@ -128,4 +128,44 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
       }
     },
   )
+
+  // ── Tenant settings (ticket behaviour, etc.) ──
+
+  const DEFAULT_SETTINGS = {
+    ticket_prefix: 'TKT',
+    auto_assign_enabled: false,
+    auto_close_enabled: false,
+    auto_close_after_days: 7,
+    require_description: true,
+    allow_attachments: true,
+    public_notes_visible: true,
+    default_priority: 'p3',
+    default_type: 'incident',
+  }
+
+  app.get(
+    '/tenant/settings',
+    { preHandler: [authenticate, requireTenant, requirePermission('ticket.read')] },
+    async (request) => {
+      const ctx = request.tenantCtx!
+      const { rows } = await app.db.query('SELECT settings FROM tenants WHERE id = $1', [ctx.tenantId])
+      const raw = rows[0]?.settings ?? {}
+      return { settings: { ...DEFAULT_SETTINGS, ...raw } }
+    },
+  )
+
+  app.patch(
+    '/tenant/settings',
+    { preHandler: [authenticate, requireTenant, requirePermission('ticket.write')] },
+    async (request, reply) => {
+      const ctx = request.tenantCtx!
+      const body = (request.body || {}) as Record<string, unknown>
+      const { rows } = await app.db.query('SELECT settings FROM tenants WHERE id = $1', [ctx.tenantId])
+      const current = rows[0]?.settings ?? {}
+      const merged = { ...current, ...body }
+      await app.db.query('UPDATE tenants SET settings = $2::jsonb WHERE id = $1', [ctx.tenantId, JSON.stringify(merged)])
+      reply.code(200)
+      return { settings: { ...DEFAULT_SETTINGS, ...merged } }
+    },
+  )
 }
