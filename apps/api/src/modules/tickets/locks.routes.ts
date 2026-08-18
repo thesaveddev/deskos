@@ -3,7 +3,7 @@ import { authenticate } from '../../middleware/authenticate.js'
 import { requireTenant } from '../../middleware/requireTenant.js'
 import { requirePermission } from '../../middleware/requirePermission.js'
 import {
-  getTicketLock, unlockTicket, forceUnlock, heartbeatLock,
+  autoLockOnAssign, getTicketLock, unlockTicket, forceUnlock, heartbeatLock,
   startViewing, stopViewing, heartbeatViewing, getViewers,
 } from './locks.service.js'
 
@@ -15,17 +15,36 @@ export async function ticketLockRoutes(app: FastifyInstance) {
 
   app.get('/tickets/:id/lock', { preHandler: requirePermission('ticket.write') }, async (req, reply) => {
     const ctx = (req as any).tenantCtx
+    const userId = (req as any).user.id as string
     const { id } = req.params as { id: string }
     const lock = await getTicketLock(app.db, ctx.tenantId, id)
-    const isMine = lock?.locked_by === ctx.userId
+    const isMine = lock?.locked_by === userId
     return reply.send({ lock, is_mine: isMine })
+  })
+
+  // Acquire lock (create new or extend existing)
+  app.post('/tickets/:id/lock', { preHandler: requirePermission('ticket.write') }, async (req, reply) => {
+    const ctx = (req as any).tenantCtx
+    const userId = (req as any).user.id as string
+    const { id } = req.params as { id: string }
+    // Try heartbeat first (extend existing lock)
+    const extended = await heartbeatLock(app.db, ctx.tenantId, id, userId)
+    if (extended) {
+      const lock = await getTicketLock(app.db, ctx.tenantId, id)
+      return reply.send({ lock })
+    }
+    // No existing lock — create a new one
+    await autoLockOnAssign(app.db, ctx.tenantId, id, userId)
+    const lock = await getTicketLock(app.db, ctx.tenantId, id)
+    return reply.send({ lock })
   })
 
   // Unlock (agent navigated away)
   app.delete('/tickets/:id/lock', { preHandler: requirePermission('ticket.write') }, async (req, reply) => {
     const ctx = (req as any).tenantCtx
+    const userId = (req as any).user.id as string
     const { id } = req.params as { id: string }
-    await unlockTicket(app.db, ctx.tenantId, id, ctx.userId)
+    await unlockTicket(app.db, ctx.tenantId, id, userId)
     return reply.send({ ok: true })
   })
 
@@ -40,8 +59,9 @@ export async function ticketLockRoutes(app: FastifyInstance) {
   // Heartbeat lock (while viewing)
   app.post('/tickets/:id/lock/heartbeat', { preHandler: requirePermission('ticket.write') }, async (req, reply) => {
     const ctx = (req as any).tenantCtx
+    const userId = (req as any).user.id as string
     const { id } = req.params as { id: string }
-    const extended = await heartbeatLock(app.db, ctx.tenantId, id, ctx.userId)
+    const extended = await heartbeatLock(app.db, ctx.tenantId, id, userId)
     return reply.send({ ok: extended })
   })
 
@@ -49,22 +69,25 @@ export async function ticketLockRoutes(app: FastifyInstance) {
 
   app.post('/tickets/:id/viewing', { preHandler: requirePermission('ticket.read') }, async (req, reply) => {
     const ctx = (req as any).tenantCtx
+    const userId = (req as any).user.id as string
     const { id } = req.params as { id: string }
-    await startViewing(app.db, ctx.tenantId, id, ctx.userId)
+    await startViewing(app.db, ctx.tenantId, id, userId)
     return reply.send({ ok: true })
   })
 
   app.delete('/tickets/:id/viewing', { preHandler: requirePermission('ticket.read') }, async (req, reply) => {
     const ctx = (req as any).tenantCtx
+    const userId = (req as any).user.id as string
     const { id } = req.params as { id: string }
-    await stopViewing(app.db, ctx.tenantId, id, ctx.userId)
+    await stopViewing(app.db, ctx.tenantId, id, userId)
     return reply.send({ ok: true })
   })
 
   app.post('/tickets/:id/viewing/heartbeat', { preHandler: requirePermission('ticket.read') }, async (req, reply) => {
     const ctx = (req as any).tenantCtx
+    const userId = (req as any).user.id as string
     const { id } = req.params as { id: string }
-    await heartbeatViewing(app.db, ctx.tenantId, id, ctx.userId)
+    await heartbeatViewing(app.db, ctx.tenantId, id, userId)
     return reply.send({ ok: true })
   })
 
