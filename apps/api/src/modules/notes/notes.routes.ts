@@ -10,15 +10,17 @@ export async function notesRoutes(app: FastifyInstance) {
   // List my notes
   app.get('/notes', async (req, reply) => {
     const ctx = (req as any).tenantCtx
-    const notes = await listNotes(app.db, ctx.tenantId, ctx.userId)
+    const userId = (req as any).user.id as string
+    const notes = await listNotes(app.db, ctx.tenantId, userId)
     return reply.send({ notes })
   })
 
   // Create note
   app.post('/notes', async (req, reply) => {
     const ctx = (req as any).tenantCtx
+    const userId = (req as any).user.id as string
     const body = (req.body || {}) as Record<string, unknown>
-    const note = await createNote(app.db, ctx.tenantId, ctx.userId, {
+    const note = await createNote(app.db, ctx.tenantId, userId, {
       title: body.title as string,
       body: body.body as string,
       color: body.color as string,
@@ -33,9 +35,10 @@ export async function notesRoutes(app: FastifyInstance) {
   // Update note
   app.patch('/notes/:id', async (req, reply) => {
     const ctx = (req as any).tenantCtx
+    const userId = (req as any).user.id as string
     const { id } = req.params as { id: string }
     const body = (req.body || {}) as Record<string, unknown>
-    const note = await updateNote(app.db, ctx.tenantId, ctx.userId, Number(id), {
+    const note = await updateNote(app.db, ctx.tenantId, userId, Number(id), {
       title: body.title as string,
       body: body.body as string,
       color: body.color as string,
@@ -52,8 +55,9 @@ export async function notesRoutes(app: FastifyInstance) {
   // Delete note
   app.delete('/notes/:id', async (req, reply) => {
     const ctx = (req as any).tenantCtx
+    const userId = (req as any).user.id as string
     const { id } = req.params as { id: string }
-    const deleted = await deleteNote(app.db, ctx.tenantId, ctx.userId, Number(id))
+    const deleted = await deleteNote(app.db, ctx.tenantId, userId, Number(id))
     if (!deleted) return reply.code(404).send({ error: 'Note not found' })
     return reply.send({ ok: true })
   })

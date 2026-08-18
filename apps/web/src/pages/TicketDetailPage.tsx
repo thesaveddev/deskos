@@ -54,7 +54,6 @@ export default function TicketDetailPage() {
   const [lockIsMine, setLockIsMine] = useState(false)
   const [lockBusy, setLockBusy] = useState(false)
   const [viewers, setViewers] = useState<Array<{ user_id: string; name: string; email: string; since: string }>>([])
-  const isManagerOrAdmin = auth.user && auth.memberships.some(m => ['admin', 'manager', 'owner'].includes(m.orgRole))
 
   // Escalation & forward
   const [escalations, setEscalations] = useState<Escalation[]>([])
@@ -67,6 +66,9 @@ export default function TicketDetailPage() {
   const [fwdBusy, setFwdBusy] = useState(false)
   const [showEscalate, setShowEscalate] = useState(false)
   const [showForward, setShowForward] = useState(false)
+
+  const canUseAi = useAuth((state) => state.memberships.some((m) => m.permissions.includes('ai.use')))
+  const isManagerOrAdmin = auth.user && auth.memberships.some(m => ['admin', 'manager', 'owner'].includes(m.orgRole))
 
   const load = useCallback(async () => {
     if (!id) return
@@ -130,7 +132,6 @@ export default function TicketDetailPage() {
   }
 
   const sla = slaSummary(ticket)
-  const canUseAi = useAuth((state) => state.memberships.some((m) => m.permissions.includes('ai.use')))
 
   const sendReply = async () => {
     if (!draft.trim() || busy) return
