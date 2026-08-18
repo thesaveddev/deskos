@@ -188,7 +188,13 @@ export default function App() {
       <Route path="/settings/notifications" element={<Protected><SettingsPage /></Protected>} />
       <Route path="/settings/security" element={<Protected><SettingsPage /></Protected>} />
       <Route path="/settings/active-directory" element={<Protected><SettingsPage /></Protected>} />
-      <Route path="/settings/api" element={<Protected><OauthSettingsPage /></Protected>} />
+      <Route path="/settings/branding" element={<Protected><SettingsPage /></Protected>} />
+      <Route path="/settings/portal" element={<Protected><SettingsPage /></Protected>} />
+      <Route path="/settings/remote" element={<Protected><SettingsPage /></Protected>} />
+      <Route path="/settings/devices" element={<Protected><SettingsPage /></Protected>} />
+      <Route path="/settings/monitoring" element={<Protected><SettingsPage /></Protected>} />
+      <Route path="/settings/data" element={<Protected><SettingsPage /></Protected>} />
+      <Route path="/settings/api" element={<Protected><SettingsPage /></Protected>} />
       <Route path="/portal" element={<Protected><PortalHomePage /></Protected>} />
       <Route path="/portal/new" element={<Protected><PortalNewTicketPage /></Protected>} />
       <Route path="/portal/tickets/:number" element={<Protected><PortalTicketPage /></Protected>} />
