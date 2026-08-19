@@ -158,7 +158,6 @@ export default function TicketsPage() {
           <button className="btn btn-ghost btn-sm" onClick={() => setShowFilters(!showFilters)}>
             {showFilters ? 'Hide filters' : '⚙ Filters'}
           </button>
-          <Link to="/tickets/new" className="btn btn-primary btn-sm">New ticket</Link>
         </div>
       </div>
 

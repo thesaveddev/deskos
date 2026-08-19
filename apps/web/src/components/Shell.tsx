@@ -3,6 +3,7 @@ import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { CommandPalette } from './CommandPalette.js'
 import { MobileShell } from './MobileShell.js'
 import { NotesDropdown } from './NotesDropdown.js'
+import { Icon } from './Icons.js'
 import { useAuth } from '../lib/auth.js'
 import { isNative } from '../lib/capacitor.js'
 import { lockScreen } from '../lib/lock.js'
@@ -318,7 +319,7 @@ export function Shell({ children }: { children: ReactNode }) {
           </div>
 
           <Link to="/tickets/new" className="btn btn-new-ticket">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <Icon name="ticket" size={16} />
             New Ticket
           </Link>
 
