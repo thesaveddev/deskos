@@ -228,12 +228,133 @@ function PreferencesSettings() {
   return <SettingSection title="My preferences" description="Personal settings that apply to your account across all organizations."><><Field label="Screen lock timeout" hint="Minutes of inactivity before the console locks (1–120, or 0 to disable)"><div className="settings-inline-field"><input className="field-input" type="number" min={0} max={120} value={idleMinutes} onChange={(e) => setIdleMinutes(Math.max(0, Math.min(120, Number(e.target.value))))} /><span className="muted">{idleMinutes === 0 ? 'Disabled' : `${idleMinutes} minute${idleMinutes === 1 ? '' : 's'}`}</span></div></Field><div className="settings-preference-row"><div><strong>Appearance</strong><small>Choose the console theme for this browser.</small></div><button className="btn btn-ghost btn-sm" type="button" onClick={toggle}><Icon name="settings" size={14} />Use {theme === 'dark' ? 'light' : 'dark'} mode</button></div><div className="settings-form-actions"><button className="btn btn-primary" onClick={() => { setIdleTimeoutMinutes(idleMinutes); setNotice('Preferences saved.') }}><Icon name="save" size={14} />Save preferences</button>{notice && <span className="settings-saved">{notice}</span>}</div></></SettingSection>
 }
 
+interface BrandingDraft {
+  portalTitle: string
+  logoUrl: string
+  primaryColor: string
+}
+
+const DEFAULT_BRANDING: BrandingDraft = {
+  portalTitle: '',
+  logoUrl: '',
+  primaryColor: '#e8a33d',
+}
+
+function brandingTextColor(hex: string): string {
+  const value = hex.replace('#', '')
+  if (!/^[0-9a-f]{6}$/i.test(value)) return '#1b1408'
+  const channels = [0, 2, 4].map((offset) => Number.parseInt(value.slice(offset, offset + 2), 16))
+  const luminance = (channels[0] * 299 + channels[1] * 587 + channels[2] * 114) / 1000
+  return luminance > 155 ? '#1b1408' : '#ffffff'
+}
+
+function brandingFromTenant(settings: Record<string, unknown> | undefined): BrandingDraft {
+  const branding = settings?.branding && typeof settings.branding === 'object' ? settings.branding as Record<string, unknown> : {}
+  return {
+    portalTitle: typeof branding.portalTitle === 'string' ? branding.portalTitle : DEFAULT_BRANDING.portalTitle,
+    logoUrl: typeof branding.logoUrl === 'string' ? branding.logoUrl : DEFAULT_BRANDING.logoUrl,
+    primaryColor: typeof branding.primaryColor === 'string' ? branding.primaryColor : DEFAULT_BRANDING.primaryColor,
+  }
+}
+
 function BrandingSettings() {
-  const [form, setForm] = useState({ portalTitle: '', logoUrl: '', primaryColor: '#e8a33d' })
-  const [busy, setBusy] = useState(false); const [message, setMessage] = useState<string | null>(null); const [error, setError] = useState<string | null>(null)
-  useEffect(() => { getTenant().then((r) => setForm({ portalTitle: String(r.tenant.settings?.branding && (r.tenant.settings.branding as any).portalTitle || ''), logoUrl: String(r.tenant.settings?.branding && (r.tenant.settings.branding as any).logoUrl || ''), primaryColor: String(r.tenant.settings?.branding && (r.tenant.settings.branding as any).primaryColor || '#e8a33d') })).catch(() => {}) }, [])
-  const save = async (event: React.FormEvent) => { event.preventDefault(); setBusy(true); setError(null); try { await updateBranding({ portalTitle: form.portalTitle || null, logoUrl: form.logoUrl || null, primaryColor: form.primaryColor || null }); setMessage('Branding saved.') } catch (e) { setError(e instanceof Error ? e.message : 'Could not save branding') } finally { setBusy(false) } }
-  return <SettingSection title="Branding" description="Control the name, logo, and accent shown in your customer support portal."><>{error && <Alert kind="error">{error}</Alert>}{message && <Alert kind="info">{message}</Alert>}<form onSubmit={save} className="settings-form-grid"><Field label="Portal title"><input className="field-input" value={form.portalTitle} onChange={(e) => setForm({ ...form, portalTitle: e.target.value })} placeholder="Your support portal" maxLength={60} /></Field><Field label="Logo URL" hint="HTTPS image URL"><input className="field-input" type="url" value={form.logoUrl} onChange={(e) => setForm({ ...form, logoUrl: e.target.value })} placeholder="https://…" /></Field><Field label="Portal accent"><input className="field-input settings-color-input" type="color" value={/^#[0-9a-f]{6}$/i.test(form.primaryColor) ? form.primaryColor : '#e8a33d'} onChange={(e) => setForm({ ...form, primaryColor: e.target.value })} /></Field><div className="settings-form-actions"><button className="btn btn-primary" type="submit" disabled={busy}><Icon name="save" size={14} />{busy ? 'Saving…' : 'Save branding'}</button></div></form></></SettingSection>
+  const [form, setForm] = useState<BrandingDraft>(DEFAULT_BRANDING)
+  const [saved, setSaved] = useState<BrandingDraft>(DEFAULT_BRANDING)
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [logoFailed, setLogoFailed] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const dirty = JSON.stringify(form) !== JSON.stringify(saved)
+  const validColor = /^#[0-9a-f]{6}$/i.test(form.primaryColor)
+  const previewColor = validColor ? form.primaryColor : DEFAULT_BRANDING.primaryColor
+  const previewTitle = form.portalTitle.trim() || 'Your support portal'
+  const previewTextColor = brandingTextColor(previewColor)
+  const previewInitial = previewTitle.slice(0, 1).toUpperCase()
+
+  useEffect(() => {
+    let active = true
+    getTenant()
+      .then((response) => {
+        if (!active) return
+        const branding = brandingFromTenant(response.tenant.settings)
+        setForm(branding)
+        setSaved(branding)
+      })
+      .catch((err) => {
+        if (active) setError(err instanceof Error ? err.message : 'Could not load branding')
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => { active = false }
+  }, [])
+
+  const save = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!validColor) {
+      setError('Enter a six-digit hexadecimal color, for example #e8a33d.')
+      return
+    }
+    setBusy(true)
+    setError(null)
+    setMessage(null)
+    try {
+      const response = await updateBranding({
+        portalTitle: form.portalTitle.trim() || null,
+        logoUrl: form.logoUrl.trim() || null,
+        primaryColor: form.primaryColor,
+      })
+      const next = {
+        portalTitle: response.branding.portalTitle ?? '',
+        logoUrl: response.branding.logoUrl ?? '',
+        primaryColor: response.branding.primaryColor ?? DEFAULT_BRANDING.primaryColor,
+      }
+      setForm(next)
+      setSaved(next)
+      setLogoFailed(false)
+      setMessage('Branding saved and applied to the customer portal.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save branding')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const resetDraft = () => {
+    setForm(saved)
+    setLogoFailed(false)
+    setMessage(null)
+    setError(null)
+  }
+
+  if (loading) return <div className="settings-card"><span className="etch">Loading branding…</span></div>
+
+  return <SettingSection title="Branding & customer portal" description="Shape the identity customers see when they raise requests, follow tickets, and use your support portal.">
+    <>{error && <Alert kind="error">{error}</Alert>}{message && <Alert kind="info">{message}</Alert>}
+      <div className="branding-workspace">
+        <form onSubmit={(event) => void save(event)} className="branding-editor">
+          <div className="branding-section-heading"><span className="branding-section-icon"><Icon name="settings" size={15} /></span><div><h3>Brand identity</h3><p>Use a name and logo your requesters will recognise.</p></div></div>
+          <div className="branding-fields">
+            <Field label="Portal name" hint="Shown in the portal header and browser context."><input className="field-input" value={form.portalTitle} onChange={(event) => setForm((current) => ({ ...current, portalTitle: event.target.value }))} placeholder="Your support portal" maxLength={60} /></Field>
+            <Field label="Logo URL" hint="Use a public HTTPS image URL, ideally an SVG or square PNG."><div className="branding-logo-input"><input className="field-input" type="url" value={form.logoUrl} onChange={(event) => { setForm((current) => ({ ...current, logoUrl: event.target.value })); setLogoFailed(false) }} placeholder="https://example.com/logo.svg" maxLength={500} /><button type="button" className="btn btn-ghost btn-sm" onClick={() => { setForm((current) => ({ ...current, logoUrl: '' })); setLogoFailed(false) }} disabled={!form.logoUrl} aria-label="Remove logo"><Icon name="delete" size={14} /></button></div></Field>
+          </div>
+          <div className="branding-section-heading"><span className="branding-section-icon"><Icon name="eye" size={15} /></span><div><h3>Visual system</h3><p>Choose the accent used for portal actions and highlights.</p></div></div>
+          <Field label="Portal accent" hint="Pick a brand color or enter its six-digit hexadecimal value."><div className="branding-color-control"><input className="settings-color-input" type="color" value={validColor ? form.primaryColor : DEFAULT_BRANDING.primaryColor} onChange={(event) => setForm((current) => ({ ...current, primaryColor: event.target.value }))} aria-label="Choose portal accent" /><input className="field-input mono" value={form.primaryColor} onChange={(event) => setForm((current) => ({ ...current, primaryColor: event.target.value }))} placeholder="#e8a33d" maxLength={7} aria-label="Portal accent hexadecimal value" /><span className="branding-color-swatch" style={{ backgroundColor: previewColor }} aria-label={`Preview color ${previewColor}`} /></div></Field>
+          <div className="branding-where-used"><strong>Applied to</strong><span><Icon name="external" size={13} /> Customer portal header</span><span><Icon name="ticket" size={13} /> Requester ticket actions</span><span><Icon name="mail" size={13} /> Portal-facing email links</span></div>
+          <div className="settings-form-actions"><button className="btn btn-primary" type="submit" disabled={busy || !dirty}><Icon name="save" size={14} />{busy ? 'Saving…' : 'Save branding'}</button>{dirty ? <button className="btn btn-ghost" type="button" onClick={resetDraft}>Discard changes</button> : <span className="settings-saved"><Icon name="check" size={13} />All changes saved</span>}<a className="btn btn-ghost" href="/portal" target="_blank" rel="noreferrer"><Icon name="external" size={14} />Open portal</a></div>
+        </form>
+        <aside className="branding-preview" aria-label="Customer portal preview">
+          <div className="branding-preview-head"><div><span className="settings-eyebrow">Live preview</span><strong>Customer portal</strong></div><span className="branding-preview-status"><span />Preview</span></div>
+          <div className="branding-preview-window">
+            <div className="branding-preview-nav"><div className="branding-preview-brand">{form.logoUrl && !logoFailed ? <img src={form.logoUrl} alt="" onError={() => setLogoFailed(true)} /> : <span className="branding-preview-mark" style={{ backgroundColor: previewColor, color: previewTextColor }}>{previewInitial}</span>}<strong>{previewTitle}</strong></div><span className="branding-preview-avatar">JD</span></div>
+            <div className="branding-preview-body"><span className="branding-preview-kicker">SUPPORT CENTRE</span><h4>How can we help?</h4><p>Find an answer or send a request to your support team.</p><button type="button" style={{ backgroundColor: previewColor, color: previewTextColor }}>Create a request <Icon name="forward" size={13} /></button><div className="branding-preview-card"><span className="branding-preview-card-icon" style={{ color: previewColor }}><Icon name="ticket" size={15} /></span><span><strong>My requests</strong><small>Track your open support conversations</small></span><Icon name="chevron-right" size={14} /></div></div>
+          </div>
+          <p className="branding-preview-note"><Icon name="check" size={13} /> Changes update the portal after you save.</p>
+        </aside>
+      </div>
+    </>
+  </SettingSection>
 }
 
 function OperationalSettings({ tab }: { tab: 'portal' | 'remote' | 'devices' | 'monitoring' | 'data' }) {
