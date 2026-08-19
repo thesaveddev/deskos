@@ -397,8 +397,8 @@ export default function TicketDetailPage() {
         await retryTriage(ticket.id)
         setAiTriage((await getTriageState(ticket.id)).triage)
       } else {
-        const result = await stopTriage(ticket.id)
-        setAiTriage(result.triage)
+        await stopTriage(ticket.id)
+        setAiTriage((await getTriageState(ticket.id)).triage)
       }
       await load()
     } catch (err) {
@@ -423,6 +423,7 @@ export default function TicketDetailPage() {
   const triageStatus = aiTriage && typeof aiTriage.status === 'string' ? aiTriage.status : 'unknown'
   const triageQuestion = aiTriage?.lastQuestion ? displayTicketValue(aiTriage.lastQuestion) : null
   const triageError = aiTriage?.lastError ? displayTicketValue(aiTriage.lastError) : null
+  const triageTranscript = aiTriage?.transcript ?? []
 
   return (
     <Shell>
@@ -677,7 +678,44 @@ export default function TicketDetailPage() {
             <span className="etch">AI assistant</span>
             {aiTriage ? <span className={`status-pill status-${triageStatus === 'resolved' ? 'resolved' : triageStatus === 'handoff' ? 'escalated' : triageStatus === 'waiting_for_user' ? 'pending_user' : 'open'}`}>{triageStatus.replace('_', ' ')}</span> : null}
           </div>
-          {aiTriage && triageStatus !== 'idle' ? <div className="ai-result"><span className="muted mono">Automatic triage · round {displayTicketValue(aiTriage.round)}</span>{triageQuestion ? <p>{triageQuestion}</p> : null}{triageError ? <p className="muted">{triageError}</p> : null}<div className="ticket-link-form"><button className="btn btn-ghost btn-sm" disabled={aiTriageBusy || triageStatus === 'disabled' || triageStatus === 'resolved'} onClick={() => void runAiTriageAction('retry')}>Retry triage</button><button className="btn btn-ghost btn-sm" disabled={aiTriageBusy || triageStatus === 'disabled' || triageStatus === 'resolved'} onClick={() => void runAiTriageAction('stop')}>Stop AI</button></div></div> : null}
+          {aiTriage && triageStatus !== 'idle' ? (
+            <div className="ai-result ai-triage-overview">
+              <div className="ai-triage-overview-head">
+                <div>
+                  <span className="muted mono">Automatic triage · round {displayTicketValue(aiTriage.round)}</span>
+                  <strong>Technician review</strong>
+                </div>
+                {typeof aiTriage.lastConfidence === 'number' ? <span className="ai-confidence">{Math.round(aiTriage.lastConfidence * 100)}% confidence</span> : null}
+              </div>
+              {triageQuestion ? <p>{triageQuestion}</p> : null}
+              {triageError ? <p className="muted">{triageError}</p> : null}
+              <div className="ticket-link-form">
+                <button className="btn btn-ghost btn-sm" disabled={aiTriageBusy || triageStatus === 'disabled' || triageStatus === 'resolved'} onClick={() => void runAiTriageAction('retry')}>Retry triage</button>
+                <button className="btn btn-ghost btn-sm" disabled={aiTriageBusy || triageStatus === 'disabled' || triageStatus === 'resolved'} onClick={() => void runAiTriageAction('stop')}>Stop AI</button>
+              </div>
+            </div>
+          ) : null}
+          {triageTranscript.length > 0 ? (
+            <div className="ai-triage-transcript">
+              <div className="ai-subsection-heading">
+                <strong>Decision trail</strong>
+                <span className="muted">{triageTranscript.length} AI decision{triageTranscript.length === 1 ? '' : 's'}</span>
+              </div>
+              {triageTranscript.slice().reverse().map((entry) => (
+                <article className="ai-decision-card" key={entry.id}>
+                  <div className="ai-decision-card-head">
+                    <span className="ai-decision-action">{entry.action === 'ask_user' ? 'Asked requester' : entry.action === 'resolve' ? 'Proposed resolution' : 'Handed off'}</span>
+                    <span className="muted mono">Round {entry.round} · {Math.round(entry.confidence * 100)}%</span>
+                  </div>
+                  <p className="ai-decision-message">{entry.message}</p>
+                  {entry.rationale ? <div className="ai-decision-detail"><span className="ai-detail-label">Why this decision</span><span>{entry.rationale}</span></div> : null}
+                  {entry.evidence.length > 0 ? <div className="ai-decision-detail"><span className="ai-detail-label">Evidence used</span><ul>{entry.evidence.map((item, index) => <li key={`${entry.id}-evidence-${index}`}>{item}</li>)}</ul></div> : null}
+                  {entry.policyExplanation ? <div className="ai-decision-detail"><span className="ai-detail-label">Policy and safety</span><span>{entry.policyExplanation}</span></div> : null}
+                  <span className="muted mono">{formatWhen(entry.createdAt)}</span>
+                </article>
+              ))}
+            </div>
+          ) : null}
           <div className="ticket-link-form">
             <button className="btn btn-ghost btn-sm" disabled={aiSummaryBusy} onClick={() => void runAiSummary()}>
               {aiSummaryBusy ? 'Summarising…' : 'Summarise'}

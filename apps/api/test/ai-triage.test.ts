@@ -52,6 +52,13 @@ describe('AI ticket triage', () => {
     expect(normalizeTriagePolicy({ maxRounds: 99, resolveConfidence: 0.1 }).resolveConfidence).toBe(0.5)
     expect(parseTriageDecision('not json')).toBeNull()
     expect(parseTriageDecision('{"action":"run_command","message":"bad"}')).toBeNull()
+    expect(parseTriageDecision('{"action":"handoff","message":"A technician should review this.","confidence":0.76,"rationale":"The request may require privileged access.","evidence":["Requester reported repeated failures"],"policyExplanation":"Do not automate privileged changes."}')).toMatchObject({
+      action: 'handoff',
+      confidence: 0.76,
+      rationale: 'The request may require privileged access.',
+      evidence: ['Requester reported repeated failures'],
+      policyExplanation: 'Do not automate privileged changes.',
+    })
   })
 
   it('asks a requester a diagnostic question, then resolves after confirmation', async () => {
@@ -69,6 +76,10 @@ describe('AI ticket triage', () => {
       return detail.json().threads.some((thread: { kind: string }) => thread.kind === 'ai_triage')
     })
     expect(provider.calls[0]).toContain('untrusted data')
+
+    const triage = await app.inject({ method: 'GET', url: `/api/v1/ai/tickets/${created.json().ticket.id}/triage`, headers: authHeaders(owner) })
+    expect(triage.statusCode).toBe(200)
+    expect(triage.json().triage.transcript[0]).toMatchObject({ action: 'ask_user', confidence: 0.82, evidence: [] })
 
     provider.mode = 'resolve'
     const reply = await app.inject({

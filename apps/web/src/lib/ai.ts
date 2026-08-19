@@ -12,6 +12,18 @@ export interface SimilarTicket {
 
 export type TriageStatus = 'idle' | 'evaluating' | 'waiting_for_user' | 'resolved' | 'handoff' | 'disabled'
 
+export interface TriageTranscriptEntry {
+  id: string
+  createdAt: string
+  action: 'ask_user' | 'resolve' | 'handoff'
+  round: number
+  message: string
+  confidence: number
+  rationale?: string
+  evidence: string[]
+  policyExplanation?: string
+}
+
 export interface TriageState {
   status: TriageStatus
   round: number
@@ -20,6 +32,7 @@ export interface TriageState {
   lastError?: string
   lastConfidence?: number
   resolvedAt?: string
+  transcript?: TriageTranscriptEntry[]
 }
 
 export interface KbDraftArticle {

@@ -2917,6 +2917,102 @@ select.field-input {
   line-height: 1.5;
 }
 
+.ai-triage-overview-head,
+.ai-decision-card-head,
+.ai-subsection-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ai-triage-overview-head > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ai-triage-overview-head strong,
+.ai-subsection-heading strong {
+  color: var(--text-1);
+  font-size: 12px;
+}
+
+.ai-confidence {
+  padding: 4px 7px;
+  border: 1px solid var(--line-1);
+  border-radius: 999px;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.ai-triage-transcript {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.ai-subsection-heading {
+  align-items: center;
+  padding-bottom: 2px;
+}
+
+.ai-subsection-heading .muted {
+  font-size: 11px;
+}
+
+.ai-decision-card {
+  display: grid;
+  gap: 7px;
+  padding: 11px 12px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+  background: var(--bg-0);
+}
+
+.ai-decision-card-head {
+  align-items: center;
+}
+
+.ai-decision-action {
+  color: var(--text-1);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.ai-decision-message {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.ai-decision-detail {
+  display: grid;
+  gap: 3px;
+  color: var(--text-2);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.ai-detail-label {
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.ai-decision-detail ul {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding-left: 17px;
+}
+
 .ticket-ext-row {
   display: flex;
   gap: 12px;

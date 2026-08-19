@@ -21,6 +21,18 @@ export interface AiTriagePolicy {
   sources: string[]
 }
 
+export interface TriageTranscriptEntry {
+  id: string
+  createdAt: string
+  action: TriageAction
+  round: number
+  message: string
+  confidence: number
+  rationale?: string
+  evidence: string[]
+  policyExplanation?: string
+}
+
 export interface TriageState {
   status: TriageStatus
   round: number
@@ -29,6 +41,7 @@ export interface TriageState {
   lastError?: string
   lastConfidence?: number
   resolvedAt?: string
+  transcript?: TriageTranscriptEntry[]
 }
 
 export interface TriageDeps {
@@ -63,7 +76,7 @@ interface TriageTicket {
   requesterEmail: string | null
   requesterName: string | null
   tenantName: string
-  messages: Array<{ kind: string; body: string; createdAt: string }>
+  messages: Array<{ id: string; kind: string; body: string; createdAt: string; meta: Record<string, unknown> }>
 }
 
 interface TriageDecision {
@@ -71,6 +84,9 @@ interface TriageDecision {
   message: string
   confidence: number
   question?: string
+  rationale?: string
+  evidence: string[]
+  policyExplanation?: string
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -109,7 +125,31 @@ function readState(ext: Record<string, unknown>): TriageState {
 }
 
 function stateIn(ext: Record<string, unknown>, state: TriageState): Record<string, unknown> {
-  return { ...ext, aiTriage: state }
+  const { transcript: _transcript, ...persistedState } = state
+  return { ...ext, aiTriage: persistedState }
+}
+
+function readTranscript(messages: TriageTicket['messages']): TriageTranscriptEntry[] {
+  return messages
+    .filter((message) => message.kind === 'ai_triage')
+    .map((message) => {
+      const meta = message.meta
+      const action = TRIAGE_ACTIONS.includes(meta.action as TriageAction) ? meta.action as TriageAction : 'handoff'
+      const evidence = Array.isArray(meta.evidence)
+        ? meta.evidence.filter((item): item is string => typeof item === 'string').slice(0, 8)
+        : []
+      return {
+        id: message.id,
+        createdAt: message.createdAt,
+        action,
+        round: Number(meta.round ?? 0) || 0,
+        message: message.body,
+        confidence: clamp(Number(meta.confidence ?? 0) || 0, 0, 1),
+        ...(typeof meta.rationale === 'string' && meta.rationale ? { rationale: meta.rationale } : {}),
+        evidence,
+        ...(typeof meta.policyExplanation === 'string' && meta.policyExplanation ? { policyExplanation: meta.policyExplanation } : {}),
+      }
+    })
 }
 
 function extractJson(raw: string): Record<string, unknown> | null {
@@ -136,12 +176,21 @@ export function parseTriageDecision(raw: string): TriageDecision | null {
   if (!message) return null
   const confidence = clamp(Number(parsed.confidence ?? 0.5) || 0.5, 0, 1)
   const question = typeof parsed.question === 'string' ? parsed.question.trim().slice(0, 1200) : undefined
+  const evidence = Array.isArray(parsed.evidence)
+    ? parsed.evidence.filter((item): item is string => typeof item === 'string').map((item) => item.trim().slice(0, 500)).filter(Boolean).slice(0, 8)
+    : []
+  const rationale = typeof parsed.rationale === 'string' ? parsed.rationale.trim().slice(0, 1200) : undefined
+  const policyExplanation = typeof parsed.policyExplanation === 'string' ? parsed.policyExplanation.trim().slice(0, 1200) : undefined
   return {
     action: parsed.action as TriageAction,
     message,
     confidence,
     ...(question ? { question } : {}),
+    ...(rationale ? { rationale } : {}),
+    evidence,
+    ...(policyExplanation ? { policyExplanation } : {}),
   }
+
 }
 
 async function loadPolicy(pool: DbPool, tenantId: string): Promise<AiTriagePolicy> {
@@ -163,7 +212,7 @@ async function loadTicket(pool: DbPool, tenantId: string, ticketId: string): Pro
     )
     if (!ticket.rows[0]) return null
     const threads = await client.query(
-      `SELECT kind, body, created_at
+      `SELECT id, kind, body, meta, created_at
          FROM ticket_threads
         WHERE ticket_id = $1 AND visibility = 'public' AND kind IN ('message', 'ai_triage')
         ORDER BY created_at ASC
@@ -184,9 +233,11 @@ async function loadTicket(pool: DbPool, tenantId: string, ticketId: string): Pro
       requesterName: row.requester_name ?? null,
       tenantName: row.tenant_name,
       messages: threads.rows.map((thread) => ({
+        id: thread.id,
         kind: thread.kind,
         body: String(thread.body).slice(0, 4000),
         createdAt: new Date(thread.created_at).toISOString(),
+        meta: (thread.meta ?? {}) as Record<string, unknown>,
       })),
     }
   })
@@ -203,7 +254,7 @@ function buildPrompt(ticket: TriageTicket, state: TriageState, policy: AiTriageP
     'Ask one practical diagnostic question at a time. Prefer safe reversible guidance. Do not ask for passwords, MFA codes, private keys, payment data, or other secrets.',
     'Use handoff when the issue is high risk, ambiguous after the allowed rounds, security-related, requires elevated access, or needs a technician.',
     `The organization permits at most ${policy.maxRounds} question rounds. This is round ${state.round}.`,
-    'Return ONLY JSON with this shape: {"action":"ask_user|resolve|handoff","message":"public reply","question":"optional single question","confidence":0.0}.',
+    'Return ONLY JSON with this shape: {"action":"ask_user|resolve|handoff","message":"public reply","question":"optional single question","confidence":0.0,"rationale":"brief internal explanation","evidence":["ticket fact or conversation evidence"],"policyExplanation":"which safety or organization policy affected the decision"}.',
     'Use resolve only when the latest requester message or a safe troubleshooting step provides strong evidence the issue is fixed. Use confidence 0.92 or higher only when that evidence is clear.',
     '',
     `Ticket #${ticket.number}: ${ticket.subject}`,
@@ -321,7 +372,16 @@ export async function runTicketTriage(deps: TriageDeps, tenantId: string, ticket
     await client.query(
       `INSERT INTO ticket_threads (tenant_id, ticket_id, author_id, kind, visibility, body, meta)
        VALUES ($1, $2, NULL, 'ai_triage', 'public', $3, $4::jsonb)`,
-      [tenantId, ticketId, publicBody, JSON.stringify({ source: 'ai', model: deps.model, action: decision.action, confidence: decision.confidence, round: nextRound })],
+      [tenantId, ticketId, publicBody, JSON.stringify({
+        source: 'ai',
+        model: deps.model,
+        action: decision.action,
+        confidence: decision.confidence,
+        round: nextRound,
+        ...(decision.rationale ? { rationale: decision.rationale } : {}),
+        evidence: decision.evidence,
+        ...(decision.policyExplanation ? { policyExplanation: decision.policyExplanation } : {}),
+      })],
     )
     if (nextTicketStatus === 'resolved') {
       await client.query(`UPDATE tickets SET status = 'resolved', resolved_at = COALESCE(resolved_at, now()), updated_at = now(), ext = $2::jsonb WHERE id = $1`, [ticketId, JSON.stringify(stateIn(ext, { ...current, status: nextStatus, round: nextRound, lastConfidence: decision.confidence, resolvedAt: new Date().toISOString(), lastRunAt: new Date().toISOString() }))])
@@ -356,7 +416,7 @@ export async function runTicketTriage(deps: TriageDeps, tenantId: string, ticket
 export async function getTriageState(pool: DbPool, tenantId: string, ticketId: string): Promise<TriageState> {
   const ticket = await loadTicket(pool, tenantId, ticketId)
   if (!ticket) throw AppError.notFound('Ticket not found')
-  return readState(ticket.ext)
+  return { ...readState(ticket.ext), transcript: readTranscript(ticket.messages) }
 }
 
 export async function stopTicketTriage(pool: DbPool, tenantId: string, ticketId: string, reason = 'Stopped by a technician.'): Promise<TriageState> {
