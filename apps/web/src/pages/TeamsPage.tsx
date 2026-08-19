@@ -19,6 +19,7 @@ type Team = {
   chat_room_id?: string | null
   chat_room_name?: string | null
   open_ticket_count?: number
+  accepts_tickets?: boolean
   created_at: string
 }
 
@@ -42,6 +43,7 @@ export default function TeamsPage() {
   const [leadId, setLeadId] = useState('')
   const [memberIds, setMemberIds] = useState<string[]>([])
   const [createChat, setCreateChat] = useState(false)
+  const [acceptsTickets, setAcceptsTickets] = useState(true)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -67,6 +69,7 @@ export default function TeamsPage() {
     setLeadId('')
     setMemberIds([])
     setCreateChat(false)
+    setAcceptsTickets(true)
     setNotice(null)
     setError(null)
     setModalOpen(true)
@@ -83,7 +86,7 @@ export default function TeamsPage() {
     setError(null)
     try {
       const selected = leadId && !memberIds.includes(leadId) ? [...memberIds, leadId] : memberIds
-      await api('/teams', { method: 'POST', body: { name: name.trim(), leadId: leadId || null, memberIds: selected, createChat } })
+      await api('/teams', { method: 'POST', body: { name: name.trim(), leadId: leadId || null, memberIds: selected, createChat, acceptsTickets } })
       setModalOpen(false)
       setNotice(`${name.trim()} is ready for ticket routing.`)
       await load()
@@ -128,11 +131,11 @@ export default function TeamsPage() {
 
       <section className="teams-panel">
         <div className="teams-panel-head"><div><h2>Ticket teams</h2><p>Assign tickets to a team so the right people can see, claim, and escalate the work.</p></div><span className="mono muted">{loading ? 'Refreshing…' : `${teams.length} team${teams.length === 1 ? '' : 's'}`}</span></div>
-        {loading ? <div className="teams-empty"><span className="etch">Loading teams…</span></div> : teams.length === 0 ? <div className="teams-empty"><Icon name="user" size={28} /><strong>No teams yet</strong><span>Create your first team to make queue filtering and escalation available.</span>{canManage ? <button className="btn btn-primary btn-sm" onClick={openCreate}><Icon name="add" size={14} />Create team</button> : null}</div> : <div className="teams-grid">{teams.map((team) => <article className="team-card" key={team.id}><div className="team-card-head"><span className="team-card-icon"><Icon name="user" size={18} /></span><div><h3>{team.name}</h3><span className="muted">{team.chat_room_id ? `Private chat · #${team.chat_room_name ?? team.name}` : 'Queue team'}</span></div>{canManage ? <button className="btn btn-ghost btn-xs team-delete" onClick={() => void deleteTeam(team)} aria-label={`Delete ${team.name}`}><Icon name="delete" size={14} /></button> : null}</div><div className="team-card-stats"><div><strong>{team.open_ticket_count ?? 0}</strong><span>Open tickets</span></div><div><strong>{team.member_count ?? 0}</strong><span>Members</span></div><div><strong>{team.lead_name || '—'}</strong><span>Team lead</span></div></div><div className="team-card-foot"><span className="status-pill status-open">Available</span><span className="mono muted">{team.chat_room_id ? 'Chat enabled' : 'Routing only'}</span></div></article>)}</div>}
+        {loading ? <div className="teams-empty"><span className="etch">Loading teams…</span></div> : teams.length === 0 ? <div className="teams-empty"><Icon name="user" size={28} /><strong>No teams yet</strong><span>Create your first team to make queue filtering and escalation available.</span>{canManage ? <button className="btn btn-primary btn-sm" onClick={openCreate}><Icon name="add" size={14} />Create team</button> : null}</div> : <div className="teams-grid">{teams.map((team) => <article className="team-card" key={team.id}><div className="team-card-head"><span className="team-card-icon"><Icon name="user" size={18} /></span><div><h3>{team.name}</h3><span className="muted">{team.chat_room_id ? `Private chat · #${team.chat_room_name ?? team.name}` : 'Queue team'}</span></div>{canManage ? <button className="btn btn-ghost btn-xs team-delete" onClick={() => void deleteTeam(team)} aria-label={`Delete ${team.name}`}><Icon name="delete" size={14} /></button> : null}</div><div className="team-card-stats"><div><strong>{team.open_ticket_count ?? 0}</strong><span>Open tickets</span></div><div><strong>{team.member_count ?? 0}</strong><span>Members</span></div><div><strong>{team.lead_name || '—'}</strong><span>Team lead</span></div></div><div className="team-card-foot"><span className={`status-pill ${team.accepts_tickets === false ? 'status-offline' : 'status-open'}`}>{team.accepts_tickets === false ? 'Does not accept tickets' : 'Accepts tickets'}</span><span className="mono muted">{team.chat_room_id ? 'Chat enabled' : 'Routing only'}</span></div></article>)}</div>}
       </section>
 
       <Modal open={modalOpen} onClose={() => { if (!busy) setModalOpen(false) }} title="Create a ticket team" footer={<><button className="btn btn-ghost" type="button" onClick={() => setModalOpen(false)} disabled={busy}>Cancel</button><button className="btn btn-primary" type="submit" form="create-team-form" disabled={busy || name.trim().length < 2}><Icon name="save" size={14} />{busy ? 'Creating…' : 'Create team'}</button></>}>
-        <form id="create-team-form" onSubmit={(event) => void save(event)}><p className="modal-description">Teams are used by ticket filters, assignment, escalation rules, monitoring alerts, and reports.</p><Field label="Team name" hint="Use a short name agents will recognize quickly."><input className="field-input" value={name} onChange={(event) => setName(event.target.value)} placeholder="Service desk" minLength={2} maxLength={100} required autoFocus /></Field><Field label="Team lead" hint="Optional. The lead is automatically included as a team member."><select className="field-input" value={leadId} onChange={(event) => { const value = event.target.value; setLeadId(value); if (value && !memberIds.includes(value)) setMemberIds((current) => [...current, value]) }}><option value="">No lead assigned</option>{members.map((member) => <option key={member.user_id} value={member.user_id}>{member.name || member.email}</option>)}</select></Field><div className="team-member-picker"><div className="team-member-picker-head"><strong>Team members</strong><span className="mono muted">{memberIds.length} selected</span></div>{members.length === 0 ? <span className="muted">No active staff members found.</span> : members.map((member) => <label className="team-member-option" key={member.user_id}><input type="checkbox" checked={memberIds.includes(member.user_id)} onChange={(event) => toggleMember(member.user_id, event.target.checked)} /><span><strong>{member.name || member.email}</strong><small>{member.email}</small></span></label>)}</div><label className="team-chat-toggle"><input type="checkbox" checked={createChat} onChange={(event) => setCreateChat(event.target.checked)} /><span><strong>Create a private team chat</strong><small>Only team members, the lead, and organization managers will see the room.</small></span></label></form>
+        <form id="create-team-form" onSubmit={(event) => void save(event)}><p className="modal-description">Teams are used by ticket filters, assignment, escalation rules, monitoring alerts, and reports.</p><Field label="Team name" hint="Use a short name agents will recognize quickly."><input className="field-input" value={name} onChange={(event) => setName(event.target.value)} placeholder="Service desk" minLength={2} maxLength={100} required autoFocus /></Field><Field label="Team lead" hint="Optional. The lead is automatically included as a team member."><select className="field-input" value={leadId} onChange={(event) => { const value = event.target.value; setLeadId(value); if (value && !memberIds.includes(value)) setMemberIds((current) => [...current, value]) }}><option value="">No lead assigned</option>{members.map((member) => <option key={member.user_id} value={member.user_id}>{member.name || member.email}</option>)}</select></Field><div className="team-member-picker"><div className="team-member-picker-head"><strong>Team members</strong><span className="mono muted">{memberIds.length} selected</span></div>{members.length === 0 ? <span className="muted">No active staff members found.</span> : members.map((member) => <label className="team-member-option" key={member.user_id}><input type="checkbox" checked={memberIds.includes(member.user_id)} onChange={(event) => toggleMember(member.user_id, event.target.checked)} /><span><strong>{member.name || member.email}</strong><small>{member.email}</small></span></label>)}</div><label className="team-chat-toggle"><input type="checkbox" checked={acceptsTickets} onChange={(event) => setAcceptsTickets(event.target.checked)} /><span><strong>Accept tickets</strong><small>Allow this team to appear as a destination for new tickets, assignment, escalation, and forwarding.</small></span></label><label className="team-chat-toggle"><input type="checkbox" checked={createChat} onChange={(event) => setCreateChat(event.target.checked)} /><span><strong>Create a private team chat</strong><small>Only team members, the lead, and organization managers will see the room.</small></span></label></form>
       </Modal>
     </Shell>
   )

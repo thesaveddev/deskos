@@ -14,6 +14,7 @@ import { ensureTenantDefaults, getDefaultSlaPolicy } from '../tenants/defaults.j
 import { computeDeadlines } from './sla.js'
 import { dispatchTicketTriage } from '../ai/triage.js'
 import { acquireTicketLockOnClient, assertTicketWriteAccess, TicketLockConflict } from './locks.service.js'
+import { assertTeamAcceptsTickets } from '../teams/team-policy.js'
 import '../../types.js'
 
 const TICKET_STATUSES = ['new', 'open', 'in_progress', 'pending_user', 'pending_vendor', 'escalated', 'resolved', 'closed'] as const
@@ -284,6 +285,8 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
       await ensureDeviceBelongsToTenant(client, body.deviceId)
 
       const type = body.type ?? 'incident'
+      const destinationTeamId = body.teamId ?? defaults.teamId
+      await assertTeamAcceptsTickets(client, ctx.tenantId, destinationTeamId)
 
       // Resolve an optional catalogue service; validate it belongs to the tenant.
       let service: { id: string; name: string; approval_required: boolean } | null = null
@@ -324,7 +327,7 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
         [
           ctx.tenantId, number, type, priority, body.subject,
           request.user!.id, body.affectedUserId ?? null, assigneeId,
-          body.teamId ?? defaults.teamId, body.categoryId ?? defaults.categoryId,
+          destinationTeamId, body.categoryId ?? defaults.categoryId,
           body.deviceId ?? null, service?.id ?? null, policy.id, JSON.stringify(ext), dueResponseAt, dueResolutionAt,
         ],
       )
@@ -463,6 +466,7 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
       const fields = ['subject', 'priority', 'impact', 'urgency', 'type', 'categoryId', 'teamId', 'deviceId', 'tags'] as const
       const columns: Record<string, string> = { categoryId: 'category_id', teamId: 'team_id', deviceId: 'device_id' }
       await ensureDeviceBelongsToTenant(client, body.deviceId)
+      if (body.teamId !== undefined) await assertTeamAcceptsTickets(client, ctx.tenantId, body.teamId)
       for (const field of fields) {
         const value = body[field]
         if (value === undefined) continue
@@ -652,6 +656,7 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
     return withTenant(app.db, ctx.tenantId, async (client) => {
       const ticket = await findTicket(client, id)
       if (!ticket) throw AppError.notFound('Ticket not found')
+      if (body.teamId !== undefined) await assertTeamAcceptsTickets(client, ctx.tenantId, body.teamId)
 
       // Claiming a ticket (assigning it to yourself) acquires the same
       // five-minute lock used by the detail page. Manager reassignment clears

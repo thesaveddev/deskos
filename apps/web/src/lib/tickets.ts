@@ -242,6 +242,7 @@ export interface TicketActivityEntry {
 export interface Team {
   id: string
   name: string
+  accepts_tickets?: boolean
 }
 
 export function escalateTicket(id: string, data: { to_team_id?: string; to_assignee_id?: string; reason: string }): Promise<{ escalation: Escalation }> {

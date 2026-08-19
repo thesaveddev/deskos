@@ -9,6 +9,7 @@ import { requireTenant } from '../../middleware/requireTenant.js'
 import { ensureTenantDefaults, getDefaultSlaPolicy } from '../tenants/defaults.js'
 import { computeDeadlines } from '../tickets/sla.js'
 import { dispatchTicketTriage } from '../ai/triage.js'
+import { assertTeamAcceptsTickets } from '../teams/team-policy.js'
 import '../../types.js'
 
 const createSchema = z.object({
@@ -62,6 +63,7 @@ export async function portalRoutes(app: FastifyInstance): Promise<void> {
         [ctx.tenantId],
       )
       const number = counter.rows[0].ticket_counter as number
+      await assertTeamAcceptsTickets(client, ctx.tenantId, defaults.teamId)
 
       const res = await client.query(
         `INSERT INTO tickets

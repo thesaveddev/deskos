@@ -457,7 +457,7 @@ export default function TicketDetailPage() {
             <h4 className="ticket-escalate-title">Escalate ticket</h4>
             <select className="field-input select-sm" value={escTeam} onChange={(e) => setEscTeam(e.target.value)}>
               <option value="">Keep current team</option>
-              {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              {teams.filter((t) => t.accepts_tickets !== false).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
             <textarea className="field-input" placeholder="Reason for escalation (required)" value={escReason} onChange={(e) => setEscReason(e.target.value)} rows={2} />
             <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -475,7 +475,7 @@ export default function TicketDetailPage() {
             <h4 className="ticket-escalate-title">Forward to team</h4>
             <select className="field-input select-sm" value={fwdTeam} onChange={(e) => setFwdTeam(e.target.value)}>
               <option value="">Select a team…</option>
-              {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              {teams.filter((t) => t.accepts_tickets !== false).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
             <textarea className="field-input" placeholder="Note (optional)" value={fwdNote} onChange={(e) => setFwdNote(e.target.value)} rows={2} />
             <div style={{ display: 'flex', gap: '0.5rem' }}>

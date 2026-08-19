@@ -7,7 +7,10 @@ import { requirePermission } from '../../middleware/requirePermission.js'
 import { requireTenant } from '../../middleware/requireTenant.js'
 import '../../types.js'
 
-const teamSchema = z.object({ name: z.string().min(2).max(100) })
+const teamSchema = z.object({
+  name: z.string().min(2).max(100),
+  acceptsTickets: z.boolean().default(true),
+})
 
 export async function teamRoutes(app: FastifyInstance): Promise<void> {
   const guards = [authenticate, requireTenant]
@@ -32,7 +35,7 @@ export async function teamRoutes(app: FastifyInstance): Promise<void> {
     const body = teamSchema.parse(request.body)
     try {
       const team = await withTenant(app.db, ctx.tenantId, (client) =>
-        client.query('INSERT INTO teams (tenant_id, name) VALUES ($1, $2) RETURNING *', [ctx.tenantId, body.name]),
+        client.query('INSERT INTO teams (tenant_id, name, accepts_tickets) VALUES ($1, $2, $3) RETURNING *', [ctx.tenantId, body.name, body.acceptsTickets]),
       )
       return reply.code(201).send({ team: team.rows[0] })
     } catch (err) {

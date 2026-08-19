@@ -1,4 +1,5 @@
 import type { DbPool } from '../../db/pool.js'
+import { assertTeamAcceptsTickets } from '../teams/team-policy.js'
 
 /* ── Escalation ──────────────────────────────────────────────── */
 
@@ -123,6 +124,7 @@ export async function escalateTicket(
   // Update ticket
   const newTeam = data.to_team_id ?? null
   const newAssignee = data.to_assignee_id ?? null
+  await assertTeamAcceptsTickets(db, tenantId, data.to_team_id)
   await db.query(
     `UPDATE tickets SET team_id = COALESCE($3, team_id), assignee_id = COALESCE($4, assignee_id),
      status = 'escalated', updated_at = now() WHERE id = $1 AND tenant_id = $2`,
@@ -175,6 +177,7 @@ export async function forwardTicket(
 
   const newTeam = data.to_team_id ?? ticket.team_id
   const newAssignee = data.to_assignee_id ?? null
+  if (data.to_team_id !== undefined) await assertTeamAcceptsTickets(db, tenantId, data.to_team_id)
 
   await db.query(
     `UPDATE tickets SET team_id = $3, assignee_id = $4, updated_at = now()
@@ -271,7 +274,10 @@ export async function bulkUpdateTickets(
 
   if (updates.status) { setClauses.push(`status = $${idx}`); values.push(updates.status); idx++ }
   if (updates.assignee_id !== undefined) { setClauses.push(`assignee_id = $${idx}`); values.push(updates.assignee_id); idx++ }
-  if (updates.team_id !== undefined) { setClauses.push(`team_id = $${idx}`); values.push(updates.team_id); idx++ }
+  if (updates.team_id !== undefined) {
+    await assertTeamAcceptsTickets(db, tenantId, updates.team_id)
+    setClauses.push(`team_id = $${idx}`); values.push(updates.team_id); idx++
+  }
   if (updates.priority) { setClauses.push(`priority = $${idx}`); values.push(updates.priority); idx++ }
 
   values.push(ticketIds)
@@ -293,7 +299,7 @@ export async function bulkUpdateTickets(
 
 export async function listTeams(db: DbPool, tenantId: string): Promise<Array<{ id: string; name: string }>> {
   const { rows } = await db.query(
-    'SELECT id, name FROM teams WHERE tenant_id = $1 ORDER BY name',
+    'SELECT id, name, accepts_tickets FROM teams WHERE tenant_id = $1 ORDER BY name',
     [tenantId],
   )
   return rows

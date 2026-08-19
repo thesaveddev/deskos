@@ -1,5 +1,6 @@
 import type { DbClient } from '../../db/pool.js'
 import { notify } from '../../core/notify.js'
+import { assertTeamAcceptsTickets } from '../teams/team-policy.js'
 
 export type AutomationTrigger = 'ticket.created' | 'ticket.updated' | 'device.offline' | 'device.low_disk'
 
@@ -122,6 +123,7 @@ async function executeAction(
       return { applied: true }
     case 'assign_team':
       if (!ticket) return { applied: false, note: 'not a ticket subject' }
+      await assertTeamAcceptsTickets(client, tenantId, action.team_id)
       await client.query('UPDATE tickets SET team_id = $2, updated_at = now() WHERE id = $1', [ticket, action.team_id])
       return { applied: true }
     case 'assign_user':

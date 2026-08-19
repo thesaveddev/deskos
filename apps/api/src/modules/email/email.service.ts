@@ -4,6 +4,7 @@ import { ensureTenantDefaults, getDefaultSlaPolicy } from '../tenants/defaults.j
 import { computeDeadlines } from '../tickets/sla.js'
 import { extractTicketNumber, parseRawEmail } from './email.parser.js'
 import { dispatchTicketTriage } from '../ai/triage.js'
+import { assertTeamAcceptsTickets } from '../teams/team-policy.js'
 
 export interface ProcessResult {
   action: 'created' | 'replied' | 'duplicate' | 'skipped'
@@ -108,6 +109,7 @@ export async function processRawEmail(pool: DbPool, rawEmail: string, opts?: Pro
   })
 
   const created = await withTenant(pool, tenantId, async (client) => {
+    await assertTeamAcceptsTickets(client, tenantId, defaults.teamId)
     const res = await client.query(
       `INSERT INTO tickets
          (tenant_id, number, type, status, priority, subject, requester_id,
