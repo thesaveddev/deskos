@@ -20,6 +20,17 @@ import { draftKbArticle, getTriageState, listSimilarTickets, retryTriage, stopTr
 
 const STATUS_OPTIONS = ['new', 'open', 'in_progress', 'pending_user', 'pending_vendor', 'escalated', 'resolved', 'closed']
 
+function displayTicketValue(value: unknown): string {
+  if (value === null || value === undefined) return '—'
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return String(value)
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return '[unavailable]'
+  }
+}
+
 export default function TicketDetailPage() {
   const { id } = useParams<{ id: string }>()
   const auth = useAuth()
@@ -398,7 +409,9 @@ export default function TicketDetailPage() {
   }
 
   const ext = ticket.ext ?? {}
-  const extKeys = Object.keys(ext)
+  // aiTriage has its own structured panel below; do not render its object
+  // payload through String(), which would show as `[object Object]`.
+  const extKeys = Object.keys(ext).filter((key) => key !== 'aiTriage')
   const extLabel: Record<string, string> = {
     rootCause: 'Root cause',
     workaround: 'Workaround',
@@ -407,6 +420,9 @@ export default function TicketDetailPage() {
     backoutPlan: 'Backout plan',
     scheduledAt: 'Scheduled for',
   }
+  const triageStatus = aiTriage && typeof aiTriage.status === 'string' ? aiTriage.status : 'unknown'
+  const triageQuestion = aiTriage?.lastQuestion ? displayTicketValue(aiTriage.lastQuestion) : null
+  const triageError = aiTriage?.lastError ? displayTicketValue(aiTriage.lastError) : null
 
   return (
     <Shell>
@@ -569,7 +585,7 @@ export default function TicketDetailPage() {
           {extKeys.map((k) => (
             <div key={k} className="ticket-ext-row">
               <span className="muted">{extLabel[k] ?? k}</span>
-              <span>{String(ext[k])}</span>
+              <span>{displayTicketValue(ext[k])}</span>
             </div>
           ))}
         </section>
@@ -659,9 +675,9 @@ export default function TicketDetailPage() {
         <section className="ticket-links ai-panel">
           <div className="attachments-head">
             <span className="etch">AI assistant</span>
-            {aiTriage ? <span className={`status-pill status-${aiTriage.status === 'resolved' ? 'resolved' : aiTriage.status === 'handoff' ? 'escalated' : aiTriage.status === 'waiting_for_user' ? 'pending_user' : 'open'}`}>{aiTriage.status.replace('_', ' ')}</span> : null}
+            {aiTriage ? <span className={`status-pill status-${triageStatus === 'resolved' ? 'resolved' : triageStatus === 'handoff' ? 'escalated' : triageStatus === 'waiting_for_user' ? 'pending_user' : 'open'}`}>{triageStatus.replace('_', ' ')}</span> : null}
           </div>
-          {aiTriage && aiTriage.status !== 'idle' ? <div className="ai-result"><span className="muted mono">Automatic triage · round {aiTriage.round}</span>{aiTriage.lastQuestion ? <p>{aiTriage.lastQuestion}</p> : null}{aiTriage.lastError ? <p className="muted">{aiTriage.lastError}</p> : null}<div className="ticket-link-form"><button className="btn btn-ghost btn-sm" disabled={aiTriageBusy || aiTriage.status === 'disabled' || aiTriage.status === 'resolved'} onClick={() => void runAiTriageAction('retry')}>Retry triage</button><button className="btn btn-ghost btn-sm" disabled={aiTriageBusy || aiTriage.status === 'disabled' || aiTriage.status === 'resolved'} onClick={() => void runAiTriageAction('stop')}>Stop AI</button></div></div> : null}
+          {aiTriage && triageStatus !== 'idle' ? <div className="ai-result"><span className="muted mono">Automatic triage · round {displayTicketValue(aiTriage.round)}</span>{triageQuestion ? <p>{triageQuestion}</p> : null}{triageError ? <p className="muted">{triageError}</p> : null}<div className="ticket-link-form"><button className="btn btn-ghost btn-sm" disabled={aiTriageBusy || triageStatus === 'disabled' || triageStatus === 'resolved'} onClick={() => void runAiTriageAction('retry')}>Retry triage</button><button className="btn btn-ghost btn-sm" disabled={aiTriageBusy || triageStatus === 'disabled' || triageStatus === 'resolved'} onClick={() => void runAiTriageAction('stop')}>Stop AI</button></div></div> : null}
           <div className="ticket-link-form">
             <button className="btn btn-ghost btn-sm" disabled={aiSummaryBusy} onClick={() => void runAiSummary()}>
               {aiSummaryBusy ? 'Summarising…' : 'Summarise'}
