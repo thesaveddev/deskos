@@ -24,9 +24,11 @@
     "mobile:sync": "npx cap sync",
     "mobile:android": "npx cap open android",
     "mobile:ios": "npx cap open ios",
-    "mobile:build": "npm run build --workspace @deskos/web && npx cap sync"
+    "mobile:build": "npm run build --workspace @deskos/web && npx cap sync",
+    "test:e2e": "playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "^1.52.0",
     "concurrently": "^9.0.0"
   },
   "engines": {
