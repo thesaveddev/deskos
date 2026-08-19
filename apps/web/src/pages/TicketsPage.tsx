@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Shell } from '../components/Shell.js'
 import { Pagination, useOffsetPagination } from '../components/Pagination.js'
-import { listTickets, ticketCounts, slaSummary, STATUS_LABELS, formatWhen, bulkUpdateTickets, listTeams, type Ticket, type Team } from '../lib/tickets.js'
+import { listTickets, ticketCounts, slaSummary, STATUS_LABELS, formatWhen, bulkUpdateTickets, listTeams, listActiveTicketLocks, forceUnlockTicket, type Ticket, type Team, type LockedTicketSummary } from '../lib/tickets.js'
 import { useAuth } from '../lib/auth.js'
 import { Icon } from '../components/Icons.js'
 
@@ -27,7 +27,7 @@ const SORT_OPTIONS = [
 
 export default function TicketsPage() {
   const navigate = useNavigate()
-  const user = useAuth((s) => s.user)
+  const auth = useAuth()
   const pagination = useOffsetPagination(20)
 
   // Quick filter tabs
@@ -49,6 +49,11 @@ export default function TicketsPage() {
   const [teams, setTeams] = useState<Team[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [lockedTickets, setLockedTickets] = useState<LockedTicketSummary[]>([])
+  const [showLockedTickets, setShowLockedTickets] = useState(false)
+  const [lockListLoading, setLockListLoading] = useState(false)
+  const [lockListError, setLockListError] = useState<string | null>(null)
+  const canManageLocks = auth.memberships.some((membership) => membership.permissions.includes('settings.manage'))
 
   // Tab counts
   const [tabCounts, setTabCounts] = useState({ all: 0, mine: 0, unassigned: 0, escalated: 0 })
@@ -66,6 +71,23 @@ export default function TicketsPage() {
       setTabCounts({ all: open, mine: c.mine, unassigned: c.unassigned, escalated })
     }).catch(() => {})
   }, [])
+
+  const loadLockedTickets = useCallback(async () => {
+    if (!canManageLocks) return
+    setLockListLoading(true)
+    setLockListError(null)
+    try {
+      setLockedTickets((await listActiveTicketLocks()).locks)
+    } catch (err) {
+      setLockListError(err instanceof Error ? err.message : 'Could not load locked tickets')
+    } finally {
+      setLockListLoading(false)
+    }
+  }, [canManageLocks])
+
+  useEffect(() => {
+    void loadLockedTickets()
+  }, [loadLockedTickets])
 
   const load = useCallback(async () => {
     setError(null)
@@ -155,6 +177,15 @@ export default function TicketsPage() {
   const hasActiveFilters = Boolean(fStatus || fPriority || fTeam || fSearch || fDateFrom || fDateTo)
   const activeFilterCount = [fStatus, fPriority, fTeam, fSearch, fDateFrom, fDateTo].filter(Boolean).length
 
+  const releaseLock = async (ticketId: string) => {
+    try {
+      await forceUnlockTicket(ticketId)
+      setLockedTickets((current) => current.filter((lock) => lock.ticket_id !== ticketId))
+    } catch (err) {
+      setLockListError(err instanceof Error ? err.message : 'Could not release ticket lock')
+    }
+  }
+
   return (
     <Shell>
       <div className="page-head tickets-page-head">
@@ -197,6 +228,29 @@ export default function TicketsPage() {
           ) : null}
         </div>
       </div>
+
+      {canManageLocks ? (
+        <section className="ticket-lock-admin-panel">
+          <button type="button" className="ticket-lock-admin-toggle" onClick={() => { setShowLockedTickets((open) => !open); if (!showLockedTickets) void loadLockedTickets() }} aria-expanded={showLockedTickets}>
+            <span className="ticket-lock-admin-toggle-main"><Icon name="lock" size={15} /><strong>Locked tickets</strong><span className="tab-count">{lockedTickets.length}</span></span>
+            <span className="muted">{showLockedTickets ? 'Hide list' : 'Review and release locks'}</span>
+          </button>
+          {showLockedTickets ? (
+            <div className="ticket-lock-admin-list">
+              {lockListError ? <div className="alert alert-error">{lockListError}</div> : null}
+              {lockListLoading ? <span className="muted">Loading active locks…</span> : lockedTickets.length === 0 ? <span className="muted">No tickets are currently locked.</span> : lockedTickets.map((lock) => (
+                <div className="ticket-lock-admin-row" key={lock.id}>
+                  <button type="button" className="ticket-lock-admin-ticket" onClick={() => navigate(`/tickets/${lock.ticket_id}`)}>
+                    <span className="mono">#{lock.ticket_number}</span><strong>{lock.ticket_subject}</strong>
+                  </button>
+                  <span className="muted">Locked by {lock.locked_by_name ?? lock.locked_by_email ?? 'agent'} · expires {formatWhen(lock.expires_at)}</span>
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => void releaseLock(lock.ticket_id)}><Icon name="unlock" size={14} />Release</button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       {/* Quick filter tabs */}
       <div className="tabs" role="tablist">
@@ -275,7 +329,7 @@ export default function TicketsPage() {
                   <td className="col-num mono" onClick={() => navigate(`/tickets/${t.id}`)}>{t.number}</td>
                   <td className="subject-cell" onClick={() => navigate(`/tickets/${t.id}`)}>
                     <span className="subject-cell-text">{t.subject}</span>
-                    {t.lock_user_id ? <span className="ticket-queue-lock" title={`Being worked on by ${t.lock_user_name ?? 'another agent'}`}>🔒 {t.lock_user_name ?? 'Working'}</span> : null}
+                    {t.lock_user_id ? <span className="ticket-queue-lock" data-tooltip={`Locked to ${t.lock_user_name ?? 'another agent'}`} title={`Locked to ${t.lock_user_name ?? 'another agent'}`} aria-label={`Locked to ${t.lock_user_name ?? 'another agent'}`}><Icon name="lock" size={14} /></span> : null}
                   </td>
                   <td className="col-status" onClick={() => navigate(`/tickets/${t.id}`)}>
                     <span className={`status-pill status-${t.status}`}>{STATUS_LABELS[t.status] ?? t.status}</span>

@@ -10,9 +10,10 @@ import {
   downloadAttachment, listAttachments, updateTicket, uploadAttachment,
   escalateTicket, getTicketEscalations, forwardTicket, listTeams, listTeamMembers,
   getTicketLock, unlockTicket, heartbeatLock, forceUnlockTicket,
+  listLockReleaseRequests, requestTicketLockRelease, resolveLockReleaseRequest,
   startViewingTicket, stopViewingTicket, heartbeatViewing, getTicketViewers,
   slaSummary, STATUS_LABELS, formatWhen, type Attachment, type Thread, type Ticket, type TicketDevice, type TicketLink,
-  type Escalation, type Team, type TicketLockInfo,
+  type Escalation, type Team, type TicketLockInfo, type LockReleaseRequest,
 } from '../lib/tickets.js'
 import { listCannedResponses, type CannedResponse } from '../lib/canned.js'
 import { listDevices, type Device } from '../lib/devices.js'
@@ -68,6 +69,8 @@ export default function TicketDetailPage() {
   const [ticketLock, setTicketLock] = useState<TicketLockInfo | null>(null)
   const [lockIsMine, setLockIsMine] = useState(false)
   const [lockBusy, setLockBusy] = useState(false)
+  const [releaseRequests, setReleaseRequests] = useState<LockReleaseRequest[]>([])
+  const [releaseBusy, setReleaseBusy] = useState(false)
   const [viewers, setViewers] = useState<Array<{ user_id: string; name: string; email: string; viewing_at: string }>>([])
 
   // Escalation & forward
@@ -107,6 +110,9 @@ export default function TicketDetailPage() {
         setTicketLock(null)
         setLockIsMine(false)
       }
+      try {
+        setReleaseRequests((await listLockReleaseRequests(id)).requests)
+      } catch { setReleaseRequests([]) }
       // Check viewers
       try {
         const viewersRes = await getTicketViewers(id)
@@ -290,6 +296,38 @@ export default function TicketDetailPage() {
       setError(err instanceof Error ? err.message : 'Could not force unlock ticket')
     }
     setLockBusy(false)
+  }
+
+  const handleRequestRelease = async () => {
+    if (!ticket || !ticketLock || lockIsMine || releaseBusy) return
+    setReleaseBusy(true)
+    setError(null)
+    try {
+      const result = await requestTicketLockRelease(ticket.id, 'Please release this ticket when you are finished so I can continue.')
+      setReleaseRequests((current) => [result.request, ...current.filter((request) => request.id !== result.request.id)])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not request lock release')
+    } finally {
+      setReleaseBusy(false)
+    }
+  }
+
+  const handleResolveRelease = async (request: LockReleaseRequest, decision: 'approve' | 'deny') => {
+    if (!ticket || releaseBusy) return
+    setReleaseBusy(true)
+    setError(null)
+    try {
+      const result = await resolveLockReleaseRequest(ticket.id, request.id, decision)
+      setReleaseRequests((current) => current.map((item) => item.id === result.request.id ? result.request : item))
+      if (decision === 'approve') {
+        setTicketLock(null)
+        setLockIsMine(false)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not resolve lock request')
+    } finally {
+      setReleaseBusy(false)
+    }
   }
 
   const changeDevice = async (deviceId: string) => {
@@ -545,6 +583,15 @@ export default function TicketDetailPage() {
             <Icon name="unlock" size={16} />
           </button>
         ) : null}
+        {readOnlyForLock ? (
+          <div className="ticket-readonly-notice">
+            <Icon name="lock" size={16} />
+            <div><strong>Read-only view</strong><span>{ticketLock?.locked_by_name ?? ticketLock?.locked_by_email ?? 'Another agent'} is working on this ticket.</span></div>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => void handleRequestRelease()} disabled={releaseBusy || releaseRequests.some((request) => request.status === 'pending' && request.requested_by === auth.user?.id)}>
+              {releaseRequests.some((request) => request.status === 'pending' && request.requested_by === auth.user?.id) ? 'Release requested' : releaseBusy ? 'Requesting…' : 'Request release'}
+            </button>
+          </div>
+        ) : null}
         <span
           className={`ticket-status-icon ${viewers.length > 0 ? 'is-viewing' : 'is-not-viewing'}`}
           data-tooltip={viewers.length > 0
@@ -556,6 +603,18 @@ export default function TicketDetailPage() {
           <span className="sr-only">{viewers.length > 0 ? `Viewing: ${viewers.map((viewer) => viewer.name || viewer.email).join(', ')}` : 'Not being viewed'}</span>
         </span>
       </div>
+
+      {releaseRequests.some((request) => request.status === 'pending' && request.locked_by === auth.user?.id) ? (
+        <section className="ticket-release-requests">
+          <span className="etch">Lock release requests</span>
+          {releaseRequests.filter((request) => request.status === 'pending' && request.locked_by === auth.user?.id).map((request) => (
+            <div className="ticket-release-request" key={request.id}>
+              <div><strong>{request.requested_by_name ?? 'An agent'} wants to work on this ticket</strong><span className="muted">{request.message || 'They requested that you release the lock.'}</span></div>
+              <div className="ticket-release-request-actions"><button type="button" className="btn btn-primary btn-sm" disabled={releaseBusy} onClick={() => void handleResolveRelease(request, 'approve')}>Release lock</button><button type="button" className="btn btn-ghost btn-sm" disabled={releaseBusy} onClick={() => void handleResolveRelease(request, 'deny')}>Keep lock</button></div>
+            </div>
+          ))}
+        </section>
+      ) : null}
 
       <section className="ticket-device-context">
         <div>
@@ -610,6 +669,7 @@ export default function TicketDetailPage() {
             aria-label={showLinkForm ? 'Close linking form' : 'Link a ticket or item'}
             title={showLinkForm ? 'Close linking form' : 'Link a ticket or item'}
             data-tooltip={showLinkForm ? 'Close linking form' : 'Link a ticket or item'}
+            disabled={readOnlyForLock}
           >
             <Icon name="link" size={16} />
             <span>{showLinkForm ? 'Close' : 'Link item'}</span>
@@ -635,7 +695,7 @@ export default function TicketDetailPage() {
                         : 'session'}
                 </span>
                 <span className="muted mono">{l.target_type}</span>
-                <button className="btn btn-ghost btn-sm" onClick={() => void removeLink(l)}>Unlink</button>
+                <button className="btn btn-ghost btn-sm" disabled={readOnlyForLock} onClick={() => void removeLink(l)}>Unlink</button>
               </li>
             ))}
           </ul>
@@ -650,21 +710,21 @@ export default function TicketDetailPage() {
               </div>
             </div>
             <div className="ticket-link-form">
-              <select className="field-input select-sm" value={linkType} onChange={(e) => setLinkType(e.target.value)} aria-label="Link type">
+              <select className="field-input select-sm" value={linkType} onChange={(e) => setLinkType(e.target.value)} disabled={readOnlyForLock} aria-label="Link type">
                 <option value="related">Related</option>
                 <option value="caused_by">Caused by</option>
                 <option value="parent">Parent</option>
                 <option value="child">Child</option>
                 <option value="duplicates">Duplicates</option>
               </select>
-              <select className="field-input select-sm" value={linkTargetType} onChange={(e) => setLinkTargetType(e.target.value)} aria-label="Target type">
+              <select className="field-input select-sm" value={linkTargetType} onChange={(e) => setLinkTargetType(e.target.value)} disabled={readOnlyForLock} aria-label="Target type">
                 <option value="ticket">Ticket</option>
                 <option value="asset">Asset</option>
                 <option value="kb">KB article</option>
                 <option value="session">Session</option>
               </select>
-              <input className="field-input mono" value={linkTargetId} onChange={(e) => setLinkTargetId(e.target.value)} placeholder="Paste item ID" aria-label="Target ID" />
-              <button className="btn btn-primary btn-sm" disabled={!linkTargetId.trim()} onClick={() => void addLink()}>
+              <input className="field-input mono" value={linkTargetId} onChange={(e) => setLinkTargetId(e.target.value)} disabled={readOnlyForLock} placeholder="Paste item ID" aria-label="Target ID" />
+              <button className="btn btn-primary btn-sm" disabled={readOnlyForLock || !linkTargetId.trim()} onClick={() => void addLink()}>
                 <Icon name="link" size={15} /> Link
               </button>
             </div>
@@ -690,8 +750,8 @@ export default function TicketDetailPage() {
               {triageQuestion ? <p>{triageQuestion}</p> : null}
               {triageError ? <p className="muted">{triageError}</p> : null}
               <div className="ticket-link-form">
-                <button className="btn btn-ghost btn-sm" disabled={aiTriageBusy || triageStatus === 'disabled' || triageStatus === 'resolved'} onClick={() => void runAiTriageAction('retry')}>Retry triage</button>
-                <button className="btn btn-ghost btn-sm" disabled={aiTriageBusy || triageStatus === 'disabled' || triageStatus === 'resolved'} onClick={() => void runAiTriageAction('stop')}>Stop AI</button>
+                <button className="btn btn-ghost btn-sm" disabled={readOnlyForLock || aiTriageBusy || triageStatus === 'disabled' || triageStatus === 'resolved'} onClick={() => void runAiTriageAction('retry')}>Retry triage</button>
+                <button className="btn btn-ghost btn-sm" disabled={readOnlyForLock || aiTriageBusy || triageStatus === 'disabled' || triageStatus === 'resolved'} onClick={() => void runAiTriageAction('stop')}>Stop AI</button>
               </div>
             </div>
           ) : null}
@@ -717,13 +777,13 @@ export default function TicketDetailPage() {
             </div>
           ) : null}
           <div className="ticket-link-form">
-            <button className="btn btn-ghost btn-sm" disabled={aiSummaryBusy} onClick={() => void runAiSummary()}>
+            <button className="btn btn-ghost btn-sm" disabled={readOnlyForLock || aiSummaryBusy} onClick={() => void runAiSummary()}>
               {aiSummaryBusy ? 'Summarising…' : 'Summarise'}
             </button>
-            <button className="btn btn-ghost btn-sm" disabled={aiSimilarBusy} onClick={() => void runAiSimilar()}>
+            <button className="btn btn-ghost btn-sm" disabled={readOnlyForLock || aiSimilarBusy} onClick={() => void runAiSimilar()}>
               {aiSimilarBusy ? 'Searching…' : 'Similar incidents'}
             </button>
-            <button className="btn btn-ghost btn-sm" disabled={aiDraftBusy} onClick={() => void runAiDraft()}>
+            <button className="btn btn-ghost btn-sm" disabled={readOnlyForLock || aiDraftBusy} onClick={() => void runAiDraft()}>
               {aiDraftBusy ? 'Drafting…' : 'Draft KB article'}
             </button>
           </div>
@@ -780,9 +840,9 @@ export default function TicketDetailPage() {
       <div className="attachments">
         <div className="attachments-head">
           <span className="etch">Attachments</span>
-          <label className="btn btn-ghost btn-sm" title="Attach a file">
+          <label className={`btn btn-ghost btn-sm${readOnlyForLock ? ' disabled' : ''}`} title={readOnlyForLock ? 'Attachments are disabled in read-only mode' : 'Attach a file'}>
             {uploading ? 'Uploading…' : 'Add file'}
-            <input type="file" hidden onChange={(e) => void onUpload(e)} />
+            <input type="file" hidden disabled={readOnlyForLock} onChange={(e) => void onUpload(e)} />
           </label>
         </div>
         {uploadError ? <div className="alert alert-error" style={{ margin: '8px 0' }}>{uploadError}</div> : null}

@@ -290,6 +290,25 @@ export interface TicketLockInfo {
   heartbeat_at: string
 }
 
+export interface LockedTicketSummary extends TicketLockInfo {
+  ticket_number: number
+  ticket_subject: string
+  ticket_status: string
+}
+
+export interface LockReleaseRequest {
+  id: string
+  ticket_id: string
+  requested_by: string
+  requested_by_name?: string
+  locked_by: string
+  locked_by_name?: string
+  message: string
+  status: 'pending' | 'approved' | 'denied' | 'cancelled'
+  created_at: string
+  resolved_at: string | null
+}
+
 export function getTicketLock(id: string): Promise<{ lock: TicketLockInfo | null; is_mine: boolean }> {
   return api(`/tickets/${id}/lock`)
 }
@@ -308,6 +327,22 @@ export function heartbeatLock(id: string): Promise<{ ok: boolean }> {
 
 export function forceUnlockTicket(id: string): Promise<{ ok: boolean }> {
   return api(`/tickets/${id}/lock/force`, { method: 'DELETE' })
+}
+
+export function listActiveTicketLocks(): Promise<{ locks: LockedTicketSummary[] }> {
+  return api('/tickets/locks')
+}
+
+export function requestTicketLockRelease(id: string, message?: string): Promise<{ request: LockReleaseRequest }> {
+  return api(`/tickets/${id}/lock/release-request`, { method: 'POST', body: { message } })
+}
+
+export function listLockReleaseRequests(id: string): Promise<{ requests: LockReleaseRequest[] }> {
+  return api(`/tickets/${id}/lock/release-requests`)
+}
+
+export function resolveLockReleaseRequest(id: string, requestId: string, decision: 'approve' | 'deny'): Promise<{ request: LockReleaseRequest }> {
+  return api(`/tickets/${id}/lock/release-requests/${requestId}/resolve`, { method: 'POST', body: { decision } })
 }
 
 export function startViewingTicket(id: string): Promise<{ ok: boolean }> {

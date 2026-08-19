@@ -8836,3 +8836,19 @@ select.ts-input { cursor: pointer; }
 
 /* Loading */
 .sec-loading { padding: 32px; text-align: center; color: var(--text-3); font-size: 13px; }
+/* Ticket locking: compact queue indicators and an actionable manager view. */
+.ticket-queue-lock { display: inline-flex; align-items: center; justify-content: center; margin-left: 8px; color: var(--warn); vertical-align: middle; }
+.ticket-lock-admin-panel { margin: 0 0 14px; border: 1px solid var(--line-1); border-radius: var(--radius); background: var(--bg-1); overflow: hidden; }
+.ticket-lock-admin-toggle { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 14px; border: 0; background: transparent; color: var(--text-2); font: inherit; text-align: left; cursor: pointer; }
+.ticket-lock-admin-toggle:hover { background: var(--bg-2); }
+.ticket-lock-admin-toggle-main { display: inline-flex; align-items: center; gap: 8px; color: var(--text-1); }
+.ticket-lock-admin-list { display: flex; flex-direction: column; gap: 1px; padding: 0 12px 12px; }
+.ticket-lock-admin-row { display: grid; grid-template-columns: minmax(180px, 1fr) auto auto; align-items: center; gap: 12px; padding: 10px 2px; border-top: 1px solid var(--line-1); font-size: 11px; }
+.ticket-lock-admin-ticket { display: inline-flex; min-width: 0; align-items: center; gap: 8px; padding: 0; border: 0; background: transparent; color: var(--text-1); font: inherit; text-align: left; cursor: pointer; }
+.ticket-lock-admin-ticket strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ticket-readonly-notice { display: flex; align-items: center; gap: 9px; margin-left: 8px; padding: 7px 9px; border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--line-1)); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--warn) 7%, var(--bg-1)); color: var(--text-2); font-size: 11px; }
+.ticket-readonly-notice > div, .ticket-release-request > div:first-child { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.ticket-readonly-notice strong, .ticket-release-request strong { color: var(--text-1); font-size: 11px; }
+.ticket-release-requests { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; padding: 12px; border: 1px solid var(--line-1); border-radius: var(--radius); background: var(--bg-1); }
+.ticket-release-request { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 8px; border-top: 1px solid var(--line-1); font-size: 11px; }
+.ticket-release-request-actions { display: flex; flex: 0 0 auto; gap: 6px; }

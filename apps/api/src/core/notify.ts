@@ -9,6 +9,7 @@ export const NOTIFICATION_KINDS = [
   'ticket.replied',
   'ticket.requester_replied',
   'ticket.ai_triage',
+  'ticket.lock_release_requested',
   'ticket.resolved',
   'sla.breached',
   'device.alert',
