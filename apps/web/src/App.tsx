@@ -1,7 +1,7 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { LockScreen } from './components/LockScreen.js'
-import { registerServiceWorker, enablePush } from './lib/push.js'
+import { registerServiceWorker } from './lib/push.js'
 import { useIdleTimeout } from './lib/idle.js'
 import { onLockRequest } from './lib/lock.js'
 import AiAgentPage from './pages/AiAgentPage.js'
@@ -19,10 +19,12 @@ import GrantsPage from './pages/GrantsPage.js'
 import HomePage from './pages/HomePage.js'
 import IncidentsPage from './pages/IncidentsPage.js'
 import KnowledgeBasePage from './pages/KnowledgeBasePage.js'
+import LearnPage from './pages/LearnPage.js'
 import LandingPage from './pages/LandingPage.js'
 import FeaturesPage from './pages/FeaturesPage.js'
 import UseCasesPage from './pages/UseCasesPage.js'
 import LoginPage from './pages/LoginPage.js'
+import LockPage from './pages/LockPage.js'
 import ForgotPasswordPage from './pages/ForgotPasswordPage.js'
 import ResetPasswordPage from './pages/ResetPasswordPage.js'
 import PricingPage from './pages/PricingPage.js'
@@ -33,6 +35,7 @@ import ContactPage from './pages/ContactPage.js'
 import ApiDocsPage from './pages/ApiDocsPage.js'
 import SupportPage from './pages/SupportPage.js'
 import AdminDashboardPage from './pages/AdminDashboardPage.js'
+import AdminSupportPage from './pages/AdminSupportPage.js'
 import StaffPage from './pages/StaffPage.js'
 import NotesPage from './pages/NotesPage.js'
 import BillingPage from './pages/BillingPage.js'
@@ -82,19 +85,45 @@ function HomeRoute() {
 }
 
 function IdleLockWrapper({ children }: { children: ReactNode }) {
+  const authStatus = useAuth((state) => state.status)
+  const currentUser = useAuth((state) => state.user)
   const [locked, setLocked] = useState(false)
-  const { isLocked } = useIdleTimeout(() => setLocked(true))
+  const [lockedUser, setLockedUser] = useState<typeof currentUser>(null)
+  const { isLocked, resetTimer } = useIdleTimeout(
+    useCallback(() => {
+      if (authStatus === 'authed' && currentUser) {
+        // Keep an immutable snapshot for the lock screen. Auth hydration or an
+        // expired token must not replace the signed-in user's identity with "User".
+        setLockedUser(currentUser)
+        setLocked(true)
+      }
+    }, [authStatus, currentUser]),
+  )
 
   useEffect(() => {
-    if (isLocked) setLocked(true)
-  }, [isLocked])
+    if (isLocked && authStatus === 'authed' && currentUser) {
+      setLockedUser((previous) => previous ?? currentUser)
+      setLocked(true)
+    }
+  }, [authStatus, currentUser, isLocked])
 
   // Listen for manual lock requests (from topbar button)
   useEffect(() => {
-    return onLockRequest(() => setLocked(true))
-  }, [])
+    return onLockRequest(() => {
+      if (authStatus === 'authed' && currentUser) {
+        setLockedUser(currentUser)
+        setLocked(true)
+      }
+    })
+  }, [authStatus, currentUser])
 
-  if (locked) return <LockScreen onUnlock={() => setLocked(false)} />
+  const unlock = useCallback(() => {
+    setLocked(false)
+    setLockedUser(null)
+    resetTimer()
+  }, [resetTimer])
+
+  if (locked && lockedUser) return <LockScreen user={lockedUser} onUnlock={unlock} />
   return <>{children}</>
 }
 
@@ -106,30 +135,23 @@ export default function App() {
     void hydrate()
   }, [hydrate])
 
-  // Auto-enable push notifications after login
+  // Register the service worker without prompting for notification permission.
+  // Permission is requested from Settings → Notifications, where the user has
+  // context and can test or revoke the device subscription.
   useEffect(() => {
-    if (status !== 'authed') return
-    // Register service worker eagerly
-    void registerServiceWorker()
-    // Auto-subscribe to push if permission not denied
-    if ('Notification' in window && Notification.permission !== 'denied') {
-      void enablePush()
-    }
+    if (status === 'authed') void registerServiceWorker()
   }, [status])
 
-  if (status === 'loading') {
-    return (
-      <div className="auth-screen">
-        <span className="etch">Loading workspace…</span>
-      </div>
-    )
-  }
-
+  // Public routes must render even while the session is being hydrated. This
+  // keeps the landing, Learn, support, and sign-in pages available when the API
+  // is restarting or temporarily unreachable; protected routes still wait in
+  // their own guard until authentication is known.
   return (
     <IdleLockWrapper>
     <Routes>
       {/* Public marketing pages */}
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/lock" element={<LockPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/signup" element={<SignupPage />} />
@@ -143,7 +165,9 @@ export default function App() {
       <Route path="/contact" element={<ContactPage />} />
       <Route path="/api-docs" element={<ApiDocsPage />} />
       <Route path="/support" element={<SupportPage />} />
+      <Route path="/learn" element={<LearnPage publicView />} />
       <Route path="/admin" element={<Protected><AdminDashboardPage /></Protected>} />
+      <Route path="/admin/support" element={<Protected><AdminSupportPage /></Protected>} />
       <Route path="/staff" element={<Protected><StaffPage /></Protected>} />
       <Route path="/profile" element={<Protected><ProfilePage /></Protected>} />
       <Route path="/notes" element={<Protected><NotesPage /></Protected>} />
@@ -186,6 +210,7 @@ export default function App() {
       <Route path="/settings/integrations" element={<Protected><SettingsPage /></Protected>} />
       <Route path="/settings/canned" element={<Protected><SettingsPage /></Protected>} />
       <Route path="/settings/notifications" element={<Protected><SettingsPage /></Protected>} />
+      <Route path="/settings/ai" element={<Protected><SettingsPage /></Protected>} />
       <Route path="/settings/security" element={<Protected><SettingsPage /></Protected>} />
       <Route path="/settings/active-directory" element={<Protected><SettingsPage /></Protected>} />
       <Route path="/settings/branding" element={<Protected><SettingsPage /></Protected>} />

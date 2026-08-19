@@ -11,6 +11,8 @@ export interface Ticket {
   requester_name?: string
   assignee_id: string | null
   assignee_name?: string
+  lock_user_id?: string | null
+  lock_user_name?: string | null
   team_id: string | null
   team_name?: string
   device_id: string | null
@@ -40,7 +42,7 @@ export interface TicketDevice {
 
 export interface Thread {
   id: string
-  kind: 'message' | 'internal_note' | 'system_event' | 'session_record'
+  kind: 'message' | 'internal_note' | 'system_event' | 'session_record' | 'ai_summary' | 'ai_triage'
   visibility: 'public' | 'internal'
   body: string
   author_name?: string | null
@@ -319,6 +321,6 @@ export function heartbeatViewing(id: string): Promise<{ ok: boolean }> {
   return api(`/tickets/${id}/viewing/heartbeat`, { method: 'POST' })
 }
 
-export function getTicketViewers(id: string): Promise<{ viewers: Array<{ user_id: string; name: string; email: string; since: string }> }> {
+export function getTicketViewers(id: string): Promise<{ viewers: Array<{ user_id: string; name: string; email: string; viewing_at: string }> }> {
   return api(`/tickets/${id}/viewers`)
 }

@@ -8,6 +8,7 @@ export type NotificationChannel = (typeof NOTIFICATION_CHANNELS)[number]
 export const NOTIFICATION_KINDS = [
   'ticket.replied',
   'ticket.requester_replied',
+  'ticket.ai_triage',
   'ticket.resolved',
   'sla.breached',
   'device.alert',
@@ -20,6 +21,7 @@ export const NOTIFICATION_KINDS = [
   'service.approval',
   'service.approval_decided',
   'change.approval',
+  'telephony.call_received',
 ] as const
 
 export interface NotifyInput {
@@ -37,7 +39,15 @@ export interface PushDispatchInput {
   body: string
 }
 
+export interface EmailDispatchInput {
+  tenantId: string
+  userId: string
+  kind: string
+  body: string
+}
+
 export type PushDispatcher = (input: PushDispatchInput) => Promise<unknown>
+export type EmailDispatcher = (input: EmailDispatchInput) => Promise<unknown>
 
 /**
  * Injectable fire-and-forget push dispatcher, wired by app.ts to the push
@@ -45,9 +55,14 @@ export type PushDispatcher = (input: PushDispatchInput) => Promise<unknown>
  * invokes it without awaiting and swallows errors.
  */
 let pushDispatcher: PushDispatcher | null = null
+let emailDispatcher: EmailDispatcher | null = null
 
 export function setPushDispatcher(dispatcher: PushDispatcher | null): void {
   pushDispatcher = dispatcher
+}
+
+export function setEmailDispatcher(dispatcher: EmailDispatcher | null): void {
+  emailDispatcher = dispatcher
 }
 
 /**
@@ -68,7 +83,9 @@ export async function notify(
     [tenantId, input.userId, input.kind],
   )
 
-  let channels: readonly NotificationChannel[] = ['in_app']
+  // Invitations must reach people who have not signed in yet. Other
+  // notifications remain in-app by default until the user opts into email.
+  let channels: readonly NotificationChannel[] = input.kind === 'membership.invited' ? ['in_app', 'email'] : ['in_app']
   if (pref.rows[0]) {
     if (!pref.rows[0].enabled) return false
     const stored = pref.rows[0].channels
@@ -93,10 +110,17 @@ export async function notify(
 
   // Push mirrors in-app delivery: whenever a row is written for in-app (or an
   // explicit push preference), a subscription check + send happens out-of-band.
+  const dispatchInput = { tenantId, userId: input.userId, kind: input.kind, body: input.body }
   if ((channels.includes('in_app') || channels.includes('push')) && pushDispatcher) {
     const dispatcher = pushDispatcher
-    void dispatcher({ tenantId, userId: input.userId, kind: input.kind, body: input.body }).catch(() => {
+    void dispatcher(dispatchInput).catch(() => {
       /* push delivery is best-effort */
+    })
+  }
+  if (channels.includes('email') && emailDispatcher) {
+    const dispatcher = emailDispatcher
+    void dispatcher(dispatchInput).catch(() => {
+      /* email delivery is queued/best-effort and must not fail the write */
     })
   }
   return true

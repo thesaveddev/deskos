@@ -27,6 +27,14 @@ interface WorkspaceSettings {
   public_notes_visible: boolean
   default_priority: string
   default_type: string
+  ai_triage: {
+    enabled: boolean
+    autoReply: boolean
+    autoResolve: boolean
+    maxRounds: number
+    resolveConfidence: number
+    sources: string[]
+  }
   portal: {
     enabled: boolean
     allow_public_kb: boolean
@@ -66,6 +74,7 @@ const DEFAULT_SETTINGS: WorkspaceSettings = {
   ticket_prefix: 'TKT', auto_assign_enabled: false, auto_close_enabled: false, auto_close_after_days: 7,
   require_description: true, allow_attachments: true, public_notes_visible: true,
   default_priority: 'p3', default_type: 'incident',
+  ai_triage: { enabled: true, autoReply: true, autoResolve: true, maxRounds: 4, resolveConfidence: 0.92, sources: ['portal', 'email', 'phone'] },
   portal: { enabled: true, allow_public_kb: true, show_device_context: true, allow_customer_resolution: true },
   remote_support: { require_consent: true, default_expiry_minutes: 30, allow_file_transfer: true, allow_clipboard: true, allow_terminal: false, allow_system_manage: false, default_recording_mode: 'metadata', recording_retention_days: 30 },
   endpoints: { offline_after_minutes: 10, heartbeat_interval_seconds: 30, allow_self_enrollment: true, enrollment_code_expiry_minutes: 15 },
@@ -79,6 +88,7 @@ function normalizeWorkspaceSettings(raw: unknown): WorkspaceSettings {
   return {
     ...DEFAULT_SETTINGS,
     ...source,
+    ai_triage: { ...DEFAULT_SETTINGS.ai_triage, ...(source.ai_triage ?? {}) },
     portal: { ...DEFAULT_SETTINGS.portal, ...(source.portal ?? {}) },
     remote_support: { ...DEFAULT_SETTINGS.remote_support, ...(source.remote_support ?? {}) },
     endpoints: { ...DEFAULT_SETTINGS.endpoints, ...(source.endpoints ?? {}) },
@@ -87,7 +97,7 @@ function normalizeWorkspaceSettings(raw: unknown): WorkspaceSettings {
   }
 }
 
-type SettingsTab = 'home' | 'preferences' | 'tickets' | 'email' | 'canned' | 'notifications' | 'security' | 'active-directory' | 'branding' | 'portal' | 'remote' | 'devices' | 'monitoring' | 'data' | 'integrations' | 'api'
+type SettingsTab = 'home' | 'preferences' | 'tickets' | 'email' | 'canned' | 'notifications' | 'ai' | 'security' | 'active-directory' | 'branding' | 'portal' | 'remote' | 'devices' | 'monitoring' | 'data' | 'integrations' | 'api'
 
 interface SettingLink {
   to: string
@@ -113,6 +123,7 @@ const GROUPS: Array<{ label: string; links: SettingLink[] }> = [
       { to: '/settings/email', tab: 'email', label: 'Email channels', description: 'Inbound support mailboxes and polling', icon: 'mail' },
       { to: '/settings/canned', tab: 'canned', label: 'Canned responses', description: 'Reusable replies for the service desk', icon: 'file' },
       { to: '/settings/notifications', tab: 'notifications', label: 'Notifications', description: 'Push and event notification preferences', icon: 'alert' },
+      { to: '/settings/ai', tab: 'ai', label: 'AI ticket triage', description: 'Bounded questions, resolution, and human handoff', icon: 'wrench' },
     ],
   },
   {
@@ -237,6 +248,28 @@ function OperationalSettings({ tab }: { tab: 'portal' | 'remote' | 'devices' | '
   return <SettingSection title="Data retention" description="Retention policy guidance for tenant-scoped operational data. Actual purge jobs must be enabled in production infrastructure."><>{error && <Alert kind="error">{error}</Alert>}{message && <Alert kind="info">{message}</Alert>}<div className="settings-form-grid"><Field label="Audit logs (days)"><input className="field-input" type="number" min={30} max={3650} value={settings.data_retention.audit_days} onChange={(e) => void update({ data_retention: { ...settings.data_retention, audit_days: Number(e.target.value) } })} /></Field><Field label="Session recordings (days)"><input className="field-input" type="number" min={1} max={3650} value={settings.data_retention.recording_days} onChange={(e) => void update({ data_retention: { ...settings.data_retention, recording_days: Number(e.target.value) } })} /></Field><Field label="Notifications (days)"><input className="field-input" type="number" min={7} max={3650} value={settings.data_retention.notification_days} onChange={(e) => void update({ data_retention: { ...settings.data_retention, notification_days: Number(e.target.value) } })} /></Field></div><p className="settings-note"><Icon name="clock" size={14} /> Changes are stored as policy metadata. Configure scheduled purge workers before relying on them for compliance.</p></></SettingSection>
 }
 
+function AiTriageSettings() {
+  const { settings, loading, error, setError, save } = useWorkspaceSettings()
+  const [message, setMessage] = useState<string | null>(null)
+  if (loading || !settings) return <div className="settings-card"><span className="etch">Loading AI triage settings…</span></div>
+  const update = async (patch: Partial<WorkspaceSettings>) => {
+    try { await save(patch); setMessage('AI triage settings saved.') }
+    catch (err) { setError(err instanceof Error ? err.message : 'Could not save AI triage settings') }
+  }
+  return <SettingSection title="AI ticket triage" description="Let DeskOS ask safe diagnostic questions and resolve routine requests, while handing risky or uncertain work to a technician.">
+    <>{error && <Alert kind="error">{error}</Alert>}{message && <Alert kind="info">{message}</Alert>}
+      <ToggleRow label="Enable AI ticket triage" description="Start bounded triage for portal, email, and phone-originated tickets when AI is configured." checked={settings.ai_triage.enabled} onChange={(value) => void update({ ai_triage: { ...settings.ai_triage, enabled: value } })} />
+      <ToggleRow label="Allow public AI replies" description="AI may post one auditable public reply at a time and email the requester; it never sends internal notes." checked={settings.ai_triage.autoReply} disabled={!settings.ai_triage.enabled} onChange={(value) => void update({ ai_triage: { ...settings.ai_triage, autoReply: value } })} />
+      <ToggleRow label="Allow high-confidence auto-resolution" description="Only close a ticket when the model reports strong evidence that the requester is fixed and the confidence threshold is met." checked={settings.ai_triage.autoResolve} disabled={!settings.ai_triage.enabled} onChange={(value) => void update({ ai_triage: { ...settings.ai_triage, autoResolve: value } })} />
+      <div className="settings-form-grid">
+        <Field label="Maximum question rounds" hint="AI asks one diagnostic question per round before handoff."><input className="field-input" type="number" min={1} max={8} value={settings.ai_triage.maxRounds} disabled={!settings.ai_triage.enabled} onChange={(event) => void update({ ai_triage: { ...settings.ai_triage, maxRounds: Number(event.target.value) } })} /></Field>
+        <Field label="Resolution confidence" hint="0.92 is the recommended production floor."><input className="field-input" type="number" min={0.5} max={0.99} step={0.01} value={settings.ai_triage.resolveConfidence} disabled={!settings.ai_triage.enabled} onChange={(event) => void update({ ai_triage: { ...settings.ai_triage, resolveConfidence: Number(event.target.value) } })} /></Field>
+      </div>
+      <p className="settings-note"><Icon name="shield" size={14} /> AI cannot run terminal commands, change devices, access secrets, or bypass consent. Technicians can stop triage from the ticket.</p>
+    </>
+  </SettingSection>
+}
+
 function IntegrationsSettings() {
   return <div className="settings-card-grid"><SettingSection title="Webhooks" description="Deliver ticket, session, device, and SLA events to external systems."><p className="settings-note">Configure signed Slack, Teams, or generic webhook endpoints in the integrations workspace.</p><NavLink className="btn btn-primary btn-sm settings-card-link" to="/integrations"><Icon name="external" size={14} />Open webhook integrations</NavLink></SettingSection><SettingSection title="Developer marketplace" description="Install approved extensions and connect operational tools."><p className="settings-note">Review available apps, capabilities, and tenant installations.</p><NavLink className="btn btn-ghost btn-sm settings-card-link" to="/marketplace"><Icon name="external" size={14} />Open marketplace</NavLink></SettingSection><SettingSection title="Email and identity connectors" description="Email, Entra ID, and directory connectors are managed in their dedicated settings areas."><div className="settings-link-list"><NavLink to="/settings/email">Email channels <Icon name="forward" size={14} /></NavLink><NavLink to="/settings/active-directory">Directory sync <Icon name="forward" size={14} /></NavLink></div></SettingSection></div>
 }
@@ -256,6 +289,7 @@ function SettingsHome() {
 export default function SettingsPage() {
   const location = useLocation()
   const path = location.pathname
-  const active: SettingsTab = path === '/settings' ? 'home' : path.includes('/preferences') ? 'preferences' : path.includes('/tickets') ? 'tickets' : path.includes('/email') ? 'email' : path.includes('/canned') ? 'canned' : path.includes('/notifications') ? 'notifications' : path.includes('/security') ? 'security' : path.includes('/active-directory') ? 'active-directory' : path.includes('/branding') ? 'branding' : path.includes('/portal') ? 'portal' : path.includes('/remote') ? 'remote' : path.includes('/devices') ? 'devices' : path.includes('/monitoring') ? 'monitoring' : path.includes('/data') ? 'data' : path.includes('/integrations') ? 'integrations' : 'api'
-  return <Shell><div className="settings-page"><div className="page-head settings-page-head"><div className="page-head-main"><h1 className="page-title">Settings</h1><p className="page-subtitle">Organization-wide controls, operational defaults, and personal preferences.</p></div><NavLink className="btn btn-ghost btn-sm" to="/"><Icon name="back" size={14} />Back to dashboard</NavLink></div><div className="settings-layout"><SettingsNavigation active={active} /><main className="settings-content">{active === 'home' && <SettingsHome />}{active === 'preferences' && <PreferencesSettings />}{active === 'tickets' && <TicketSettingsPage />}{active === 'email' && <EmailSettingsPage />}{active === 'canned' && <CannedResponsesPage />}{active === 'notifications' && <NotificationSettingsPage />}{active === 'security' && <SecuritySettingsPage />}{active === 'active-directory' && <EntraSettingsPage />}{active === 'branding' && <BrandingSettings />}{active === 'portal' && <OperationalSettings tab="portal" />}{active === 'remote' && <OperationalSettings tab="remote" />}{active === 'devices' && <OperationalSettings tab="devices" />}{active === 'monitoring' && <OperationalSettings tab="monitoring" />}{active === 'data' && <OperationalSettings tab="data" />}{active === 'integrations' && <IntegrationsSettings />}{active === 'api' && <ApiSettings />}</main></div></div></Shell>
+  const active: SettingsTab = path === '/settings' ? 'home' : path.includes('/preferences') ? 'preferences' : path.includes('/tickets') ? 'tickets' : path.includes('/email') ? 'email' : path.includes('/canned') ? 'canned' : path.includes('/notifications') ? 'notifications' : path.includes('/settings/ai') ? 'ai' : path.includes('/security') ? 'security' : path.includes('/active-directory') ? 'active-directory' : path.includes('/branding') ? 'branding' : path.includes('/portal') ? 'portal' : path.includes('/remote') ? 'remote' : path.includes('/devices') ? 'devices' : path.includes('/monitoring') ? 'monitoring' : path.includes('/data') ? 'data' : path.includes('/integrations') ? 'integrations' : 'api'
+  return <Shell><div className="settings-page"><div className="page-head settings-page-head"><div className="page-head-main"><h1 className="page-title">Settings</h1><p className="page-subtitle">Organization-wide controls, operational defaults, and personal preferences.</p></div><NavLink className="btn btn-ghost btn-sm" to="/"><Icon name="back" size={14} />Back to dashboard</NavLink></div><div className="settings-layout"><SettingsNavigation active={active} /><main className="settings-content">{active === 'home' && <SettingsHome />}{active === 'preferences' && <PreferencesSettings />}{active === 'tickets' && <TicketSettingsPage />}{active === 'email' && <EmailSettingsPage />}{active === 'canned' && <CannedResponsesPage />}{active === 'notifications' && <NotificationSettingsPage />}{active === 'ai' && <AiTriageSettings />}{active === 'security' && <SecuritySettingsPage />}
+{active === 'active-directory' && <EntraSettingsPage />}{active === 'branding' && <BrandingSettings />}{active === 'portal' && <OperationalSettings tab="portal" />}{active === 'remote' && <OperationalSettings tab="remote" />}{active === 'devices' && <OperationalSettings tab="devices" />}{active === 'monitoring' && <OperationalSettings tab="monitoring" />}{active === 'data' && <OperationalSettings tab="data" />}{active === 'integrations' && <IntegrationsSettings />}{active === 'api' && <ApiSettings />}</main></div></div></Shell>
 }

@@ -12,6 +12,8 @@ import { requirePermission } from '../../middleware/requirePermission.js'
 import { requireTenant } from '../../middleware/requireTenant.js'
 import { ensureTenantDefaults, getDefaultSlaPolicy } from '../tenants/defaults.js'
 import { computeDeadlines } from './sla.js'
+import { dispatchTicketTriage } from '../ai/triage.js'
+import { acquireTicketLockOnClient, assertTicketWriteAccess, TicketLockConflict } from './locks.service.js'
 import '../../types.js'
 
 const TICKET_STATUSES = ['new', 'open', 'in_progress', 'pending_user', 'pending_vendor', 'escalated', 'resolved', 'closed'] as const
@@ -92,6 +94,19 @@ async function ensureDeviceBelongsToTenant(client: DbClient, deviceId: string | 
   if (!rows[0]) throw AppError.notFound('Device not found')
 }
 
+function canOverrideTicketLock(role: string | undefined): boolean {
+  return role === 'owner' || role === 'it_manager' || role === 'service_desk_manager'
+}
+
+function throwTicketLockConflict(error: TicketLockConflict): never {
+  throw new AppError(409, 'ticket_locked', error.message, undefined, {
+    locked_by: error.lock.locked_by,
+    locked_by_name: error.lock.locked_by_name,
+    locked_by_email: error.lock.locked_by_email,
+    expires_at: error.lock.expires_at,
+  })
+}
+
 export async function ticketRoutes(app: FastifyInstance): Promise<void> {
   const guards = [authenticate, requireTenant]
 
@@ -158,6 +173,10 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
       if (q.status) {
         values.push(q.status)
         clauses.push(`t.status = $${values.length}`)
+      } else if (q.open === 'true') {
+        // The queue's "All open" view includes every actionable state, not
+        // only tickets whose literal status is `open`.
+        clauses.push("t.status NOT IN ('resolved', 'closed')")
       }
       if (q.priority) {
         values.push(q.priority)
@@ -220,11 +239,14 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
       values.push(offset)
       const offsetIdx = values.length
       const { rows } = await client.query(
-        `SELECT t.*, ru.name AS requester_name, au.name AS assignee_name, tm.name AS team_name
+        `SELECT t.*, ru.name AS requester_name, au.name AS assignee_name, tm.name AS team_name,
+                tl.locked_by AS lock_user_id, lu.name AS lock_user_name
            FROM tickets t
            JOIN users ru ON ru.id = t.requester_id
            LEFT JOIN users au ON au.id = t.assignee_id
            LEFT JOIN teams tm ON tm.id = t.team_id
+           LEFT JOIN ticket_locks tl ON tl.ticket_id = t.id AND tl.expires_at > now()
+           LEFT JOIN users lu ON lu.id = tl.locked_by
            ${where}
           ORDER BY ${sortField} ${sortDir}, t.number DESC
           LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
@@ -287,6 +309,12 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
       if (body.requesterCompany) ext.requesterCompany = body.requesterCompany
       if (body.requesterLocation) ext.requesterLocation = body.requesterLocation
 
+      // Technician-created tickets belong to the technician who raised them by
+      // default. An explicit assignee is still respected so managers can create
+      // work on behalf of another agent. Portal tickets use a separate route and
+      // remain unassigned until the service desk claims them.
+      const assigneeId = body.assigneeId ?? request.user!.id
+
       const res = await client.query(
         `INSERT INTO tickets
            (tenant_id, number, type, status, priority, subject, requester_id, affected_user_id,
@@ -295,7 +323,7 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
          RETURNING *`,
         [
           ctx.tenantId, number, type, priority, body.subject,
-          request.user!.id, body.affectedUserId ?? null, body.assigneeId ?? null,
+          request.user!.id, body.affectedUserId ?? null, assigneeId,
           body.teamId ?? defaults.teamId, body.categoryId ?? defaults.categoryId,
           body.deviceId ?? null, service?.id ?? null, policy.id, JSON.stringify(ext), dueResponseAt, dueResolutionAt,
         ],
@@ -366,6 +394,10 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
 
     // Fire-and-forget webhook fan-out (Teams/Slack). Delivery failures never
     // fail ticket creation; the delivery log records attempts + outcome.
+    void dispatchTicketTriage(ctx.tenantId, created.id as string, 'created').catch((err) => {
+      request.log.warn({ err, ticketId: created.id }, 'AI ticket triage failed')
+    })
+
     void emitWebhookEvent(app.db, ctx.tenantId, 'ticket.created', {
       number: created.number,
       subject: body.subject,
@@ -387,8 +419,13 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
       if (!ticket) throw AppError.notFound('Ticket not found')
       const device = ticket.device_id
         ? (await client.query(
-            `SELECT id, name, hostname, os, os_version, arch, ip_address, agent_version, last_seen_at
-               FROM devices WHERE id = $1`,
+            `SELECT d.id, d.name, d.hostname, d.os, d.os_version, d.arch, d.ip_address, d.agent_version, d.last_seen_at,
+                    a.tag AS asset_tag, da.assignment_status, au.name AS assigned_user_name
+               FROM devices d
+               LEFT JOIN assets a ON a.device_id = d.id
+               LEFT JOIN device_assignments da ON da.device_id = d.id AND da.ended_at IS NULL
+               LEFT JOIN users au ON au.id = da.user_id
+              WHERE d.id = $1`,
             [ticket.device_id],
           )).rows[0] ?? null
         : null
@@ -413,6 +450,12 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
     return withTenant(app.db, ctx.tenantId, async (client) => {
       const ticket = await findTicket(client, id)
       if (!ticket) throw AppError.notFound('Ticket not found')
+      try {
+        await assertTicketWriteAccess(client, id, request.user!.id, canOverrideTicketLock(ctx.orgRole))
+      } catch (error) {
+        if (error instanceof TicketLockConflict) throwTicketLockConflict(error)
+        throw error
+      }
 
       const sets: string[] = []
       const values: unknown[] = []
@@ -476,6 +519,12 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
     const result = await withTenant(app.db, ctx.tenantId, async (client) => {
       const ticket = await findTicket(client, id)
       if (!ticket) throw AppError.notFound('Ticket not found')
+      try {
+        await assertTicketWriteAccess(client, id, request.user!.id, canOverrideTicketLock(ctx.orgRole))
+      } catch (error) {
+        if (error instanceof TicketLockConflict) throwTicketLockConflict(error)
+        throw error
+      }
 
       const res = await client.query(
         `INSERT INTO ticket_threads (tenant_id, ticket_id, author_id, kind, visibility, body)
@@ -513,12 +562,19 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
     })
 
     if (result.mail) {
-      await app.mailer.sendReplyEmail({
+      const message = app.mailer.buildTicketMail({
         to: result.mail.to,
         ticketNumber: result.mail.ticketNumber,
         subject: result.mail.subject,
         body: body.body,
         tenantName: ctx.name,
+        portalUrl: app.config.publicUrl,
+      })
+      await app.emailQueue.addAndSend(message)
+    }
+    if (!internal) {
+      void dispatchTicketTriage(ctx.tenantId, id, 'staff_reply').catch((err) => {
+        request.log.warn({ err, ticketId: id }, 'AI ticket triage handoff failed')
       })
     }
     return reply.code(201).send({ thread: result.thread })
@@ -533,6 +589,12 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
       const ticket = await findTicket(client, id)
       if (!ticket) throw AppError.notFound('Ticket not found')
       if (ticket.status === status) return { ticket }
+      try {
+        await assertTicketWriteAccess(client, id, request.user!.id, canOverrideTicketLock(ctx.orgRole))
+      } catch (error) {
+        if (error instanceof TicketLockConflict) throwTicketLockConflict(error)
+        throw error
+      }
 
       const res = await client.query(
         `UPDATE tickets
@@ -564,13 +626,18 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
           body: `Ticket #${ticket.number} — ${ticket.subject} is ${status}`,
         })
         if (requester) {
-          await app.mailer.sendResolvedEmail({
-            to: requester.email,
-            ticketNumber: ticket.number,
-            subject: ticket.subject,
-            body: `Your request #${ticket.number} has been marked ${status} by the support team.`,
-            tenantName: ctx.name,
-          })
+          const message = app.mailer.buildTicketMail(
+            {
+              to: requester.email,
+              ticketNumber: ticket.number,
+              subject: ticket.subject,
+              body: `Your request #${ticket.number} has been marked ${status} by the support team.`,
+              tenantName: ctx.name,
+              portalUrl: app.config.publicUrl,
+            },
+            'Resolved',
+          )
+          await app.emailQueue.addAndSend(message)
         }
       }
       return { ticket: res.rows[0] }
@@ -585,6 +652,28 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
     return withTenant(app.db, ctx.tenantId, async (client) => {
       const ticket = await findTicket(client, id)
       if (!ticket) throw AppError.notFound('Ticket not found')
+
+      // Claiming a ticket (assigning it to yourself) acquires the same
+      // five-minute lock used by the detail page. Manager reassignment clears
+      // the previous lock but does not lock the ticket for an absent assignee.
+      if (body.assigneeId === request.user!.id) {
+        const lockResult = await acquireTicketLockOnClient(client, ctx.tenantId, id, request.user!.id)
+        if (!lockResult.lock) {
+          throw new AppError(409, 'ticket_locked', 'This ticket is already being worked on by another agent.', undefined, lockResult.conflict ? {
+            locked_by: lockResult.conflict.locked_by,
+            locked_by_name: lockResult.conflict.locked_by_name,
+            locked_by_email: lockResult.conflict.locked_by_email,
+            expires_at: lockResult.conflict.expires_at,
+          } : undefined)
+        }
+      } else {
+        const currentLock = await client.query('SELECT locked_by FROM ticket_locks WHERE ticket_id = $1 AND expires_at > now()', [id])
+        if (currentLock.rows[0] && currentLock.rows[0].locked_by !== request.user!.id && !canOverrideTicketLock(ctx.orgRole)) {
+          const lockResult = await acquireTicketLockOnClient(client, ctx.tenantId, id, request.user!.id)
+          if (!lockResult.lock && lockResult.conflict) throwTicketLockConflict(new TicketLockConflict(lockResult.conflict))
+        }
+        await client.query('DELETE FROM ticket_locks WHERE ticket_id = $1', [id])
+      }
 
       const res = await client.query(
         `UPDATE tickets SET assignee_id = $2, team_id = $3, updated_at = now() WHERE id = $1 RETURNING *`,

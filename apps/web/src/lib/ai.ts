@@ -10,6 +10,18 @@ export interface SimilarTicket {
   similarity: number
 }
 
+export type TriageStatus = 'idle' | 'evaluating' | 'waiting_for_user' | 'resolved' | 'handoff' | 'disabled'
+
+export interface TriageState {
+  status: TriageStatus
+  round: number
+  lastQuestion?: string
+  lastRunAt?: string
+  lastError?: string
+  lastConfidence?: number
+  resolvedAt?: string
+}
+
 export interface KbDraftArticle {
   id: string
   title: string
@@ -30,4 +42,16 @@ export function listSimilarTickets(id: string): Promise<{ similar: SimilarTicket
 
 export function draftKbArticle(id: string): Promise<{ article: KbDraftArticle }> {
   return api(`/ai/tickets/${id}/kb-draft`, { method: 'POST', body: {} })
+}
+
+export function getTriageState(id: string): Promise<{ triage: TriageState }> {
+  return api(`/ai/tickets/${id}/triage`)
+}
+
+export function retryTriage(id: string): Promise<{ ok: boolean; status: string }> {
+  return api(`/ai/tickets/${id}/triage/retry`, { method: 'POST', body: {} })
+}
+
+export function stopTriage(id: string): Promise<{ triage: TriageState }> {
+  return api(`/ai/tickets/${id}/triage/stop`, { method: 'POST', body: {} })
 }

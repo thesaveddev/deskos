@@ -3,10 +3,12 @@ import { withTenant } from '../../db/pool.js'
 import { ensureTenantDefaults, getDefaultSlaPolicy } from '../tenants/defaults.js'
 import { computeDeadlines } from '../tickets/sla.js'
 import { extractTicketNumber, parseRawEmail } from './email.parser.js'
+import { dispatchTicketTriage } from '../ai/triage.js'
 
 export interface ProcessResult {
   action: 'created' | 'replied' | 'duplicate' | 'skipped'
   ticketNumber?: number
+  ticketId?: string
   reason?: string
 }
 
@@ -83,7 +85,8 @@ export async function processRawEmail(pool: DbPool, rawEmail: string, opts?: Pro
           [tenantId, email.messageId, matched.id, email.fromAddress, email.subject],
         )
       })
-      return { action: 'replied', ticketNumber }
+      void dispatchTicketTriage(tenantId, matched.id as string, 'requester_reply').catch(() => undefined)
+      return { action: 'replied', ticketNumber, ticketId: matched.id as string }
     }
   }
 
@@ -104,7 +107,7 @@ export async function processRawEmail(pool: DbPool, rawEmail: string, opts?: Pro
     return counter.rows[0].ticket_counter as number
   })
 
-  await withTenant(pool, tenantId, async (client) => {
+  const created = await withTenant(pool, tenantId, async (client) => {
     const res = await client.query(
       `INSERT INTO tickets
          (tenant_id, number, type, status, priority, subject, requester_id,
@@ -125,9 +128,11 @@ export async function processRawEmail(pool: DbPool, rawEmail: string, opts?: Pro
        VALUES ($1, $2, $3, $4, $5)`,
       [tenantId, email.messageId, ticketId, email.fromAddress, email.subject],
     )
+    return { ticketId: ticketId as string }
   })
 
-  return { action: 'created', ticketNumber: newNumber }
+  void dispatchTicketTriage(tenantId, created.ticketId, 'created').catch(() => undefined)
+  return { action: 'created', ticketNumber: newNumber, ticketId: created.ticketId }
 }
 
 async function getOrCreateUserByEmail(pool: DbPool, tenantId: string, email: string, name: string): Promise<string> {

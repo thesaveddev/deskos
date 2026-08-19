@@ -6,6 +6,7 @@ import { requirePermission } from '../../middleware/requirePermission.js'
 import { requireTenant } from '../../middleware/requireTenant.js'
 import { createAiProvider, type AiProvider } from './gateway.js'
 import { draftKbArticle, findSimilarTickets, summarizeTicket } from './ai.js'
+import { dispatchTicketTriage, getTriageState, stopTicketTriage } from './triage.js'
 import '../../types.js'
 
 declare module 'fastify' {
@@ -41,6 +42,25 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
     const ctx = request.tenantCtx!
     const { id } = request.params as { id: string }
     return { similar: await findSimilarTickets(app.db, ctx.tenantId, id) }
+  })
+
+  app.get('/ai/tickets/:id/triage', { preHandler: gate }, async (request) => {
+    const ctx = request.tenantCtx!
+    const { id } = request.params as { id: string }
+    return { triage: await getTriageState(app.db, ctx.tenantId, id) }
+  })
+
+  app.post('/ai/tickets/:id/triage/retry', { preHandler: gate }, async (request) => {
+    const ctx = request.tenantCtx!
+    const { id } = request.params as { id: string }
+    void dispatchTicketTriage(ctx.tenantId, id, 'retry')
+    return { ok: true, status: 'queued' }
+  })
+
+  app.post('/ai/tickets/:id/triage/stop', { preHandler: gate }, async (request) => {
+    const ctx = request.tenantCtx!
+    const { id } = request.params as { id: string }
+    return { triage: await stopTicketTriage(app.db, ctx.tenantId, id, `Stopped by ${request.user!.name}.`) }
   })
 
   app.post('/ai/tickets/:id/kb-draft', { preHandler: gate }, async (request, reply) => {

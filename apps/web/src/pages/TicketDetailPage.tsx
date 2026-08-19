@@ -8,14 +8,14 @@ import {
   addTicketLink, assignTicket, getTicket, listTicketLinks, removeTicketLink, replyTicket, setTicketStatus,
   downloadAttachment, listAttachments, updateTicket, uploadAttachment,
   escalateTicket, getTicketEscalations, forwardTicket, listTeams, listTeamMembers,
-  getTicketLock, lockTicket, unlockTicket, heartbeatLock, forceUnlockTicket,
+  getTicketLock, unlockTicket, heartbeatLock, forceUnlockTicket,
   startViewingTicket, stopViewingTicket, heartbeatViewing, getTicketViewers,
   slaSummary, STATUS_LABELS, formatWhen, type Attachment, type Thread, type Ticket, type TicketDevice, type TicketLink,
   type Escalation, type Team, type TicketLockInfo,
 } from '../lib/tickets.js'
 import { listCannedResponses, type CannedResponse } from '../lib/canned.js'
 import { listDevices, type Device } from '../lib/devices.js'
-import { draftKbArticle, listSimilarTickets, summarizeTicket, type KbDraftArticle, type SimilarTicket } from '../lib/ai.js'
+import { draftKbArticle, getTriageState, listSimilarTickets, retryTriage, stopTriage, summarizeTicket, type KbDraftArticle, type SimilarTicket, type TriageState } from '../lib/ai.js'
 
 const STATUS_OPTIONS = ['new', 'open', 'in_progress', 'pending_user', 'pending_vendor', 'escalated', 'resolved', 'closed']
 
@@ -48,12 +48,14 @@ export default function TicketDetailPage() {
   const [aiSimilarBusy, setAiSimilarBusy] = useState(false)
   const [aiDraft, setAiDraft] = useState<KbDraftArticle | null>(null)
   const [aiDraftBusy, setAiDraftBusy] = useState(false)
+  const [aiTriage, setAiTriage] = useState<TriageState | null>(null)
+  const [aiTriageBusy, setAiTriageBusy] = useState(false)
 
   // Ticket locking & viewing
   const [ticketLock, setTicketLock] = useState<TicketLockInfo | null>(null)
   const [lockIsMine, setLockIsMine] = useState(false)
   const [lockBusy, setLockBusy] = useState(false)
-  const [viewers, setViewers] = useState<Array<{ user_id: string; name: string; email: string; since: string }>>([])
+  const [viewers, setViewers] = useState<Array<{ user_id: string; name: string; email: string; viewing_at: string }>>([])
 
   // Escalation & forward
   const [escalations, setEscalations] = useState<Escalation[]>([])
@@ -68,7 +70,7 @@ export default function TicketDetailPage() {
   const [showForward, setShowForward] = useState(false)
 
   const canUseAi = useAuth((state) => state.memberships.some((m) => m.permissions.includes('ai.use')))
-  const isManagerOrAdmin = auth.user && auth.memberships.some(m => ['admin', 'manager', 'owner'].includes(m.orgRole))
+  const canOverrideTicketLock = auth.memberships.some((m) => m.permissions.includes('settings.manage'))
 
   const load = useCallback(async () => {
     if (!id) return
@@ -88,7 +90,10 @@ export default function TicketDetailPage() {
         const lockRes = await getTicketLock(id)
         setTicketLock(lockRes.lock)
         setLockIsMine(lockRes.is_mine)
-      } catch { setTicketLock(null) }
+      } catch {
+        setTicketLock(null)
+        setLockIsMine(false)
+      }
       // Check viewers
       try {
         const viewersRes = await getTicketViewers(id)
@@ -116,6 +121,59 @@ export default function TicketDetailPage() {
     }
   }, [id])
 
+  // These effects must run before the loading/error returns below. Keeping them
+  // unconditional preserves React's hook order while the ticket is fetched.
+  useEffect(() => {
+    if (!id || !canUseAi) return
+    getTriageState(id).then((result) => setAiTriage(result.triage)).catch(() => setAiTriage(null))
+  }, [id, canUseAi])
+
+  useEffect(() => {
+    if (!id) return
+    const interval = setInterval(() => {
+      heartbeatLock(id).catch(() => {})
+      heartbeatViewing(id).catch(() => {})
+    }, 25_000)
+    return () => clearInterval(interval)
+  }, [id])
+
+  useEffect(() => {
+    if (!id) return
+    const fetchViewers = async () => {
+      try {
+        const res = await getTicketViewers(id)
+        setViewers(res.viewers)
+      } catch { /* ignore */ }
+    }
+    void fetchViewers()
+    const interval = setInterval(fetchViewers, 10_000)
+    return () => clearInterval(interval)
+  }, [id])
+
+  // Refresh the lock banner independently of the ticket payload so a manager
+  // force-unlock or a five-minute expiry is reflected without a full reload.
+  useEffect(() => {
+    if (!id) return
+    const refreshLock = async () => {
+      try {
+        const result = await getTicketLock(id)
+        setTicketLock(result.lock)
+        setLockIsMine(result.is_mine)
+      } catch { /* ignore transient refresh failures */ }
+    }
+    const interval = setInterval(refreshLock, 10_000)
+    return () => clearInterval(interval)
+  }, [id])
+
+  useEffect(() => {
+    if (!id) return
+    void startViewingTicket(id)
+    return () => {
+      void stopViewingTicket(id)
+      void unlockTicket(id)
+    }
+  }, [id])
+
   if (error) {
     return (
       <Shell>
@@ -132,6 +190,7 @@ export default function TicketDetailPage() {
   }
 
   const sla = slaSummary(ticket)
+  const readOnlyForLock = Boolean(ticketLock && !lockIsMine && !canOverrideTicketLock)
 
   const sendReply = async () => {
     if (!draft.trim() || busy) return
@@ -163,12 +222,8 @@ export default function TicketDetailPage() {
     if (!auth.user) return
     setError(null)
     try {
-      // Auto-lock the ticket when assigning
-      try {
-        const lockRes = await lockTicket(ticket.id)
-        setTicketLock(lockRes.lock)
-        setLockIsMine(true)
-      } catch { /* lock may fail if someone else has it, that's ok */ }
+      // The API claims and locks in one transaction. Do not lock first: that
+      // would leave an orphaned lock if assignment failed or raced another agent.
       const res = await assignTicket(ticket.id, auth.user.id)
       setTicket(res.ticket)
       await load()
@@ -211,7 +266,7 @@ export default function TicketDetailPage() {
 
   // ── Lock handlers ──
   const handleForceUnlock = async () => {
-    if (!ticket || !isManagerOrAdmin) return
+    if (!ticket || !canOverrideTicketLock) return
     setLockBusy(true)
     try {
       await forceUnlockTicket(ticket.id)
@@ -223,40 +278,6 @@ export default function TicketDetailPage() {
     }
     setLockBusy(false)
   }
-
-  // Heartbeat to keep lock alive while viewing (every 25s, TTL is 5 min)
-  useEffect(() => {
-    if (!id) return
-    const interval = setInterval(() => {
-      heartbeatLock(id).catch(() => {})
-      heartbeatViewing(id).catch(() => {})
-    }, 25_000)
-    return () => clearInterval(interval)
-  }, [id])
-
-  // Track viewers
-  useEffect(() => {
-    if (!id) return
-    const fetchViewers = async () => {
-      try {
-        const res = await getTicketViewers(id)
-        setViewers(res.viewers)
-      } catch { /* ignore */ }
-    }
-    void fetchViewers()
-    const interval = setInterval(fetchViewers, 10_000) // check every 10s
-    return () => clearInterval(interval)
-  }, [id])
-
-  // Start viewing on mount, stop on unmount
-  useEffect(() => {
-    if (!id) return
-    void startViewingTicket(id)
-    return () => {
-      void stopViewingTicket(id)
-      void unlockTicket(id) // auto-unlock when navigating away
-    }
-  }, [id])
 
   const changeDevice = async (deviceId: string) => {
     if (!ticket || deviceSaving) return
@@ -353,6 +374,26 @@ export default function TicketDetailPage() {
     }
   }
 
+  const runAiTriageAction = async (action: 'retry' | 'stop') => {
+    if (!ticket || aiTriageBusy) return
+    setAiTriageBusy(true)
+    setError(null)
+    try {
+      if (action === 'retry') {
+        await retryTriage(ticket.id)
+        setAiTriage((await getTriageState(ticket.id)).triage)
+      } else {
+        const result = await stopTriage(ticket.id)
+        setAiTriage(result.triage)
+      }
+      await load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'AI triage action failed')
+    } finally {
+      setAiTriageBusy(false)
+    }
+  }
+
   const ext = ticket.ext ?? {}
   const extKeys = Object.keys(ext)
   const extLabel: Record<string, string> = {
@@ -383,23 +424,26 @@ export default function TicketDetailPage() {
           </div>
         </div>
         <div className="ticket-actions">
-          {!ticket.assignee_id ? (
-            <button className="btn btn-ghost btn-sm" onClick={() => void assignToMe()}>Assign to me</button>
+          {ticket.assignee_id !== auth.user?.id || !lockIsMine ? (
+            <button className="btn btn-primary btn-sm" onClick={() => void assignToMe()} disabled={readOnlyForLock}>
+              {ticket.assignee_id === auth.user?.id ? 'Claim & lock' : 'Assign to me'}
+            </button>
           ) : null}
           <select
             className="field-input select-sm"
             value={ticket.status}
             onChange={(e) => void changeStatus(e.target.value)}
+            disabled={readOnlyForLock}
             aria-label="Status"
           >
             {STATUS_OPTIONS.map((s) => (
               <option key={s} value={s}>{STATUS_LABELS[s]}</option>
             ))}
           </select>
-          <button className="btn btn-ghost btn-sm" onClick={() => { setShowEscalate(!showEscalate); setShowForward(false) }}>
+          <button className="btn btn-ghost btn-sm" disabled={readOnlyForLock} onClick={() => { setShowEscalate(!showEscalate); setShowForward(false) }}>
             ⬆ Escalate
           </button>
-          <button className="btn btn-ghost btn-sm" onClick={() => { setShowForward(!showForward); setShowEscalate(false) }}>
+          <button className="btn btn-ghost btn-sm" disabled={readOnlyForLock} onClick={() => { setShowForward(!showForward); setShowEscalate(false) }}>
             ➤ Forward
           </button>
         </div>
@@ -464,7 +508,7 @@ export default function TicketDetailPage() {
           <span className="ticket-lock-text">
             This ticket is locked by <strong>{ticketLock.locked_by_name || ticketLock.locked_by_email}</strong> until {new Date(ticketLock.expires_at).toLocaleTimeString()}.
           </span>
-          {isManagerOrAdmin && (
+          {canOverrideTicketLock && (
             <button className="btn btn-ghost btn-sm" onClick={() => void handleForceUnlock()} disabled={lockBusy}>
               Force unlock
             </button>
@@ -474,13 +518,13 @@ export default function TicketDetailPage() {
       {lockIsMine && (
         <div className="ticket-lock-banner ticket-lock-mine">
           <span className="ticket-lock-icon">🔓</span>
-          <span className="ticket-lock-text">You have this ticket locked.</span>
+          <span className="ticket-lock-text"><strong>You have this ticket claimed.</strong> Other agents can view it, but your five-minute lock protects active edits while you are here.</span>
         </div>
       )}
       {!ticketLock && (
         <div className="ticket-lock-banner ticket-lock-none">
           <span className="ticket-lock-icon">🔓</span>
-          <span className="ticket-lock-text">This ticket is not locked.</span>
+          <span className="ticket-lock-text">No one has claimed this ticket. Assign it to yourself to claim it and protect active edits.</span>
         </div>
       )}
 
@@ -514,7 +558,7 @@ export default function TicketDetailPage() {
           className="field-input select-sm"
           value={ticket.device_id ?? ''}
           onChange={(event) => void changeDevice(event.target.value)}
-          disabled={deviceSaving}
+          disabled={deviceSaving || readOnlyForLock}
           aria-label="Linked device"
         >
           <option value="">No device linked</option>
@@ -582,7 +626,9 @@ export default function TicketDetailPage() {
         <section className="ticket-links ai-panel">
           <div className="attachments-head">
             <span className="etch">AI assistant</span>
+            {aiTriage ? <span className={`status-pill status-${aiTriage.status === 'resolved' ? 'resolved' : aiTriage.status === 'handoff' ? 'escalated' : aiTriage.status === 'waiting_for_user' ? 'pending_user' : 'open'}`}>{aiTriage.status.replace('_', ' ')}</span> : null}
           </div>
+          {aiTriage && aiTriage.status !== 'idle' ? <div className="ai-result"><span className="muted mono">Automatic triage · round {aiTriage.round}</span>{aiTriage.lastQuestion ? <p>{aiTriage.lastQuestion}</p> : null}{aiTriage.lastError ? <p className="muted">{aiTriage.lastError}</p> : null}<div className="ticket-link-form"><button className="btn btn-ghost btn-sm" disabled={aiTriageBusy || aiTriage.status === 'disabled' || aiTriage.status === 'resolved'} onClick={() => void runAiTriageAction('retry')}>Retry triage</button><button className="btn btn-ghost btn-sm" disabled={aiTriageBusy || aiTriage.status === 'disabled' || aiTriage.status === 'resolved'} onClick={() => void runAiTriageAction('stop')}>Stop AI</button></div></div> : null}
           <div className="ticket-link-form">
             <button className="btn btn-ghost btn-sm" disabled={aiSummaryBusy} onClick={() => void runAiSummary()}>
               {aiSummaryBusy ? 'Summarising…' : 'Summarise'}
@@ -634,7 +680,7 @@ export default function TicketDetailPage() {
               ) : (
                 <>
                   <span className="timeline-author">{th.author_name ?? 'System'}</span>
-                  <span>{th.kind === 'internal_note' ? 'internal note' : th.kind === 'session_record' ? 'session' : 'message'}</span>
+                  <span>{th.kind === 'internal_note' ? 'internal note' : th.kind === 'session_record' ? 'session' : th.kind === 'ai_triage' ? 'AI assistant' : 'message'}</span>
                   <span>{formatWhen(th.created_at)}</span>
                 </>
               )}
@@ -743,14 +789,19 @@ export default function TicketDetailPage() {
           rows={4}
           placeholder={composerMode === 'public' ? 'Reply to the requester…' : 'Add a private note for technicians…'}
           value={draft}
+          disabled={readOnlyForLock}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') void sendReply()
           }}
         />
         <div className="composer-foot">
-          <span className="etch">Ctrl+Enter to send</span>
-          <button className="btn btn-primary btn-sm" disabled={busy || !draft.trim()} onClick={() => void sendReply()}>
+          <span className="etch">{readOnlyForLock ? 'Read-only while another agent is working' : 'Ctrl+Enter to send'}</span>
+          <button
+            className="btn btn-primary btn-sm"
+            disabled={busy || readOnlyForLock || !draft.trim()}
+            onClick={() => void sendReply()}
+          >
             {composerMode === 'public' ? 'Send reply' : 'Add note'}
           </button>
         </div>

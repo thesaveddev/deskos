@@ -8,6 +8,7 @@ import { authenticate } from '../../middleware/authenticate.js'
 import { requireTenant } from '../../middleware/requireTenant.js'
 import { ensureTenantDefaults, getDefaultSlaPolicy } from '../tenants/defaults.js'
 import { computeDeadlines } from '../tickets/sla.js'
+import { dispatchTicketTriage } from '../ai/triage.js'
 import '../../types.js'
 
 const createSchema = z.object({
@@ -82,6 +83,7 @@ export async function portalRoutes(app: FastifyInstance): Promise<void> {
       return res.rows[0]
     })
 
+    void dispatchTicketTriage(ctx.tenantId, ticket.id as string, 'created').catch(() => undefined)
     return reply.code(201).send({ ticket })
   })
 
@@ -145,6 +147,7 @@ export async function portalRoutes(app: FastifyInstance): Promise<void> {
       }
       return res.rows[0]
     })
+    void dispatchTicketTriage(ctx.tenantId, thread.ticket_id as string, 'requester_reply').catch(() => undefined)
     return reply.code(201).send({ thread })
   })
 

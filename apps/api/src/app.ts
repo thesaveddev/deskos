@@ -1,4 +1,5 @@
 import path from 'node:path'
+import { parse as parseQueryString } from 'node:querystring'
 import { fileURLToPath } from 'node:url'
 import Fastify, { type FastifyInstance } from 'fastify'
 import cors from '@fastify/cors'
@@ -27,6 +28,8 @@ import { dexRoutes } from './modules/dex/dex.routes.js'
 import { agentRoutes } from './modules/devices/agent.routes.js'
 import { deviceRoutes } from './modules/devices/devices.routes.js'
 import { aiRoutes } from './modules/ai/ai.routes.js'
+import { createAiProvider } from './modules/ai/gateway.js'
+import { runTicketTriage, setTriageDispatcher } from './modules/ai/triage.js'
 import { aiAgentRoutes } from './modules/ai-agent/ai-agent.routes.js'
 import { chatRoutes } from './modules/chat/chat.routes.js'
 import { adRoutes } from './modules/ad/ad.routes.js'
@@ -46,7 +49,7 @@ import { mspRoutes } from './modules/msp/msp.routes.js'
 import { notificationRoutes } from './modules/notifications/notifications.routes.js'
 import { patchRoutes } from './modules/patches/patches.routes.js'
 import { notificationPreferenceRoutes } from './modules/notifications/preferences.routes.js'
-import { setPushDispatcher } from './core/notify.js'
+import { setEmailDispatcher, setPushDispatcher } from './core/notify.js'
 import { oauthRoutes } from './modules/oauth/oauth.routes.js'
 import { pushRoutes } from './modules/push/push.routes.js'
 import { sendPushToUser } from './modules/push/push.js'
@@ -70,6 +73,35 @@ import { ticketLinkRoutes } from './modules/tickets/links.routes.js'
 import { escalationRoutes } from './modules/tickets/escalation.routes.js'
 import { ticketLockRoutes } from './modules/tickets/locks.routes.js'
 import './types.js'
+
+function friendlyValidationMessage(error: ZodError): string {
+  const fields = new Set(error.issues.map((issue) => String(issue.path[0] ?? 'request')))
+  const hasEmail = fields.has('email')
+  const hasPassword = fields.has('password')
+  const passwordIssue = error.issues.find((issue) => issue.path[0] === 'password')
+  const passwordMinimum = passwordIssue && 'minimum' in passwordIssue ? Number(passwordIssue.minimum) : undefined
+
+  if (hasEmail && hasPassword && fields.size === 2) {
+    if (passwordMinimum && passwordMinimum >= 10) return 'Enter a valid email address and a password with at least 10 characters.'
+    return 'Enter a valid email address and your password.'
+  }
+  if (hasEmail) return 'Enter a valid email address.'
+  if (hasPassword) {
+    if (passwordMinimum && passwordMinimum >= 10) return 'Password must be at least 10 characters.'
+    return 'Enter your password.'
+  }
+
+  const labels: Record<string, string> = {
+    name: 'your name',
+    tenantName: 'an organisation name',
+    refreshToken: 'your session token',
+    mfaCode: 'your authentication code',
+    code: 'the verification code',
+  }
+  const firstField = String(error.issues[0]?.path[0] ?? '')
+  if (firstField && labels[firstField]) return `Please enter ${labels[firstField]}.`
+  return 'Some details are missing or invalid. Please review the form and try again.'
+}
 
 export async function buildApp(config: AppConfig): Promise<FastifyInstance> {
   initSentry(config.sentry)
@@ -105,17 +137,56 @@ export async function buildApp(config: AppConfig): Promise<FastifyInstance> {
       })
     return sendPushToUser(pool, config.push, tenantId, userId, kind, body, config.emailKey, http)
   })
+  // Email preferences use the same queue and branded templates as password,
+  // ticket, and magic-link mail. The recipient lookup is deliberately done
+  // here at the application boundary so core notification writes stay small
+  // and transaction-safe.
+  setTriageDispatcher((tenantId, ticketId, trigger = 'created') => runTicketTriage({
+    pool,
+    provider: app.aiProvider ?? createAiProvider(config.ai),
+    model: config.ai.model,
+    mailer,
+    emailQueue,
+    publicUrl: config.publicUrl,
+  }, tenantId, ticketId, trigger))
+
+  setEmailDispatcher(async ({ tenantId, userId, kind, body }) => {
+    const recipient = (await pool.query(
+      `SELECT u.email, t.name AS tenant_name
+         FROM users u JOIN memberships m ON m.user_id = u.id
+         JOIN tenants t ON t.id = m.tenant_id
+        WHERE u.id = $1 AND m.tenant_id = $2 AND m.status IN ('active', 'invited') AND u.status <> 'disabled'`,
+      [userId, tenantId],
+    )).rows[0]
+    if (!recipient || !app.mailer.enabled) {
+      app.log.warn({ userId, tenantId, kind, mailConfigured: app.mailer.enabled }, 'Email notification could not be dispatched')
+      return false
+    }
+    return app.emailQueue.addAndSend(app.mailer.buildNotificationMail({
+      to: recipient.email,
+      tenantName: recipient.tenant_name,
+      kind,
+      body,
+    }))
+  })
 
   app.addHook('onClose', async (instance) => {
+    setTriageDispatcher(null)
     instance.emailWorker?.stop()
     await instance.otel.stop()
     await instance.db.end()
   })
 
   await app.register(helmet, { global: true, contentSecurityPolicy: false })
-  await app.register(cors, { origin: true, credentials: true })
+  await app.register(cors, { origin: config.webOrigins, credentials: true })
   await app.register(multipart, {
     limits: { fileSize: config.maxUploadBytes, files: 1 },
+  })
+  // Twilio sends signed application/x-www-form-urlencoded callbacks. Fastify
+  // does not parse that media type by default, so keep a small parser here
+  // instead of adding a second dependency for one provider boundary.
+  app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_request, body, done) => {
+    done(null, parseQueryString(body as string))
   })
   await app.register(rateLimit, {
     global: true,
@@ -137,7 +208,7 @@ export async function buildApp(config: AppConfig): Promise<FastifyInstance> {
     const err = error as Error & { statusCode?: number; validation?: unknown }
     if (err instanceof ZodError) {
       return reply.status(400).send({
-        error: { code: 'validation_error', message: err.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') },
+        error: { code: 'validation_error', message: friendlyValidationMessage(err) },
       })
     }
     if (err.validation) {
