@@ -630,6 +630,24 @@ a:hover {
   max-width: 320px;
 }
 
+
+.subject-cell-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ticket-queue-lock {
+  display: inline-block;
+  max-width: 100%;
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--warn);
+  font: 400 10px var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 /* ---- status & sla ---- */
 
 .status-pill {
@@ -6616,6 +6634,90 @@ select.field-input {
   align-items: center;
 }
 
+
+/* Ticket filters are an overlay, not another row in the queue table. */
+.tickets-page-head {
+  margin-bottom: 6px;
+}
+
+.tickets-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  min-height: 34px;
+  margin-bottom: 6px;
+}
+
+.tickets-filter-anchor {
+  position: relative;
+}
+
+.tickets-filter-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  width: min(720px, calc(100vw - 48px));
+  margin: 0;
+  box-shadow: var(--shadow-lg);
+}
+
+.tickets-filter-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line-1);
+}
+
+.tickets-filter-card-head > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tickets-filter-card-head span {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.tickets-filter-popover .tickets-filter-row {
+  margin-bottom: 12px;
+}
+
+.tickets-filter-popover .tickets-filter-group {
+  flex: 1 1 150px;
+  min-width: 0;
+}
+
+.tickets-filter-popover .tickets-filter-search-group {
+  flex: 2 1 280px;
+}
+
+.tickets-filter-popover .tickets-filter-actions {
+  flex: 1 1 auto;
+  justify-content: flex-end;
+}
+
+.tickets-filter-popover .tickets-filter-actions .btn {
+  flex: 0 0 auto;
+}
+
+.tickets-filter-popover .tickets-search {
+  max-width: none;
+}
+
+.tickets-filter-popover .field-input {
+  min-width: 0;
+}
+
+.tickets-filter-anchor .btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
 .tickets-search-row {
   margin-bottom: 0.75rem;
 }

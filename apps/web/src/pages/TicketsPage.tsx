@@ -4,6 +4,7 @@ import { Shell } from '../components/Shell.js'
 import { Pagination, useOffsetPagination } from '../components/Pagination.js'
 import { listTickets, ticketCounts, slaSummary, STATUS_LABELS, formatWhen, bulkUpdateTickets, listTeams, type Ticket, type Team } from '../lib/tickets.js'
 import { useAuth } from '../lib/auth.js'
+import { Icon } from '../components/Icons.js'
 
 type QuickFilter = 'all' | 'mine' | 'unassigned' | 'escalated'
 
@@ -76,10 +77,13 @@ export default function TicketsPage() {
       if (quickFilter === 'mine') params.assignee = 'me'
       if (quickFilter === 'unassigned') params.assignee = 'none'
       if (quickFilter === 'escalated') params.status = 'escalated'
-      if (quickFilter === 'all' && !fStatus) params.status = 'open'
 
-      // Advanced filters override quick filter status
+      // Advanced filters override the quick filter status. The quick queues
+      // use the same actionable-state definition as /tickets/counts; do not
+      // send status=open for "All open", because that excludes new and
+      // in-progress tickets while the tab count includes them.
       if (fStatus) params.status = fStatus
+      if (!fStatus && (quickFilter === 'all' || quickFilter === 'mine' || quickFilter === 'unassigned')) params.open = 'true'
       if (fPriority) params.priority = fPriority
       if (fTeam) params.team = fTeam
       if (fSearch) params.q = fSearch
@@ -148,28 +152,50 @@ export default function TicketsPage() {
     pagination.reset()
   }
 
-  const hasActiveFilters = fStatus || fPriority || fTeam || fSearch || fDateFrom || fDateTo
+  const hasActiveFilters = Boolean(fStatus || fPriority || fTeam || fSearch || fDateFrom || fDateTo)
+  const activeFilterCount = [fStatus, fPriority, fTeam, fSearch, fDateFrom, fDateTo].filter(Boolean).length
 
   return (
     <Shell>
-      <div className="page-head">
+      <div className="page-head tickets-page-head">
         <h1 className="page-title">Tickets</h1>
-        <div className="tickets-head-actions">
-          <button className="btn btn-ghost btn-sm" onClick={() => setShowFilters(!showFilters)}>
-            {showFilters ? 'Hide filters' : '⚙ Filters'}
-          </button>
-        </div>
       </div>
 
-      {/* Search bar */}
-      <div className="tickets-search-row">
-        <input
-          className="field-input tickets-search"
-          placeholder="Search by subject or ticket number…"
-          value={fSearch}
-          onChange={(e) => setFSearch(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') { pagination.goToPage(0); void load() } }}
-        />
+      {/* Keep the queue header compact; the full label lives with the filter action. */}
+      <div className="tickets-toolbar">
+        <div className="tickets-filter-anchor">
+          <button type="button" className={`btn btn-ghost btn-sm${showFilters ? ' active' : ''}`} onClick={() => setShowFilters((open) => !open)} aria-expanded={showFilters} aria-controls="ticket-filter-card">
+            <Icon name="filter" size={14} />{showFilters ? 'Close filters' : 'Filter and sort the queue'}{hasActiveFilters ? ` · ${activeFilterCount}` : ''}
+          </button>
+          {showFilters ? (
+            <div id="ticket-filter-card" className="tickets-filter-panel tickets-filter-popover" role="dialog" aria-label="Ticket filters">
+              <div className="tickets-filter-card-head"><div><strong>Filter and sort the queue</strong><span>Refine the queue without changing the table layout.</span></div><button type="button" className="btn btn-ghost btn-xs" onClick={() => setShowFilters(false)} aria-label="Close ticket filters"><Icon name="close" size={13} /></button></div>
+              <div className="tickets-filter-row">
+                <div className="tickets-filter-group tickets-filter-search-group">
+                  <label className="tickets-filter-label" htmlFor="ticket-search-filter">Search</label>
+                  <input id="ticket-search-filter" className="field-input tickets-search" placeholder="Subject or ticket number…" value={fSearch} onChange={(e) => setFSearch(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { pagination.goToPage(0); void load() } }} />
+                </div>
+                <div className="tickets-filter-group">
+                  <label className="tickets-filter-label" htmlFor="ticket-team-filter">Team</label>
+                  <select id="ticket-team-filter" className="field-input" value={fTeam} onChange={(e) => { setFTeam(e.target.value); pagination.goToPage(0) }} aria-label="Filter tickets by team">
+                    <option value="">All teams</option>
+                    {teams.filter((team) => team.accepts_tickets !== false).map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="tickets-filter-row">
+                <div className="tickets-filter-group"><label className="tickets-filter-label">Status</label><select className="field-input" value={fStatus} onChange={(e) => setFStatus(e.target.value)}>{STATUSES.map((s) => <option key={s} value={s}>{s || 'Any'}</option>)}</select></div>
+                <div className="tickets-filter-group"><label className="tickets-filter-label">Priority</label><select className="field-input" value={fPriority} onChange={(e) => setFPriority(e.target.value)}>{PRIORITIES.map((p) => <option key={p} value={p}>{p || 'Any'}</option>)}</select></div>
+                <div className="tickets-filter-group tickets-filter-sort"><label className="tickets-filter-label">Sort by</label><select className="field-input" value={fSort} onChange={(e) => setFSort(e.target.value)}>{SORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
+              </div>
+              <div className="tickets-filter-row">
+                <div className="tickets-filter-group"><label className="tickets-filter-label">From date</label><input className="field-input" type="date" value={fDateFrom} onChange={(e) => setFDateFrom(e.target.value)} /></div>
+                <div className="tickets-filter-group"><label className="tickets-filter-label">To date</label><input className="field-input" type="date" value={fDateTo} onChange={(e) => setFDateTo(e.target.value)} /></div>
+                <div className="tickets-filter-actions"><button type="button" className="btn btn-primary btn-sm" onClick={() => { pagination.goToPage(0); void load(); setShowFilters(false) }}><Icon name="check" size={14} />Apply filters</button>{hasActiveFilters ? <button type="button" className="btn btn-ghost btn-sm" onClick={clearFilters}><Icon name="close" size={14} />Clear</button> : null}</div>
+              </div>
+            </div>
+          ) : null}
+        </div>
       </div>
 
       {/* Quick filter tabs */}
@@ -187,53 +213,6 @@ export default function TicketsPage() {
           </button>
         ))}
       </div>
-
-      {/* Advanced filter panel */}
-      {showFilters && (
-        <div className="tickets-filter-panel">
-          <div className="tickets-filter-row">
-            <div className="tickets-filter-group">
-              <label className="tickets-filter-label">Status</label>
-              <select className="field-input" value={fStatus} onChange={(e) => setFStatus(e.target.value)}>
-                {STATUSES.map((s) => <option key={s} value={s}>{s || 'Any'}</option>)}
-              </select>
-            </div>
-            <div className="tickets-filter-group">
-              <label className="tickets-filter-label">Priority</label>
-              <select className="field-input" value={fPriority} onChange={(e) => setFPriority(e.target.value)}>
-                {PRIORITIES.map((p) => <option key={p} value={p}>{p || 'Any'}</option>)}
-              </select>
-            </div>
-            <div className="tickets-filter-group">
-              <label className="tickets-filter-label">Team</label>
-              <select className="field-input" value={fTeam} onChange={(e) => setFTeam(e.target.value)}>
-                <option value="">Any team</option>
-                {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-              </select>
-            </div>
-            <div className="tickets-filter-group">
-              <label className="tickets-filter-label">Sort by</label>
-              <select className="field-input" value={fSort} onChange={(e) => setFSort(e.target.value)}>
-                {SORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </div>
-          </div>
-          <div className="tickets-filter-row">
-            <div className="tickets-filter-group">
-              <label className="tickets-filter-label">From date</label>
-              <input className="field-input" type="date" value={fDateFrom} onChange={(e) => setFDateFrom(e.target.value)} />
-            </div>
-            <div className="tickets-filter-group">
-              <label className="tickets-filter-label">To date</label>
-              <input className="field-input" type="date" value={fDateTo} onChange={(e) => setFDateTo(e.target.value)} />
-            </div>
-            <div className="tickets-filter-group tickets-filter-actions">
-              <button className="btn btn-primary btn-sm" onClick={() => { pagination.goToPage(0); void load() }}>Apply</button>
-              {hasActiveFilters && <button className="btn btn-ghost btn-sm" onClick={clearFilters}>Clear all</button>}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Bulk action bar */}
       {selected.size > 0 && (
@@ -254,7 +233,7 @@ export default function TicketsPage() {
             <option value="medium">Medium</option>
             <option value="low">Low</option>
           </select>
-          <button className="btn btn-ghost btn-sm" onClick={() => setSelected(new Set())}>Clear selection</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setSelected(new Set())}><Icon name="close" size={14} />Clear selection</button>
         </div>
       )}
 
@@ -268,7 +247,8 @@ export default function TicketsPage() {
       )}
 
       {tickets.length > 0 && (
-        <table className="queue-table">
+        <div className="queue-table-wrap">
+          <table className="queue-table">
           <thead>
             <tr>
               <th className="col-check">
@@ -293,7 +273,10 @@ export default function TicketsPage() {
                     <input type="checkbox" checked={selected.has(t.id)} onChange={() => toggleSelect(t.id)} />
                   </td>
                   <td className="col-num mono" onClick={() => navigate(`/tickets/${t.id}`)}>{t.number}</td>
-                  <td className="subject-cell" onClick={() => navigate(`/tickets/${t.id}`)}>{t.subject}</td>
+                  <td className="subject-cell" onClick={() => navigate(`/tickets/${t.id}`)}>
+                    <span className="subject-cell-text">{t.subject}</span>
+                    {t.lock_user_id ? <span className="ticket-queue-lock" title={`Being worked on by ${t.lock_user_name ?? 'another agent'}`}>🔒 {t.lock_user_name ?? 'Working'}</span> : null}
+                  </td>
                   <td className="col-status" onClick={() => navigate(`/tickets/${t.id}`)}>
                     <span className={`status-pill status-${t.status}`}>{STATUS_LABELS[t.status] ?? t.status}</span>
                   </td>
@@ -308,7 +291,8 @@ export default function TicketsPage() {
               )
             })}
           </tbody>
-        </table>
+          </table>
+        </div>
       )}
 
       {tickets.length > 0 && (
