@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { Shell } from '../components/Shell.js'
 import { Alert } from '../components/ui.js'
+import { Icon } from '../components/Icons.js'
 import { getAccessToken } from '../lib/api.js'
 import { useAuth } from '../lib/auth.js'
 import {
@@ -501,48 +502,41 @@ export default function TicketDetailPage() {
 
       {error ? <Alert kind="error">{error}</Alert> : null}
 
-      {/* Lock banner */}
-      {ticketLock && !lockIsMine && (
-        <div className="ticket-lock-banner">
-          <span className="ticket-lock-icon">🔒</span>
-          <span className="ticket-lock-text">
-            This ticket is locked by <strong>{ticketLock.locked_by_name || ticketLock.locked_by_email}</strong> until {new Date(ticketLock.expires_at).toLocaleTimeString()}.
-          </span>
-          {canOverrideTicketLock && (
-            <button className="btn btn-ghost btn-sm" onClick={() => void handleForceUnlock()} disabled={lockBusy}>
-              Force unlock
-            </button>
-          )}
-        </div>
-      )}
-      {lockIsMine && (
-        <div className="ticket-lock-banner ticket-lock-mine">
-          <span className="ticket-lock-icon">🔓</span>
-          <span className="ticket-lock-text"><strong>You have this ticket claimed.</strong> Other agents can view it, but your five-minute lock protects active edits while you are here.</span>
-        </div>
-      )}
-      {!ticketLock && (
-        <div className="ticket-lock-banner ticket-lock-none">
-          <span className="ticket-lock-icon">🔓</span>
-          <span className="ticket-lock-text">No one has claimed this ticket. Assign it to yourself to claim it and protect active edits.</span>
-        </div>
-      )}
-
-      {/* Viewing indicator */}
-      {viewers.length > 0 && (
-        <div className="ticket-viewers">
-          <span className="ticket-viewers-icon">👁</span>
-          <span className="ticket-viewers-text">
-            {viewers.length === 1 
-              ? `${viewers[0].name || viewers[0].email} is viewing` 
-              : `${viewers.length} agents are viewing this ticket`
-            }
-          </span>
-          <span className="ticket-viewers-list">
-            {viewers.map(v => v.name || v.email).join(', ')}
-          </span>
-        </div>
-      )}
+      {/* Compact lock and viewer status indicators */}
+      <div className="ticket-presence-status" aria-label="Ticket presence status">
+        <span
+          className={`ticket-status-icon ${ticketLock ? 'is-locked' : 'is-unlocked'}`}
+          data-tooltip={ticketLock
+            ? `${lockIsMine ? 'Locked to' : 'Locked by'} ${ticketLock.locked_by_name || ticketLock.locked_by_email}`
+            : 'Unlocked'}
+          tabIndex={0}
+        >
+          <Icon name={ticketLock ? 'lock' : 'unlock'} size={17} />
+          <span className="sr-only">{ticketLock ? `${lockIsMine ? 'Locked to' : 'Locked by'} ${ticketLock.locked_by_name || ticketLock.locked_by_email}` : 'Unlocked'}</span>
+        </span>
+        {ticketLock && canOverrideTicketLock && !lockIsMine ? (
+          <button
+            type="button"
+            className="ticket-status-icon ticket-status-action"
+            onClick={() => void handleForceUnlock()}
+            disabled={lockBusy}
+            data-tooltip="Force unlock ticket"
+            aria-label="Force unlock ticket"
+          >
+            <Icon name="unlock" size={16} />
+          </button>
+        ) : null}
+        <span
+          className={`ticket-status-icon ${viewers.length > 0 ? 'is-viewing' : 'is-not-viewing'}`}
+          data-tooltip={viewers.length > 0
+            ? `Viewing: ${viewers.map((viewer) => viewer.name || viewer.email).join(', ')}`
+            : 'Not being viewed'}
+          tabIndex={0}
+        >
+          <Icon name={viewers.length > 0 ? 'eye' : 'eye-off'} size={17} />
+          <span className="sr-only">{viewers.length > 0 ? `Viewing: ${viewers.map((viewer) => viewer.name || viewer.email).join(', ')}` : 'Not being viewed'}</span>
+        </span>
+      </div>
 
       <section className="ticket-device-context">
         <div>
