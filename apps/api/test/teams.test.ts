@@ -135,6 +135,25 @@ describe('ticket teams', () => {
     expect(updated.statusCode).toBe(200)
     expect(updated.json().team.name).toBe('Infrastructure')
     expect(updated.json().team.lead_id).toBe(analyst.userId)
+    expect(updated.json().team.member_ids).toContain(analyst.userId)
+
+    const enabledChat = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/teams/${teamId}`,
+      headers: authHeaders(owner),
+      payload: { createChat: true },
+    })
+    expect(enabledChat.statusCode).toBe(200)
+    expect(enabledChat.json().team.chat_room_name).toBe('Infrastructure')
+
+    const renamed = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/teams/${teamId}`,
+      headers: authHeaders(owner),
+      payload: { name: 'Infrastructure & Operations' },
+    })
+    expect(renamed.statusCode).toBe(200)
+    expect(renamed.json().team.chat_room_name).toBe('Infrastructure & Operations')
 
     const deleted = await app.inject({ method: 'DELETE', url: `/api/v1/teams/${teamId}`, headers: authHeaders(owner) })
     expect(deleted.statusCode).toBe(200)

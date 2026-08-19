@@ -19,8 +19,9 @@ const teamUpdateSchema = z.object({
   name: z.string().trim().min(2).max(100).optional(),
   leadId: z.string().uuid().nullable().optional(),
   memberIds: z.array(z.string().uuid()).max(200).optional(),
+  createChat: z.boolean().optional(),
   acceptsTickets: z.boolean().optional(),
-}).refine((body) => body.name !== undefined || body.leadId !== undefined || body.memberIds !== undefined || body.acceptsTickets !== undefined, {
+}).refine((body) => body.name !== undefined || body.leadId !== undefined || body.memberIds !== undefined || body.createChat !== undefined || body.acceptsTickets !== undefined, {
   message: 'Provide a team name or lead',
 })
 
@@ -53,7 +54,7 @@ async function syncTeamMembers(
   teamId: string,
   userIds: string[],
   addedBy: string,
-): Promise<void> {
+): Promise<string[]> {
   const members = await ensureMembersBelongToTenant(client, tenantId, userIds)
   await client.query('DELETE FROM team_members WHERE tenant_id = $1 AND team_id = $2', [tenantId, teamId])
   for (const userId of members) {
@@ -62,6 +63,42 @@ async function syncTeamMembers(
       [tenantId, teamId, userId, addedBy],
     )
   }
+  return members
+}
+
+async function syncTeamChat(
+  client: DbClient,
+  tenantId: string,
+  teamId: string,
+  teamName: string,
+  createChat: boolean | undefined,
+  createdBy: string,
+): Promise<{ id: string; name: string } | null> {
+  const existing = (await client.query(
+    'SELECT id, name FROM chat_rooms WHERE tenant_id = $1 AND team_id = $2',
+    [tenantId, teamId],
+  )).rows[0]
+  if (!existing && !createChat) return null
+  if (existing) {
+    if (existing.name !== teamName) {
+      const renamed = await client.query(
+        'UPDATE chat_rooms SET name = $2 WHERE id = $1 RETURNING id, name',
+        [existing.id, teamName],
+      )
+      return renamed.rows[0]
+    }
+    return existing
+  }
+
+  const duplicate = await client.query('SELECT id FROM chat_rooms WHERE tenant_id = $1 AND name = $2', [tenantId, teamName])
+  if (duplicate.rows[0]) throw AppError.conflict('A chat room with this name already exists. Choose a different team name.', 'chat_room_name_taken')
+  const room = await client.query(
+    `INSERT INTO chat_rooms (tenant_id, team_id, name, created_by)
+     VALUES ($1, $2, $3, $4)
+     RETURNING id, name`,
+    [tenantId, teamId, teamName, createdBy],
+  )
+  return room.rows[0]
 }
 
 export async function teamRoutes(app: FastifyInstance): Promise<void> {
@@ -100,20 +137,9 @@ export async function teamRoutes(app: FastifyInstance): Promise<void> {
           [ctx.tenantId, body.name, body.leadId ?? null, body.acceptsTickets],
         )
         const memberIds = body.leadId ? [...body.memberIds, body.leadId] : body.memberIds
-        await syncTeamMembers(client, ctx.tenantId, created.rows[0].id, memberIds, request.user!.id)
-        let chatRoom: Record<string, unknown> | null = null
-        if (body.createChat) {
-          const duplicateChat = await client.query('SELECT id FROM chat_rooms WHERE tenant_id = $1 AND name = $2', [ctx.tenantId, body.name])
-          if (duplicateChat.rows[0]) throw AppError.conflict('A chat room with this name already exists. Choose a different team name.', 'chat_room_name_taken')
-          const room = await client.query(
-            `INSERT INTO chat_rooms (tenant_id, team_id, name, created_by)
-             VALUES ($1, $2, $3, $4)
-             RETURNING id, name, created_at`,
-            [ctx.tenantId, created.rows[0].id, body.name, request.user!.id],
-          )
-          chatRoom = room.rows[0]
-        }
-        return { ...created.rows[0], member_ids: [...new Set(memberIds)], chat_room_id: chatRoom?.id ?? null, chat_room_name: chatRoom?.name ?? null }
+        const syncedMemberIds = await syncTeamMembers(client, ctx.tenantId, created.rows[0].id, memberIds, request.user!.id)
+        const chatRoom = await syncTeamChat(client, ctx.tenantId, created.rows[0].id, body.name, body.createChat, request.user!.id)
+        return { ...created.rows[0], member_ids: syncedMemberIds, chat_room_id: chatRoom?.id ?? null, chat_room_name: chatRoom?.name ?? null }
       })
       return reply.code(201).send({ team })
     } catch (err) {
@@ -143,12 +169,14 @@ export async function teamRoutes(app: FastifyInstance): Promise<void> {
           ? await client.query(`UPDATE teams SET ${sets.join(', ')} WHERE id = $${teamParam} AND tenant_id = $${tenantParam} RETURNING *`, values)
           : await client.query('SELECT * FROM teams WHERE id = $1 AND tenant_id = $2', [teamId, ctx.tenantId])
         if (!updated.rows[0]) throw AppError.notFound('Team not found')
+        let memberIds: string[] = (await client.query('SELECT user_id FROM team_members WHERE team_id = $1 ORDER BY created_at', [teamId])).rows.map((row) => row.user_id as string)
         if (body.memberIds !== undefined || body.leadId !== undefined) {
-          const memberIds = body.memberIds ?? (await client.query('SELECT user_id FROM team_members WHERE team_id = $1', [teamId])).rows.map((row) => row.user_id as string)
+          memberIds = body.memberIds ?? memberIds
           if (body.leadId) memberIds.push(body.leadId)
-          await syncTeamMembers(client, ctx.tenantId, teamId, memberIds, request.user!.id)
+          memberIds = await syncTeamMembers(client, ctx.tenantId, teamId, memberIds, request.user!.id)
         }
-        return updated.rows[0]
+        const chatRoom = await syncTeamChat(client, ctx.tenantId, teamId, updated.rows[0].name, body.createChat, request.user!.id)
+        return { ...updated.rows[0], member_ids: memberIds, chat_room_id: chatRoom?.id ?? null, chat_room_name: chatRoom?.name ?? null }
       })
       if (!result) throw AppError.notFound('Team not found')
       return reply.send({ team: result })
