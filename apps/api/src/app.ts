@@ -47,6 +47,7 @@ import { memberRoutes } from './modules/members/members.routes.js'
 import { monitoringRoutes } from './modules/monitoring/monitoring.routes.js'
 import { mspRoutes } from './modules/msp/msp.routes.js'
 import { notificationRoutes } from './modules/notifications/notifications.routes.js'
+import { startNotificationRealtime } from './modules/notifications/realtime.js'
 import { patchRoutes } from './modules/patches/patches.routes.js'
 import { notificationPreferenceRoutes } from './modules/notifications/preferences.routes.js'
 import { setEmailDispatcher, setPushDispatcher } from './core/notify.js'
@@ -125,6 +126,7 @@ export async function buildApp(config: AppConfig): Promise<FastifyInstance> {
   app.decorate('mailer', mailer)
   app.decorate('metrics', metrics)
   app.decorate('otel', otel)
+  const notificationRealtime = await startNotificationRealtime(pool, app.log)
 
   // Web Push: wire the fire-and-forget dispatcher into the notification
   // pipeline. Disabled deployments (no VAPID keys) no-op without touching the DB.
@@ -173,6 +175,7 @@ export async function buildApp(config: AppConfig): Promise<FastifyInstance> {
   app.addHook('onClose', async (instance) => {
     setTriageDispatcher(null)
     instance.emailWorker?.stop()
+    await notificationRealtime.stop()
     await instance.otel.stop()
     await instance.db.end()
   })

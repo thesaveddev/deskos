@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { CommandPalette } from './CommandPalette.js'
 import { MobileShell } from './MobileShell.js'
@@ -9,6 +9,7 @@ import { isNative } from '../lib/capacitor.js'
 import { lockScreen } from '../lib/lock.js'
 import { createAdhocSession } from '../lib/sessions.js'
 import { readSessionDock, sessionDockEventName, type SessionDockEntry } from '../lib/sessions.js'
+import { listNotifications, markNotificationsRead, openNotificationStream, type AppNotification } from '../lib/notifications.js'
 
 function tenantColor(id?: string): string {
   if (!id) return 'var(--accent)'
@@ -16,6 +17,43 @@ function tenantColor(id?: string): string {
   for (let i = 0; i < id.length; i += 1) h = (h * 31 + id.charCodeAt(i)) % 360
   return `hsl(${h} 55% 45%)`
 }
+function notificationLabel(kind: string): string {
+  const labels: Record<string, string> = {
+    'ticket.replied': 'Ticket update',
+    'ticket.requester_replied': 'Requester replied',
+    'ticket.resolved': 'Ticket resolved',
+    'sla.breached': 'SLA breach',
+    'device.alert': 'Device alert',
+    offline: 'Device offline',
+    low_disk: 'Low disk space',
+    session_invite: 'Session invite',
+    'session.adhoc.claimed': 'Support code claimed',
+    automation: 'Automation',
+    'membership.invited': 'Membership invited',
+    'service.approval': 'Approval needed',
+    'service.approval_decided': 'Approval decided',
+    'change.approval': 'Change approval',
+    'telephony.call_received': 'Inbound call',
+  }
+  return labels[kind] ?? kind.replace(/[._]/g, ' ')
+}
+
+function notificationTarget(notification: AppNotification): string | null {
+  if (!notification.subject_id) return null
+  if (notification.subject_type === 'ticket') return `/tickets/${notification.subject_id}`
+  if (notification.subject_type === 'device') return `/devices/${notification.subject_id}`
+  if (notification.subject_type === 'session' || notification.subject_type === 'remote_session') return `/sessions/${notification.subject_id}`
+  return null
+}
+
+function notificationAge(value: string): string {
+  const seconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000))
+  if (seconds < 60) return 'just now'
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`
+  return `${Math.floor(seconds / 86400)}d ago`
+}
+
 
 interface NavItem {
   to: string
@@ -194,6 +232,9 @@ export function Shell({ children }: { children: ReactNode }) {
   const [sessionDock, setSessionDock] = useState<SessionDockEntry | null>(() => readSessionDock())
   const [notesOpen, setNotesOpen] = useState(false)
   const [showSessionKey, setShowSessionKey] = useState(false)
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
+  const [notifications, setNotifications] = useState<AppNotification[]>([])
+  const [notificationsLoading, setNotificationsLoading] = useState(false)
   const [sessionKey, setSessionKey] = useState<string | null>(null)
   const [sessionKeyExpires, setSessionKeyExpires] = useState<string | null>(null)
   const [sessionKeyBusy, setSessionKeyBusy] = useState(false)
@@ -219,6 +260,51 @@ export function Shell({ children }: { children: ReactNode }) {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
+
+  const loadNotifications = useCallback(async () => {
+    if (!auth.user) return
+    setNotificationsLoading(true)
+    try {
+      const result = await listNotifications()
+      setNotifications(result.notifications)
+    } catch {
+      // A missing notification permission should not break the console shell.
+    } finally {
+      setNotificationsLoading(false)
+    }
+  }, [auth.activeTenantId, auth.user?.id])
+
+  useEffect(() => {
+    void loadNotifications()
+    const tenantId = auth.activeTenantId
+    if (!tenantId || !auth.user) return
+    return openNotificationStream({
+      tenantId,
+      onConnected: () => void loadNotifications(),
+      onNotification: (notification) => {
+        setNotifications((items) => [notification, ...items.filter((item) => item.id !== notification.id)].slice(0, 100))
+      },
+    })
+  }, [auth.activeTenantId, auth.user?.id, loadNotifications])
+
+  const unreadNotifications = notifications.filter((notification) => !notification.read_at)
+  const markNotificationRead = async (id: string) => {
+    setNotifications((items) => items.map((item) => item.id === id ? { ...item, read_at: new Date().toISOString() } : item))
+    try {
+      await markNotificationsRead({ ids: [id] })
+    } catch {
+      void loadNotifications()
+    }
+  }
+  const markAllNotificationsRead = async () => {
+    if (unreadNotifications.length === 0) return
+    setNotifications((items) => items.map((item) => ({ ...item, read_at: item.read_at ?? new Date().toISOString() })))
+    try {
+      await markNotificationsRead({ all: true })
+    } catch {
+      void loadNotifications()
+    }
+  }
 
   return (
     <div className="app-frame">
@@ -324,9 +410,39 @@ export function Shell({ children }: { children: ReactNode }) {
           </Link>
 
           <div className="topbar-icons">
-            <button className="topbar-icon-btn" title="Notifications">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-            </button>
+            <div className="topbar-notifications-wrap">
+              <button
+                type="button"
+                className="topbar-icon-btn notification-trigger"
+                title="Notifications"
+                aria-label={unreadNotifications.length ? `${unreadNotifications.length} unread notifications` : 'Notifications'}
+                aria-expanded={notificationsOpen}
+                onClick={() => {
+                  setNotificationsOpen((open) => !open)
+                  if (!notificationsOpen) void loadNotifications()
+                }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                {unreadNotifications.length > 0 ? <span className="notification-badge">{unreadNotifications.length > 99 ? '99+' : unreadNotifications.length}</span> : null}
+              </button>
+              {notificationsOpen ? (
+                <div className="notification-dropdown" role="dialog" aria-label="Notifications">
+                  <div className="notification-dropdown-head">
+                    <div><strong>Notifications</strong><span>{unreadNotifications.length ? `${unreadNotifications.length} unread` : 'All caught up'}</span></div>
+                    <button type="button" className="btn btn-ghost btn-xs" onClick={() => void markAllNotificationsRead()} disabled={unreadNotifications.length === 0}>Mark all read</button>
+                  </div>
+                  <div className="notification-list">
+                    {notificationsLoading && notifications.length === 0 ? <div className="notification-empty">Loading notifications…</div> : null}
+                    {!notificationsLoading && notifications.length === 0 ? <div className="notification-empty"><strong>No notifications</strong><span>Ticket updates, alerts, and requests will appear here.</span></div> : null}
+                    {notifications.map((notification) => {
+                      const target = notificationTarget(notification)
+                      const content = <><span className="notification-row-icon"><Icon name={notification.kind.includes('ticket') ? 'ticket' : notification.kind.includes('device') || notification.kind === 'offline' ? 'monitor' : 'alert'} size={14} /></span><span className="notification-row-main"><strong>{notificationLabel(notification.kind)}</strong><span>{notification.body}</span><small>{notificationAge(notification.created_at)}</small></span>{!notification.read_at ? <span className="notification-unread-dot" aria-label="Unread" /> : null}</>
+                      return target ? <Link key={notification.id} to={target} className={`notification-row${notification.read_at ? '' : ' unread'}`} onClick={() => void markNotificationRead(notification.id)}>{content}</Link> : <button key={notification.id} type="button" className={`notification-row${notification.read_at ? '' : ' unread'}`} onClick={() => void markNotificationRead(notification.id)}>{content}</button>
+                    })}
+                  </div>
+                </div>
+              ) : null}
+            </div>
           </div>
 
           {/* Notes dropdown */}

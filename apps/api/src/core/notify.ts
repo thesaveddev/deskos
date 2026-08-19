@@ -46,6 +46,41 @@ export interface EmailDispatchInput {
   body: string
 }
 
+export interface RealtimeNotification {
+  id: string
+  tenantId: string
+  userId: string
+  kind: string
+  subjectType: string | null
+  subjectId: string | null
+  body: string
+  createdAt: string
+}
+
+const NOTIFICATION_REALTIME_CHANNEL = 'deskos_notifications'
+const notificationSubscribers = new Map<string, Set<(notification: RealtimeNotification) => void>>()
+
+export function subscribeNotifications(
+  tenantId: string,
+  userId: string,
+  listener: (notification: RealtimeNotification) => void,
+): () => void {
+  const key = `${tenantId}:${userId}`
+  const listeners = notificationSubscribers.get(key) ?? new Set()
+  listeners.add(listener)
+  notificationSubscribers.set(key, listeners)
+  return () => {
+    listeners.delete(listener)
+    if (listeners.size === 0) notificationSubscribers.delete(key)
+  }
+}
+
+export function publishNotification(notification: RealtimeNotification): void {
+  const listeners = notificationSubscribers.get(`${notification.tenantId}:${notification.userId}`)
+  if (!listeners) return
+  for (const listener of listeners) listener(notification)
+}
+
 export type PushDispatcher = (input: PushDispatchInput) => Promise<unknown>
 export type EmailDispatcher = (input: EmailDispatchInput) => Promise<unknown>
 
@@ -94,9 +129,17 @@ export async function notify(
     if (channels.length === 0) return false
   }
 
-  await client.query(
+  const inserted = await client.query<{
+    id: string
+    kind: string
+    subject_type: string | null
+    subject_id: string | null
+    body: string
+    created_at: string
+  }>(
     `INSERT INTO notifications (tenant_id, user_id, kind, subject_type, subject_id, body, channels)
-     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+     RETURNING id, kind, subject_type, subject_id, body, created_at`,
     [
       tenantId,
       input.userId,
@@ -107,6 +150,21 @@ export async function notify(
       JSON.stringify(channels),
     ],
   )
+  const row = inserted.rows[0]
+  if (row) {
+    // PostgreSQL emits this only after the surrounding transaction commits,
+    // allowing every API node to fan the event out to its connected browsers.
+    await client.query('SELECT pg_notify($1, $2)', [NOTIFICATION_REALTIME_CHANNEL, JSON.stringify({
+      id: row.id,
+      tenantId,
+      userId: input.userId,
+      kind: row.kind,
+      subjectType: row.subject_type,
+      subjectId: row.subject_id,
+      body: row.body,
+      createdAt: row.created_at,
+    } satisfies RealtimeNotification)])
+  }
 
   // Push mirrors in-app delivery: whenever a row is written for in-app (or an
   // explicit push preference), a subscription check + send happens out-of-band.
