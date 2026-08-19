@@ -42,6 +42,7 @@ export default function TicketDetailPage() {
   const [linkType, setLinkType] = useState('related')
   const [linkTargetType, setLinkTargetType] = useState('ticket')
   const [linkTargetId, setLinkTargetId] = useState('')
+  const [showLinkForm, setShowLinkForm] = useState(false)
   const [aiSummary, setAiSummary] = useState<string | null>(null)
   const [aiSummaryBusy, setAiSummaryBusy] = useState(false)
   const [aiSimilar, setAiSimilar] = useState<SimilarTicket[]>([])
@@ -317,6 +318,7 @@ export default function TicketDetailPage() {
     try {
       await addTicketLink(ticket.id, { linkType, targetType: linkTargetType, targetId: linkTargetId.trim() })
       setLinkTargetId('')
+      setShowLinkForm(false)
       await load()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not link')
@@ -574,9 +576,33 @@ export default function TicketDetailPage() {
       ) : null}
 
       <section className="ticket-links">
-        <span className="etch">Linked items</span>
+        <div className="ticket-links-head">
+          <div className="ticket-links-title">
+            <span className="ticket-links-icon" aria-hidden="true"><Icon name="link" size={16} /></span>
+            <div>
+              <span className="etch">Linked items</span>
+              <span className="ticket-links-summary">{links.length === 0 ? 'Connect this ticket to related work' : `${links.length} linked item${links.length === 1 ? '' : 's'}`}</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            className={`btn btn-ghost btn-sm ticket-link-trigger${showLinkForm ? ' active' : ''}`}
+            onClick={() => setShowLinkForm((open) => !open)}
+            aria-expanded={showLinkForm}
+            aria-controls="ticket-link-form"
+            aria-label={showLinkForm ? 'Close linking form' : 'Link a ticket or item'}
+            title={showLinkForm ? 'Close linking form' : 'Link a ticket or item'}
+            data-tooltip={showLinkForm ? 'Close linking form' : 'Link a ticket or item'}
+          >
+            <Icon name="link" size={16} />
+            <span>{showLinkForm ? 'Close' : 'Link item'}</span>
+          </button>
+        </div>
         {links.length === 0 ? (
-          <span className="muted">No linked items.</span>
+          <div className="ticket-links-empty">
+            <Icon name="link" size={18} />
+            <span>No tickets or items linked yet.</span>
+          </div>
         ) : (
           <ul className="attachments-list">
             {links.map((l) => (
@@ -597,23 +623,36 @@ export default function TicketDetailPage() {
             ))}
           </ul>
         )}
-        <div className="ticket-link-form">
-          <select className="field-input select-sm" value={linkType} onChange={(e) => setLinkType(e.target.value)} aria-label="Link type">
-            <option value="related">Related</option>
-            <option value="caused_by">Caused by</option>
-            <option value="parent">Parent</option>
-            <option value="child">Child</option>
-            <option value="duplicates">Duplicates</option>
-          </select>
-          <select className="field-input select-sm" value={linkTargetType} onChange={(e) => setLinkTargetType(e.target.value)} aria-label="Target type">
-            <option value="ticket">Ticket</option>
-            <option value="asset">Asset</option>
-            <option value="kb">KB article</option>
-            <option value="session">Session</option>
-          </select>
-          <input className="field-input mono" value={linkTargetId} onChange={(e) => setLinkTargetId(e.target.value)} placeholder="target id" />
-          <button className="btn btn-ghost btn-sm" disabled={!linkTargetId.trim()} onClick={() => void addLink()}>Link</button>
-        </div>
+        {showLinkForm ? (
+          <div className="ticket-link-form-panel" id="ticket-link-form">
+            <div className="ticket-link-form-intro">
+              <span className="ticket-links-icon" aria-hidden="true"><Icon name="link" size={15} /></span>
+              <div>
+                <strong>Link related work</strong>
+                <span>Connect this ticket to another ticket, asset, article, or session.</span>
+              </div>
+            </div>
+            <div className="ticket-link-form">
+              <select className="field-input select-sm" value={linkType} onChange={(e) => setLinkType(e.target.value)} aria-label="Link type">
+                <option value="related">Related</option>
+                <option value="caused_by">Caused by</option>
+                <option value="parent">Parent</option>
+                <option value="child">Child</option>
+                <option value="duplicates">Duplicates</option>
+              </select>
+              <select className="field-input select-sm" value={linkTargetType} onChange={(e) => setLinkTargetType(e.target.value)} aria-label="Target type">
+                <option value="ticket">Ticket</option>
+                <option value="asset">Asset</option>
+                <option value="kb">KB article</option>
+                <option value="session">Session</option>
+              </select>
+              <input className="field-input mono" value={linkTargetId} onChange={(e) => setLinkTargetId(e.target.value)} placeholder="Paste item ID" aria-label="Target ID" />
+              <button className="btn btn-primary btn-sm" disabled={!linkTargetId.trim()} onClick={() => void addLink()}>
+                <Icon name="link" size={15} /> Link
+              </button>
+            </div>
+          </div>
+        ) : null}
       </section>
 
       {canUseAi ? (

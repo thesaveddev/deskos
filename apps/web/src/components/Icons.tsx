@@ -4,7 +4,7 @@ export type IconName =
   | 'add' | 'edit' | 'delete' | 'save' | 'cancel' | 'check' | 'close'
   | 'search' | 'filter' | 'refresh' | 'download' | 'upload' | 'copy'
   | 'play' | 'stop' | 'back' | 'forward' | 'external' | 'settings'
-  | 'send' | 'lock' | 'unlock' | 'logout' | 'menu' | 'monitor' | 'ticket' | 'user'
+  | 'send' | 'link' | 'lock' | 'unlock' | 'logout' | 'menu' | 'monitor' | 'ticket' | 'user'
   | 'calendar' | 'more' | 'eye' | 'eye-off' | 'wrench' | 'folder' | 'shield' | 'clock'
   | 'terminal' | 'file' | 'alert' | 'key' | 'mail' | 'pin' | 'phone' | 'chevron-left'
   | 'chevron-right' | 'chevron-down'
@@ -76,3 +76,4 @@ export function Icon({ name, size = 16, strokeWidth = 2, ...props }: { name: Ico
     </svg>
   )
 }
+  link: <><path d="M10 13a5 5 0 0 0 7.07.07l2-2a5 5 0 0 0-7.07-7.07l-1.15 1.15"/><path d="M14 11a5 5 0 0 0-7.07-.07l-2 2A5 5 0 0 0 12 20l1.15-1.15"/></>,

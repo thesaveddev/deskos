@@ -2787,6 +2787,123 @@ select.field-input {
   border-radius: var(--radius);
 }
 
+.ticket-links-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.ticket-links-title,
+.ticket-link-form-intro {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 9px;
+}
+
+.ticket-links-title > div,
+.ticket-link-form-intro > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ticket-links-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border: 1px solid var(--line-2);
+  border-radius: 7px;
+  color: var(--accent);
+}
+
+.ticket-links-summary,
+.ticket-link-form-intro span {
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ticket-link-trigger {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.ticket-link-trigger.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.ticket-link-trigger[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: calc(100% + 7px);
+  right: 0;
+  z-index: 20;
+  min-width: max-content;
+  padding: 6px 9px;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  background: var(--bg-1);
+  color: var(--text-1);
+  box-shadow: var(--shadow-md);
+  font: 500 11px/1.35 var(--font-sans);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.ticket-link-trigger[data-tooltip]:hover::after,
+.ticket-link-trigger[data-tooltip]:focus-visible::after {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.ticket-links-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0 2px;
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.ticket-links-empty .ui-icon {
+  color: var(--text-3);
+}
+
+.ticket-link-form-panel {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-sm);
+  background: var(--bg-0);
+}
+
+.ticket-link-form-intro {
+  margin-bottom: 9px;
+}
+
+.ticket-link-form-intro .ticket-links-icon {
+  width: 25px;
+  height: 25px;
+  flex-basis: 25px;
+}
+
+.ticket-link-form-intro strong {
+  color: var(--text-1);
+  font-size: 12px;
+}
+
 .ai-result {
   margin-top: 10px;
   padding: 8px 10px;
@@ -2820,6 +2937,30 @@ select.field-input {
 .ticket-link-form .field-input {
   flex: 1;
   min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .ticket-links-head {
+    align-items: flex-start;
+  }
+
+  .ticket-link-trigger span {
+    display: none;
+  }
+
+  .ticket-link-trigger {
+    width: 34px;
+    padding: 0;
+  }
+
+  .ticket-link-form {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .ticket-link-form .btn {
+    width: 100%;
+  }
 }
 
 /* ---- managed enrollment modes ---- */
