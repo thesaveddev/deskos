@@ -144,6 +144,7 @@ function NavSections() {
       label: 'Team',
       items: [
         { to: '/staff', label: 'Staff management', show: can('member.read') },
+        { to: '/teams', label: 'Teams', show: can('member.read') },
         { to: '/support', label: 'Support', show: true },
       ],
     },

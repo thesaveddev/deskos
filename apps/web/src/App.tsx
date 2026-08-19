@@ -44,6 +44,8 @@ import MonitoringPage from './pages/MonitoringPage.js'
 import MarketplacePage from './pages/MarketplacePage.js'
 import MspPage from './pages/MspPage.js'
 import NewTicketPage from './pages/NewTicketPage.js'
+import NotFoundPage from './pages/NotFoundPage.js'
+import TeamsPage from './pages/TeamsPage.js'
 import PatchPage from './pages/PatchPage.js'
 import NotificationSettingsPage from './pages/NotificationSettingsPage.js'
 import OauthSettingsPage from './pages/OauthSettingsPage.js'
@@ -169,6 +171,8 @@ export default function App() {
       <Route path="/admin" element={<Protected><AdminDashboardPage /></Protected>} />
       <Route path="/admin/support" element={<Protected><AdminSupportPage /></Protected>} />
       <Route path="/staff" element={<Protected><StaffPage /></Protected>} />
+      <Route path="/teams" element={<Protected><TeamsPage /></Protected>} />
+      <Route path="/team" element={<Navigate to="/teams" replace />} />
       <Route path="/profile" element={<Protected><ProfilePage /></Protected>} />
       <Route path="/notes" element={<Protected><NotesPage /></Protected>} />
       <Route path="/billing" element={<Protected><BillingPage /></Protected>} />
@@ -223,7 +227,7 @@ export default function App() {
       <Route path="/portal" element={<Protected><PortalHomePage /></Protected>} />
       <Route path="/portal/new" element={<Protected><PortalNewTicketPage /></Protected>} />
       <Route path="/portal/tickets/:number" element={<Protected><PortalTicketPage /></Protected>} />
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<NotFoundPage />} />
     </Routes>
     </IdleLockWrapper>
   )
