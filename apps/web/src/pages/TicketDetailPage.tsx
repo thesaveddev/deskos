@@ -9,7 +9,7 @@ import {
   addTicketLink, assignTicket, getTicket, listTicketLinks, removeTicketLink, replyTicket, setTicketStatus,
   downloadAttachment, listAttachments, updateTicket, uploadAttachment,
   escalateTicket, getTicketEscalations, forwardTicket, listTeams, listTeamMembers,
-  getTicketLock, unlockTicket, heartbeatLock, forceUnlockTicket,
+  getTicketLock, lockTicket, unlockTicket, heartbeatLock, forceUnlockTicket,
   listLockReleaseRequests, requestTicketLockRelease, resolveLockReleaseRequest,
   startViewingTicket, stopViewingTicket, heartbeatViewing, getTicketViewers,
   slaSummary, STATUS_LABELS, formatWhen, type Attachment, type Thread, type Ticket, type TicketDevice, type TicketLink,
@@ -91,6 +91,10 @@ export default function TicketDetailPage() {
   const load = useCallback(async () => {
     if (!id) return
     try {
+      // Register this browser as a viewer before deciding whether an assigned
+      // ticket can be locked. A ticket assigned to this agent is automatically
+      // locked on entry only when nobody else is currently viewing it.
+      await startViewingTicket(id).catch(() => {})
       const res = await getTicket(id)
       setTicket(res.ticket)
       setTicketDevice(res.device)
@@ -101,27 +105,49 @@ export default function TicketDetailPage() {
       try {
         setLinks((await listTicketLinks(id)).links)
       } catch { setLinks([]) }
-      // Check lock status
+
+      let activeLock: TicketLockInfo | null = null
+      let activeLockIsMine = false
       try {
         const lockRes = await getTicketLock(id)
-        setTicketLock(lockRes.lock)
-        setLockIsMine(lockRes.is_mine)
+        activeLock = lockRes.lock
+        activeLockIsMine = lockRes.is_mine
       } catch {
-        setTicketLock(null)
-        setLockIsMine(false)
+        activeLock = null
+        activeLockIsMine = false
       }
+
+      let currentViewers: Array<{ user_id: string; name: string; email: string; viewing_at: string }> = []
+      try {
+        currentViewers = (await getTicketViewers(id)).viewers
+        setViewers(currentViewers)
+      } catch { /* ignore */ }
+
+      const otherViewers = currentViewers.filter((viewer) => viewer.user_id !== auth.user?.id)
+      if (res.ticket.assignee_id === auth.user?.id && !activeLock && otherViewers.length === 0) {
+        try {
+          activeLock = (await lockTicket(id)).lock
+          activeLockIsMine = true
+        } catch {
+          // Another agent may have claimed the lock between the viewer check
+          // and acquisition. Refresh so the detail page becomes read-only.
+          try {
+            const latest = await getTicketLock(id)
+            activeLock = latest.lock
+            activeLockIsMine = latest.is_mine
+          } catch { /* ignore transient lock races */ }
+        }
+      }
+      setTicketLock(activeLock)
+      setLockIsMine(activeLockIsMine)
+
       try {
         setReleaseRequests((await listLockReleaseRequests(id)).requests)
       } catch { setReleaseRequests([]) }
-      // Check viewers
-      try {
-        const viewersRes = await getTicketViewers(id)
-        setViewers(viewersRes.viewers)
-      } catch { /* ignore */ }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load ticket')
     }
-  }, [id])
+  }, [id, auth.user?.id])
 
   useEffect(() => {
     void load()
@@ -186,7 +212,6 @@ export default function TicketDetailPage() {
 
   useEffect(() => {
     if (!id) return
-    void startViewingTicket(id)
     return () => {
       void stopViewingTicket(id)
       void unlockTicket(id)
@@ -209,7 +234,11 @@ export default function TicketDetailPage() {
   }
 
   const sla = slaSummary(ticket)
-  const readOnlyForLock = Boolean(ticketLock && !lockIsMine && !canOverrideTicketLock)
+  const assignedToMe = ticket.assignee_id === auth.user?.id
+  const otherViewers = viewers.filter((viewer) => viewer.user_id !== auth.user?.id)
+  const blockedByAnotherViewer = assignedToMe && otherViewers.length > 0 && !lockIsMine && !canOverrideTicketLock
+  const readOnlyForLock = Boolean((ticketLock && !lockIsMine && !canOverrideTicketLock) || blockedByAnotherViewer)
+  const blockingName = ticketLock?.locked_by_name ?? ticketLock?.locked_by_email ?? otherViewers[0]?.name ?? otherViewers[0]?.email ?? 'Another agent'
 
   const sendReply = async () => {
     if (!draft.trim() || busy) return
@@ -299,7 +328,7 @@ export default function TicketDetailPage() {
   }
 
   const handleRequestRelease = async () => {
-    if (!ticket || !ticketLock || lockIsMine || releaseBusy) return
+    if (!ticket || lockIsMine || releaseBusy) return
     setReleaseBusy(true)
     setError(null)
     try {
@@ -482,9 +511,9 @@ export default function TicketDetailPage() {
           </div>
         </div>
         <div className="ticket-actions">
-          {ticket.assignee_id !== auth.user?.id || !lockIsMine ? (
+          {ticket.assignee_id !== auth.user?.id ? (
             <button className="btn btn-primary btn-sm" onClick={() => void assignToMe()} disabled={readOnlyForLock}>
-              {ticket.assignee_id === auth.user?.id ? 'Claim & lock' : 'Assign to me'}
+              Assign to me
             </button>
           ) : null}
           <select
@@ -586,7 +615,7 @@ export default function TicketDetailPage() {
         {readOnlyForLock ? (
           <div className="ticket-readonly-notice">
             <Icon name="lock" size={16} />
-            <div><strong>Read-only view</strong><span>{ticketLock?.locked_by_name ?? ticketLock?.locked_by_email ?? 'Another agent'} is working on this ticket.</span></div>
+            <div><strong>Read-only view</strong><span>{blockingName} is viewing or working on this ticket.</span></div>
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => void handleRequestRelease()} disabled={releaseBusy || releaseRequests.some((request) => request.status === 'pending' && request.requested_by === auth.user?.id)}>
               {releaseRequests.some((request) => request.status === 'pending' && request.requested_by === auth.user?.id) ? 'Release requested' : releaseBusy ? 'Requesting…' : 'Request release'}
             </button>

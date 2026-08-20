@@ -156,4 +156,37 @@ describe('ticket locks', () => {
     })
     expect(unlocked.json().lock).toBeNull()
   })
+
+  it('routes a release request to an active viewer before a lock exists', async () => {
+    const viewing = await app.inject({
+      method: 'POST',
+      url: `/api/v1/tickets/${ticketId}/viewing`,
+      headers: authHeaders(analyst),
+    })
+    expect(viewing.statusCode).toBe(200)
+
+    const requested = await app.inject({
+      method: 'POST',
+      url: `/api/v1/tickets/${ticketId}/lock/release-request`,
+      headers: authHeaders(owner),
+      payload: { message: 'Please release this ticket when finished.' },
+    })
+    expect(requested.statusCode).toBe(201)
+    expect(requested.json().request.locked_by).toBe(analyst.userId)
+
+    const approved = await app.inject({
+      method: 'POST',
+      url: `/api/v1/tickets/${ticketId}/lock/release-requests/${requested.json().request.id}/resolve`,
+      headers: authHeaders(analyst),
+      payload: { decision: 'approve' },
+    })
+    expect(approved.statusCode).toBe(200)
+
+    const viewers = await app.inject({
+      method: 'GET',
+      url: `/api/v1/tickets/${ticketId}/viewers`,
+      headers: authHeaders(owner),
+    })
+    expect(viewers.json().viewers.some((viewer: { user_id: string }) => viewer.user_id === analyst.userId)).toBe(false)
+  })
 })

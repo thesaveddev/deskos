@@ -318,8 +318,21 @@ export async function requestTicketLockRelease(
 ): Promise<LockReleaseRequest> {
   return withTenant(db, tenantId, async (client) => {
     const lock = await readLock(client, ticketId)
-    if (!lock) throw new Error('This ticket is no longer locked')
-    if (lock.locked_by === requestedBy) throw new Error('You already own this ticket lock')
+    // An assigned ticket can also be blocked by an agent who is only viewing
+    // it. Use the most recent active viewer as the release-request target when
+    // there is no lock row yet, so the same approval workflow still applies.
+    const viewer = lock ? null : (await client.query(
+      `SELECT v.user_id
+         FROM ticket_viewers v
+        WHERE v.ticket_id = $1 AND v.user_id <> $2
+          AND v.viewing_at >= now() - interval '2 minutes'
+        ORDER BY v.viewing_at DESC
+        LIMIT 1`,
+      [ticketId, requestedBy],
+    )).rows[0]
+    const targetUserId = lock?.locked_by ?? viewer?.user_id
+    if (!targetUserId) throw new Error('This ticket is no longer being viewed or locked')
+    if (targetUserId === requestedBy) throw new Error('You already own this ticket lock')
 
     const result = await client.query(
       `INSERT INTO ticket_lock_release_requests (tenant_id, ticket_id, requested_by, locked_by, message)
@@ -327,16 +340,16 @@ export async function requestTicketLockRelease(
        ON CONFLICT (ticket_id, requested_by) WHERE status = 'pending'
        DO UPDATE SET message = EXCLUDED.message
        RETURNING *`,
-      [tenantId, ticketId, requestedBy, lock.locked_by, message],
+      [tenantId, ticketId, requestedBy, targetUserId, message],
     )
     const request = result.rows[0]
     const ticket = (await client.query('SELECT number, subject FROM tickets WHERE id = $1', [ticketId])).rows[0]
     await notify(client, tenantId, {
-      userId: lock.locked_by,
+      userId: targetUserId,
       kind: 'ticket.lock_release_requested',
       subjectType: 'ticket',
       subjectId: ticketId,
-      body: `${requesterName(await client, requestedBy)} requested release of the lock on #${ticket.number} — ${ticket.subject}`,
+      body: `${requesterName(await client, requestedBy)} requested release of the ticket #${ticket.number} — ${ticket.subject}`,
     })
     return request
   })
@@ -375,6 +388,9 @@ export async function resolveLockReleaseRequest(
     )).rows[0]
     if (decision === 'approve') {
       await client.query('DELETE FROM ticket_locks WHERE ticket_id = $1 AND locked_by = $2', [ticketId, request.locked_by])
+      // If the request targeted a viewer rather than a lock owner, remove the
+      // viewer presence after approval so the assigned agent can enter cleanly.
+      await client.query('DELETE FROM ticket_viewers WHERE ticket_id = $1 AND user_id = $2', [ticketId, request.locked_by])
     }
     return updated
   })
