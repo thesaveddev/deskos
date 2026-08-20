@@ -8837,7 +8837,13 @@ select.ts-input { cursor: pointer; }
 /* Loading */
 .sec-loading { padding: 32px; text-align: center; color: var(--text-3); font-size: 13px; }
 /* Ticket locking: compact queue indicators and an actionable manager view. */
-.ticket-queue-lock { display: inline-flex; align-items: center; justify-content: center; margin-left: 8px; color: var(--warn); vertical-align: middle; }
+.ticket-queue-selection { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.ticket-queue-selection input[type="checkbox"] { margin: 0; }
+.ticket-queue-lock, .ticket-queue-lock-header { display: inline-flex; align-items: center; justify-content: center; margin: 0; vertical-align: middle; }
+.ticket-queue-lock { color: var(--warn); }
+.ticket-queue-lock.is-unlocked, .ticket-queue-lock-header { color: var(--text-3); }
+.ticket-queue-lock.is-locked { color: var(--warn); }
+.ticket-queue-lock[title] { cursor: help; }
 .ticket-lock-admin-panel { margin: 0 0 14px; border: 1px solid var(--line-1); border-radius: var(--radius); background: var(--bg-1); overflow: hidden; }
 .ticket-lock-admin-toggle { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 14px; border: 0; background: transparent; color: var(--text-2); font: inherit; text-align: left; cursor: pointer; }
 .ticket-lock-admin-toggle:hover { background: var(--bg-2); }

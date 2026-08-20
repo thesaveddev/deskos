@@ -306,7 +306,10 @@ export default function TicketsPage() {
           <thead>
             <tr>
               <th className="col-check">
-                <input type="checkbox" checked={selected.size === tickets.length && tickets.length > 0} onChange={toggleSelectAll} />
+                <span className="ticket-queue-selection">
+                  <input type="checkbox" checked={selected.size === tickets.length && tickets.length > 0} onChange={toggleSelectAll} aria-label="Select all tickets" />
+                  <span className="ticket-queue-lock-header" aria-hidden="true"><Icon name="lock" size={13} /></span>
+                </span>
               </th>
               <th className="col-num">#</th>
               <th>Subject</th>
@@ -324,12 +327,21 @@ export default function TicketsPage() {
               return (
                 <tr key={t.id} className={selected.has(t.id) ? 'row-selected' : ''}>
                   <td className="col-check" onClick={(e) => e.stopPropagation()}>
-                    <input type="checkbox" checked={selected.has(t.id)} onChange={() => toggleSelect(t.id)} />
+                    <span className="ticket-queue-selection">
+                      <input type="checkbox" checked={selected.has(t.id)} onChange={() => toggleSelect(t.id)} aria-label={`Select ticket ${t.number}`} />
+                      <span
+                        className={`ticket-queue-lock${t.lock_user_id ? ' is-locked' : ' is-unlocked'}`}
+                        data-tooltip={t.lock_user_id ? `Locked to ${t.lock_user_name ?? 'another agent'}` : 'Ticket is unlocked'}
+                        title={t.lock_user_id ? `Locked to ${t.lock_user_name ?? 'another agent'}` : 'Ticket is unlocked'}
+                        aria-label={t.lock_user_id ? `Locked to ${t.lock_user_name ?? 'another agent'}` : 'Ticket is unlocked'}
+                      >
+                        <Icon name={t.lock_user_id ? 'lock' : 'unlock'} size={14} />
+                      </span>
+                    </span>
                   </td>
                   <td className="col-num mono" onClick={() => navigate(`/tickets/${t.id}`)}>{t.number}</td>
                   <td className="subject-cell" onClick={() => navigate(`/tickets/${t.id}`)}>
                     <span className="subject-cell-text">{t.subject}</span>
-                    {t.lock_user_id ? <span className="ticket-queue-lock" data-tooltip={`Locked to ${t.lock_user_name ?? 'another agent'}`} title={`Locked to ${t.lock_user_name ?? 'another agent'}`} aria-label={`Locked to ${t.lock_user_name ?? 'another agent'}`}><Icon name="lock" size={14} /></span> : null}
                   </td>
                   <td className="col-status" onClick={() => navigate(`/tickets/${t.id}`)}>
                     <span className={`status-pill status-${t.status}`}>{STATUS_LABELS[t.status] ?? t.status}</span>
