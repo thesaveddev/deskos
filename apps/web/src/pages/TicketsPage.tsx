@@ -6,12 +6,12 @@ import { listTickets, ticketCounts, slaSummary, STATUS_LABELS, formatWhen, bulkU
 import { useAuth } from '../lib/auth.js'
 import { Icon } from '../components/Icons.js'
 
-type QuickFilter = 'all' | 'mine' | 'unassigned' | 'escalated'
+type QuickFilter = 'all' | 'open' | 'mine' | 'escalated'
 
 const QUICK_FILTERS: Array<{ key: QuickFilter; label: string }> = [
-  { key: 'all', label: 'All open' },
-  { key: 'mine', label: 'Assigned to me' },
-  { key: 'unassigned', label: 'Unassigned' },
+  { key: 'all', label: 'All tickets' },
+  { key: 'open', label: 'Open queue' },
+  { key: 'mine', label: 'My tickets' },
   { key: 'escalated', label: 'Escalated' },
 ]
 
@@ -56,7 +56,7 @@ export default function TicketsPage() {
   const canManageLocks = auth.memberships.some((membership) => membership.permissions.includes('settings.manage'))
 
   // Tab counts
-  const [tabCounts, setTabCounts] = useState({ all: 0, mine: 0, unassigned: 0, escalated: 0 })
+  const [tabCounts, setTabCounts] = useState({ all: 0, open: 0, mine: 0, escalated: 0 })
 
   // Bulk selection
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -67,8 +67,8 @@ export default function TicketsPage() {
     // Fetch tab counts
     ticketCounts().then((c) => {
       const escalated = c.byStatus.find((s) => s.status === 'escalated')?.n ?? 0
-      const open = c.byStatus.filter((s) => !['resolved', 'closed'].includes(s.status)).reduce((sum, s) => sum + s.n, 0)
-      setTabCounts({ all: open, mine: c.mine, unassigned: c.unassigned, escalated })
+      const all = c.byStatus.reduce((sum, s) => sum + s.n, 0)
+      setTabCounts({ all, open: c.unassigned, mine: c.mine, escalated })
     }).catch(() => {})
   }, [])
 
@@ -96,16 +96,23 @@ export default function TicketsPage() {
       const params: Record<string, string> = {}
 
       // Quick filters
-      if (quickFilter === 'mine') params.assignee = 'me'
-      if (quickFilter === 'unassigned') params.assignee = 'none'
+      // Open queue is deliberately unassigned work. Once a technician claims
+      // a ticket, it disappears from this queue and appears in My tickets.
+      if (quickFilter === 'open') {
+        params.assignee = 'none'
+        params.open = 'true'
+      }
+      if (quickFilter === 'mine') {
+        params.assignee = 'me'
+        params.open = 'true'
+      }
       if (quickFilter === 'escalated') params.status = 'escalated'
 
-      // Advanced filters override the quick filter status. The quick queues
-      // use the same actionable-state definition as /tickets/counts; do not
-      // send status=open for "All open", because that excludes new and
-      // in-progress tickets while the tab count includes them.
+      // Advanced filters override the quick-filter status, while Open queue
+      // and My tickets continue to enforce their ownership boundary.
       if (fStatus) params.status = fStatus
-      if (!fStatus && (quickFilter === 'all' || quickFilter === 'mine' || quickFilter === 'unassigned')) params.open = 'true'
+      if (quickFilter === 'open') params.assignee = 'none'
+      if (quickFilter === 'mine') params.assignee = 'me'
       if (fPriority) params.priority = fPriority
       if (fTeam) params.team = fTeam
       if (fSearch) params.q = fSearch
