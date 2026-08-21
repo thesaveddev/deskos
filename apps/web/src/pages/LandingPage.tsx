@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import LandingLayout from '../components/LandingLayout'
+import { Icon, type IconName } from '../components/Icons'
 
 const STATS = [
   { number: '<30s', label: 'to connect to a device' },
@@ -8,34 +9,34 @@ const STATS = [
   { number: '0', label: 'monthly fees on the free tier' },
 ]
 
-const HIGHLIGHTS = [
+const HIGHLIGHTS: { icon: IconName; title: string; body: string }[] = [
   {
-    icon: '🖥️',
+    icon: 'monitor',
     title: 'Remote support',
     body: 'Connect to any Windows machine with a one-time code or roll out agents silently. Screen sharing, keyboard/mouse control, file transfer, clipboard sync — over encrypted WebRTC.',
   },
   {
-    icon: '📊',
+    icon: 'chart',
     title: 'Endpoint management',
     body: 'CPU, memory, disk, OS, installed software — collected automatically. Device Experience scores flag unhealthy machines before users complain.',
   },
   {
-    icon: '🎫',
+    icon: 'ticket',
     title: 'Ticketing',
     body: 'Tickets with business-hours SLA math, canned responses, a customer portal, and a knowledge base your technicians actually write.',
   },
   {
-    icon: '🤖',
+    icon: 'sparkles',
     title: 'AI that asks before it acts',
     body: 'Summarise long ticket threads, find similar past incidents, draft KB articles. The Level-1 agent proposes fixes — you approve before anything runs.',
   },
   {
-    icon: '🔒',
+    icon: 'shield',
     title: 'Audit log you can trust',
     body: 'Every action — logins, sessions, file operations, ticket changes — recorded in a hash-chained, tamper-evident chain. Export it for auditors.',
   },
   {
-    icon: '🔌',
+    icon: 'plug',
     title: 'Talks to your existing tools',
     body: 'Sync users from Entra ID or Active Directory. Push alerts to Slack. Build on top of the OAuth2 API. Web Push notifications on every browser.',
   },
@@ -159,7 +160,7 @@ export default function LandingPage() {
         <div className="landing-features">
           {HIGHLIGHTS.map((f) => (
             <article key={f.title} className="landing-feature">
-              <span className="landing-feature-icon" aria-hidden="true">{f.icon}</span>
+              <span className="landing-feature-icon" aria-hidden="true"><Icon name={f.icon} size={22} /></span>
               <h3>{f.title}</h3>
               <p>{f.body}</p>
             </article>

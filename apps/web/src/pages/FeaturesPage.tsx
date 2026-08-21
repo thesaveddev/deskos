@@ -1,189 +1,192 @@
 import { Link } from 'react-router-dom'
 import LandingLayout from '../components/LandingLayout'
+import { Icon, type IconName } from '../components/Icons'
 
-const REMOTE_FEATURES = [
+type Feature = { icon: IconName; title: string; body: string }
+
+const REMOTE_FEATURES: Feature[] = [
   {
-    icon: '🖥️',
+    icon: 'monitor',
     title: 'Attended & unattended access',
     body: 'Connect to any device with a one-time code (no pre-install needed) or roll out agents silently for always-on unattended access.',
   },
   {
-    icon: '🔒',
+    icon: 'shield',
     title: 'Consent-first by design',
     body: 'Every session requires explicit user consent — enforced at the protocol level. Consent events are hash-chained in the audit log.',
   },
   {
-    icon: '⌨️',
+    icon: 'keyboard',
     title: 'Full input control',
     body: 'Keyboard, mouse, multi-monitor support, clipboard sync, and file transfer — all end-to-end encrypted over WebRTC.',
   },
   {
-    icon: '💬',
+    icon: 'chat',
     title: 'In-session chat',
     body: 'Built-in text chat during remote sessions. Technicians and endpoint users communicate without switching tools.',
   },
   {
-    icon: '📁',
+    icon: 'folder',
     title: 'File manager',
     body: 'Browse, upload, download, and transfer files between technician and endpoint during any remote session.',
   },
   {
-    icon: '💻',
+    icon: 'terminal',
     title: 'Terminal access',
     body: 'Remote shell access for command-line troubleshooting — no separate SSH tool required.',
   },
 ]
 
-const RMM_FEATURES = [
+const RMM_FEATURES: Feature[] = [
   {
-    icon: '📊',
+    icon: 'database',
     title: 'Structured inventory',
     body: 'CPU, memory, disk, network, OS, installed software — collected on every telemetry sample and queryable across your fleet.',
   },
   {
-    icon: '🔍',
+    icon: 'activity',
     title: 'DEX health scoring',
     body: 'Device Experience scores combine CPU, memory, disk, and uptime into a single 0–100 score per endpoint.',
   },
   {
-    icon: '🛡️',
+    icon: 'shield',
     title: 'Security posture',
     body: 'Evaluate disk encryption, firewall, and antivirus status on every device. Non-compliant devices get flagged automatically.',
   },
   {
-    icon: '📋',
+    icon: 'package',
     title: 'Patch management',
     body: 'Track OS and third-party patch status across your fleet. Ring-based rollout with approval workflows.',
   },
   {
-    icon: '⚙️',
+    icon: 'settings',
     title: 'Device groups & policies',
     body: 'Organize devices into groups and apply policies at scale — bulk actions, dynamic grouping, and group-level overrides.',
   },
   {
-    icon: '📡',
+    icon: 'bell',
     title: 'Real-time alerts',
     body: 'Custom alert rules evaluate agent metrics and trigger device alerts, auto-create tickets, or send notifications.',
   },
 ]
 
-const ITSM_FEATURES = [
+const ITSM_FEATURES: Feature[] = [
   {
-    icon: '🎫',
+    icon: 'ticket',
     title: 'Ticketing with SLA',
     body: 'Full ticket lifecycle with business-hours SLA math, priorities, assignments, canned responses, and customer portal.',
   },
   {
-    icon: '🏗️',
+    icon: 'box',
     title: 'Service catalogue',
     body: 'Offer structured request forms with approval workflows. Employees request services; managers approve; technicians fulfil.',
   },
   {
-    icon: '🔄',
+    icon: 'refresh',
     title: 'Problem & change management',
     body: 'Track root causes across incidents (Problem) and manage planned changes with risk assessment and CAB approval (Change).',
   },
   {
-    icon: '🚨',
+    icon: 'flag',
     title: 'Major incident command',
     body: 'Declare a major incident, assemble a war room, track action items, and communicate status updates to stakeholders.',
   },
   {
-    icon: '📚',
+    icon: 'book',
     title: 'Knowledge base',
     body: 'Technician-authored articles with categories, tags, search, and AI-assisted drafting from resolved tickets.',
   },
   {
-    icon: '🔔',
+    icon: 'sparkles',
     title: 'Automations',
     body: 'If-this-then-that rules: auto-assign tickets, escalate on SLA breach, notify on device alerts, create tickets from events.',
   },
 ]
 
-const AI_FEATURES = [
+const AI_FEATURES: Feature[] = [
   {
-    icon: '🤖',
+    icon: 'sparkles',
     title: 'Ticket summaries',
     body: 'AI generates concise summaries of long ticket threads so new technicians can get up to speed in seconds.',
   },
   {
-    icon: '🔍',
+    icon: 'search',
     title: 'Similar-incident detection',
     body: 'When a new ticket arrives, AI suggests historically similar incidents and their resolutions.',
   },
   {
-    icon: '📝',
+    icon: 'edit',
     title: 'KB article drafting',
     body: 'AI drafts knowledge base articles from resolved tickets. Technicians review and publish — no blank-page problem.',
   },
   {
-    icon: '🧰',
+    icon: 'wrench',
     title: 'Level-1 bounded agent',
     body: 'An AI agent proposes bounded remediations (restart, collect inventory, add notes). Nothing runs until a human approves.',
   },
 ]
 
-const SECURITY_FEATURES = [
+const SECURITY_FEATURES: Feature[] = [
   {
-    icon: '🔐',
+    icon: 'lock',
     title: 'Row-level tenant isolation',
     body: 'Every database table uses PostgreSQL Row-Level Security. One tenant literally cannot see another tenant\'s data.',
   },
   {
-    icon: '⛓️',
+    icon: 'link',
     title: 'Hash-chained audit log',
     body: 'Every action is recorded in a tamper-evident, hash-chained audit log. Provable compliance for any auditor.',
   },
   {
-    icon: '🔑',
+    icon: 'key',
     title: 'JIT privileged access',
     body: 'Just-in-time access with checkout/check-in, time-boxed elevation, and full audit trail. No standing admin rights.',
   },
   {
-    icon: '🪪',
+    icon: 'user',
     title: 'MFA + passkeys',
     body: 'TOTP, WebAuthn passkeys, and backup codes. Support for hardware security keys and biometric authentication.',
   },
   {
-    icon: '👁️',
+    icon: 'eye',
     title: 'Session recording',
     body: 'Remote sessions can be recorded for training, compliance, and dispute resolution. Recordings are encrypted at rest.',
   },
   {
-    icon: '📋',
+    icon: 'check',
     title: 'Compliance scoring',
     body: 'Continuous compliance evaluation against your defined policies. Per-device scores and organization-wide dashboards.',
   },
 ]
 
-const INTEGRATION_FEATURES = [
+const INTEGRATION_FEATURES: Feature[] = [
   {
-    icon: '🏢',
+    icon: 'building',
     title: 'Entra ID & M365 sync',
     body: 'Sync users, groups, and devices from Microsoft Entra ID. Single sign-on and group-based access control.',
   },
   {
-    icon: '🏛️',
+    icon: 'server',
     title: 'Active Directory',
     body: 'On-premises Active Directory integration for hybrid environments. LDAP sync and Group Policy deployment.',
   },
   {
-    icon: '🔗',
+    icon: 'link',
     title: 'OAuth2 & OpenAPI',
     body: 'Full REST API with OAuth2 authentication and OpenAPI 3.1 specification. Build integrations on day one.',
   },
   {
-    icon: '📱',
+    icon: 'bell',
     title: 'Web Push notifications',
     body: 'Native push notifications for new tickets, alerts, and session requests — even when the app is closed.',
   },
   {
-    icon: '💬',
+    icon: 'chat',
     title: 'Slack & Teams webhooks',
     body: 'Send alerts, ticket updates, and notifications to Slack channels or Microsoft Teams.',
   },
   {
-    icon: '🔌',
+    icon: 'plug',
     title: 'Developer marketplace',
     body: 'Install third-party apps or publish your own. App registry with per-tenant install management.',
   },
@@ -199,7 +202,7 @@ function FeatureSection({
   kicker: string
   title: string
   subtitle: string
-  features: { icon: string; title: string; body: string }[]
+  features: Feature[]
   id: string
 }) {
   return (
@@ -212,7 +215,7 @@ function FeatureSection({
       <div className="landing-features">
         {features.map((f) => (
           <article key={f.title} className="landing-feature">
-            <span className="landing-feature-icon" aria-hidden="true">{f.icon}</span>
+            <span className="landing-feature-icon" aria-hidden="true"><Icon name={f.icon} size={22} /></span>
             <h3>{f.title}</h3>
             <p>{f.body}</p>
           </article>

@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import LandingLayout from '../components/LandingLayout'
+import { Icon } from '../components/Icons'
 
 export default function ContactPage() {
   const [submitted, setSubmitted] = useState(false)
@@ -78,7 +79,7 @@ export default function ContactPage() {
           {/* info */}
           <div className="contact-info-panel">
             <div className="contact-info-card">
-              <div className="contact-info-icon">📧</div>
+              <div className="contact-info-icon"><Icon name="mail" size={18} /></div>
               <div className="contact-info-text">
                 <h3>Email</h3>
                 <p>General: <a href="mailto:hello@reydesk.com">hello@reydesk.com</a><br />
@@ -88,7 +89,7 @@ export default function ContactPage() {
             </div>
 
             <div className="contact-info-card">
-              <div className="contact-info-icon">💬</div>
+              <div className="contact-info-icon"><Icon name="chat" size={18} /></div>
               <div className="contact-info-text">
                 <h3>Live chat</h3>
                 <p>Available Monday–Friday, 9 AM – 6 PM GMT. Click the chat widget on any page of the app.</p>
@@ -96,7 +97,7 @@ export default function ContactPage() {
             </div>
 
             <div className="contact-info-card">
-              <div className="contact-info-icon">🏢</div>
+              <div className="contact-info-icon"><Icon name="building" size={18} /></div>
               <div className="contact-info-text">
                 <h3>Office</h3>
                 <p>Clean IT Ltd<br />United Kingdom<br />
@@ -105,7 +106,7 @@ export default function ContactPage() {
             </div>
 
             <div className="contact-info-card">
-              <div className="contact-info-icon">🔗</div>
+              <div className="contact-info-icon"><Icon name="link" size={18} /></div>
               <div className="contact-info-text">
                 <h3>Follow us</h3>
                 <p>
@@ -117,7 +118,7 @@ export default function ContactPage() {
             </div>
 
             <div className="contact-info-card">
-              <div className="contact-info-icon">🕐</div>
+              <div className="contact-info-icon"><Icon name="clock" size={18} /></div>
               <div className="contact-info-text">
                 <h3>Response times</h3>
                 <p>

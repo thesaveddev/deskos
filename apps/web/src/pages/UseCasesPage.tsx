@@ -1,9 +1,10 @@
 import { Link } from 'react-router-dom'
 import LandingLayout from '../components/LandingLayout'
+import { Icon, type IconName } from '../components/Icons'
 
-const USE_CASES = [
+const USE_CASES: { icon: IconName; title: string; subtitle: string; description: string; features: string[] }[] = [
   {
-    icon: '🏢',
+    icon: 'users',
     title: 'MSPs & IT service providers',
     subtitle: 'Multiple customers, one view.',
     description: 'Manage multiple customer tenants from one console. Per-customer branding, SLA tracking, and a customer-facing portal — all in one place.',
@@ -16,7 +17,7 @@ const USE_CASES = [
     ],
   },
   {
-    icon: '🖥️',
+    icon: 'monitor',
     title: 'Internal IT departments',
     subtitle: 'One console for helpdesk, endpoints, and compliance.',
     description:
@@ -30,7 +31,7 @@ const USE_CASES = [
     ],
   },
   {
-    icon: '🏥',
+    icon: 'activity',
     title: 'Education & healthcare',
     subtitle: 'Consent-first support with full audit trails.',
     description:
@@ -44,7 +45,7 @@ const USE_CASES = [
     ],
   },
   {
-    icon: '💼',
+    icon: 'briefcase',
     title: 'SaaS & software companies',
     subtitle: 'Customer support without pre-installed agents.',
     description:
@@ -58,7 +59,7 @@ const USE_CASES = [
     ],
   },
   {
-    icon: '🏭',
+    icon: 'server',
     title: 'Managed service & field ops',
     subtitle: 'Unattended device management at scale.',
     description:
@@ -72,7 +73,7 @@ const USE_CASES = [
     ],
   },
   {
-    icon: '🔒',
+    icon: 'shield',
     title: 'Security-conscious orgs',
     subtitle: 'Zero-standing-privilege architecture.',
     description:
@@ -129,7 +130,7 @@ export default function UseCasesPage() {
         >
           <div className="use-case-layout">
             <div className="use-case-text">
-              <span className="landing-feature-icon" aria-hidden="true">{uc.icon}</span>
+              <span className="landing-feature-icon" aria-hidden="true"><Icon name={uc.icon} size={22} /></span>
               <span className="landing-kicker">{uc.subtitle}</span>
               <h2 className="landing-h2">{uc.title}</h2>
               <p className="landing-section-sub">{uc.description}</p>
@@ -137,7 +138,7 @@ export default function UseCasesPage() {
             <div className="use-case-checklist">
               {uc.features.map((f) => (
                 <div key={f} className="use-case-check">
-                  <span className="pricing-check" aria-hidden="true">✓</span>
+                  <span className="pricing-check" aria-hidden="true"><Icon name="check" size={15} strokeWidth={2.5} /></span>
                   <span>{f}</span>
                 </div>
               ))}

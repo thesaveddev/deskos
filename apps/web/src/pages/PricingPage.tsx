@@ -1,5 +1,28 @@
 import { Link } from 'react-router-dom'
 import LandingLayout from '../components/LandingLayout'
+import { Icon } from '../components/Icons'
+
+function CompareCell({ value }: { value: string }) {
+  if (value === '✅') return <span className="compare-yes"><Icon name="check" size={15} strokeWidth={2.5} /></span>
+  if (value === '—') return <span className="compare-no"><Icon name="minus" size={15} strokeWidth={2.5} /></span>
+  if (value.startsWith('✅ ')) {
+    return (
+      <span className="compare-yes">
+        <Icon name="check" size={15} strokeWidth={2.5} />
+        <span>{value.slice(2)}</span>
+      </span>
+    )
+  }
+  if (value.endsWith(' custom')) {
+    return (
+      <span className="compare-yes">
+        <Icon name="check" size={15} strokeWidth={2.5} />
+        <span>custom</span>
+      </span>
+    )
+  }
+  return <>{value}</>
+}
 
 const PLANS = [
   {
@@ -207,8 +230,8 @@ export default function PricingPage() {
               <ul className="pricing-features">
                 {plan.features.map((f) => (
                   <li key={f.text}>
-                    <span className="pricing-check" aria-hidden="true">
-                      {f.included ? '✓' : '—'}
+                    <span className="pricing-check" aria-hidden="true" style={f.included ? undefined : { color: 'var(--text-3)' }}>
+                      <Icon name={f.included ? 'check' : 'minus'} size={15} strokeWidth={2.5} />
                     </span>
                     <span style={{ color: f.included ? undefined : 'var(--text-3)' }}>
                       {f.text}
@@ -244,9 +267,9 @@ export default function PricingPage() {
               {COMPARE_ROWS.map((row) => (
                 <tr key={row.feature}>
                   <td>{row.feature}</td>
-                  <td className="mono">{row.starter}</td>
-                  <td className="mono">{row.pro}</td>
-                  <td className="mono">{row.enterprise}</td>
+                  <td className="mono"><CompareCell value={row.starter} /></td>
+                  <td className="mono"><CompareCell value={row.pro} /></td>
+                  <td className="mono"><CompareCell value={row.enterprise} /></td>
                 </tr>
               ))}
             </tbody>

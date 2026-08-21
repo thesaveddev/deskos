@@ -2,6 +2,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { type ReactNode, useEffect, useState } from 'react'
 import { useTheme } from '../lib/theme'
 import { BRAND } from '../lib/brand.js'
+import { Icon } from './Icons'
 
 interface Props {
   children: ReactNode
@@ -161,8 +162,8 @@ export default function LandingLayout({ children, title, description, structured
             </Link>
           ))}
           <Link className="landing-nav-link" to="/api-docs">API</Link>
-          <button className="theme-toggle" onClick={toggle} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
-            {theme === 'dark' ? '☀️' : '🌙'}
+          <button className="theme-toggle" onClick={toggle} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
+            <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16} />
           </button>
           <Link className="btn btn-ghost btn-sm" to="/login">Sign in</Link>
           <Link className="btn btn-primary btn-sm" to="/signup">Get started</Link>
