@@ -1,0 +1,49 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy ReyDesk to VPS
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+            cd /root/reydesk-app
+            git fetch origin master
+            git reset --hard origin/master
+            # The production .env.prod (with secrets) is kept on the server and
+            # is never committed. If it is missing, refuse to deploy.
+            if [ ! -f .env.prod ]; then
+              echo "FATAL: .env.prod not found on server — refusing to deploy"
+              exit 1
+            fi
+            docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+            # Wait for the API to become healthy, then verify.
+            for i in $(seq 1 30); do
+              if curl -sf http://127.0.0.1:4000/healthz >/dev/null 2>&1; then
+                echo "API healthy after ${i} checks"
+                break
+              fi
+              sleep 5
+            done
+            curl -sf http://127.0.0.1:4000/healthz || { echo "API did not become healthy"; exit 1; }
+            curl -sf http://127.0.0.1:4100/healthz || { echo "Relay did not become healthy"; exit 1; }
+            curl -sf https://reydesk.com/healthz || { echo "Public healthz failed"; exit 1; }
+
+      - name: Deployment summary
+        run: echo "ReyDesk deployed to https://reydesk.com"
