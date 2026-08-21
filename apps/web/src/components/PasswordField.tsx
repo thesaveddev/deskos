@@ -3,10 +3,13 @@ import { useState, type InputHTMLAttributes } from 'react'
 interface PasswordFieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> {
   label?: string
   hint?: string
+  /** Put the visibility toggle on the left of the input (defaults to right). */
+  togglePosition?: 'left' | 'right'
 }
 
-export function PasswordField({ label, hint, className, ...props }: PasswordFieldProps) {
+export function PasswordField({ label, hint, className, togglePosition = 'right', ...props }: PasswordFieldProps) {
   const [visible, setVisible] = useState(false)
+  const toggleLeft = togglePosition === 'left'
 
   return (
     <div className="password-field-wrap">
@@ -14,13 +17,13 @@ export function PasswordField({ label, hint, className, ...props }: PasswordFiel
       {hint && <span className="password-field-hint">{hint}</span>}
       <div className="password-field-input-wrap">
         <input
-          className={`password-field-input ${className || ''}`}
+          className={`password-field-input ${className || ''}${toggleLeft ? ' password-field-input-toggle-left' : ''}`}
           type={visible ? 'text' : 'password'}
           {...props}
         />
         <button
           type="button"
-          className="password-toggle-btn"
+          className={`password-toggle-btn${toggleLeft ? ' password-toggle-btn-left' : ''}`}
           onClick={() => setVisible((v) => !v)}
           tabIndex={-1}
           aria-label={visible ? 'Hide password' : 'Show password'}

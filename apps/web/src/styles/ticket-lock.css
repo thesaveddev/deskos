@@ -7,6 +7,7 @@
 .ticket-lock-modal-state strong { color: var(--text-1); }
 .ticket-lock-modal-state span { color: var(--text-2); font-size: 12px; }
 .ticket-lock-modal-requests { display: grid; gap: 10px; padding-top: 12px; border-top: 1px solid var(--line-1); }
+.ticket-lock-modal-allhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .ticket-status-icon { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; color: var(--text-2); cursor: pointer; }
 .ticket-status-icon:hover, .ticket-status-icon:focus-visible { border-color: var(--accent); color: var(--accent); }
 .ticket-status-icon.is-locked { color: var(--warn); }

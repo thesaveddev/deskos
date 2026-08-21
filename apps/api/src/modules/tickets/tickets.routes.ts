@@ -418,7 +418,22 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
     const ctx = request.tenantCtx!
     const { id } = request.params as { id: string }
     const result = await withTenant(app.db, ctx.tenantId, async (client) => {
-      const ticket = await findTicket(client, id)
+      // Enrich the raw ticket the same way the list endpoint does so the detail
+      // view can show the requester, assignee, team, and lock holder names
+      // instead of falling back to "unassigned"/"—" when only the IDs are set.
+      const ticketRow = await client.query(
+        `SELECT t.*, ru.name AS requester_name, au.name AS assignee_name, tm.name AS team_name,
+                tl.locked_by AS lock_user_id, lu.name AS lock_user_name
+           FROM tickets t
+           JOIN users ru ON ru.id = t.requester_id
+           LEFT JOIN users au ON au.id = t.assignee_id
+           LEFT JOIN teams tm ON tm.id = t.team_id
+           LEFT JOIN ticket_locks tl ON tl.ticket_id = t.id AND tl.expires_at > now()
+           LEFT JOIN users lu ON lu.id = tl.locked_by
+          WHERE t.id = $1`,
+        [id],
+      )
+      const ticket = ticketRow.rows[0]
       if (!ticket) throw AppError.notFound('Ticket not found')
       const device = ticket.device_id
         ? (await client.query(

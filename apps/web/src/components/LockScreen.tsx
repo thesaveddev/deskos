@@ -116,17 +116,10 @@ export function LockScreen({ user, onUnlock, onGoToLogin }: Props) {
             </button>
           )}
           <div className="lock-screen-input-wrap">
-            <button
-              className="lock-screen-submit"
-              type="submit"
-              disabled={loading || (requiresMfa ? mfaCode.length < 6 : !password)}
-              aria-label={requiresMfa ? 'Verify and unlock' : 'Unlock'}
-            >
-              {loading ? '…' : '→'}
-            </button>
             {!requiresMfa ? (
               <PasswordField
                 className="lock-screen-input"
+                togglePosition="left"
                 placeholder="Password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -147,6 +140,14 @@ export function LockScreen({ user, onUnlock, onGoToLogin }: Props) {
                 required
               />
             )}
+            <button
+              className="lock-screen-submit"
+              type="submit"
+              disabled={loading || (requiresMfa ? mfaCode.length < 6 : !password)}
+              aria-label={requiresMfa ? 'Verify and unlock' : 'Unlock'}
+            >
+              {loading ? '…' : '→'}
+            </button>
           </div>
           <div className="lock-screen-hint">
             {requiresMfa
@@ -170,6 +171,11 @@ export function LockScreen({ user, onUnlock, onGoToLogin }: Props) {
             </button>
           ) : null}
         </form>
+        {onGoToLogin ? (
+          <button type="button" className="lock-screen-switch-user" onClick={onGoToLogin} disabled={loading}>
+            Switch user
+          </button>
+        ) : null}
       </div>
     </div>
   )
