@@ -144,10 +144,10 @@ export default function DevicesPage() {
       {error ? <Alert kind="error">{error}</Alert> : null}
 
       <div className="device-summary-grid">
-        <div className="device-summary-card"><span className="device-summary-label">Total endpoints</span><strong>{total}</strong><small>{activeFilters ? 'Matching current filters' : 'Across this organization'}</small></div>
-        <div className="device-summary-card device-summary-online"><span className="device-summary-label">Online now</span><strong>{onlineOnPage}</strong><small>On the current page</small></div>
-        <div className="device-summary-card device-summary-offline"><span className="device-summary-label">Needs attention</span><strong>{offlineOnPage}</strong><small>Offline on the current page</small></div>
-        <div className="device-summary-card"><span className="device-summary-label">Device groups</span><strong>{groups.length}</strong><small>Available for filtering</small></div>
+        <div className="device-summary-card"><span className="device-summary-label">Total endpoints</span><strong>{total}</strong><small>{activeFilters ? 'Matching filters' : 'Organization-wide'}</small></div>
+        <div className="device-summary-card device-summary-online"><span className="device-summary-label">Online now</span><strong>{onlineOnPage}</strong><small>On this page</small></div>
+        <div className="device-summary-card device-summary-offline"><span className="device-summary-label">Needs attention</span><strong>{offlineOnPage}</strong><small>On this page</small></div>
+        <div className="device-summary-card"><span className="device-summary-label">Device groups</span><strong>{groups.length}</strong><small>For filtering</small></div>
       </div>
 
       <nav className="workspace-tabs device-workspace-tabs" aria-label="Endpoint views">
