@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Shell } from '../components/Shell.js'
-import { Alert, Field, Modal, PageHeader, Panel, useConfirm } from '../components/ui.js'
+import { Alert, Field, Modal, PageHeader, useConfirm } from '../components/ui.js'
 import { MfaQrCode } from '../components/MfaQrCode.js'
 import { useAuth } from '../lib/auth.js'
 import { api } from '../lib/api.js'
@@ -18,6 +18,13 @@ const STATUS_LABELS: Record<AssetStatus, string> = {
   in_repair: 'In repair',
   retired: 'Retired',
   lost: 'Lost',
+}
+const STATUS_TONES: Record<AssetStatus, string> = {
+  in_use: 'tone-info',
+  available: 'tone-ok',
+  in_repair: 'tone-warn',
+  retired: 'tone-muted',
+  lost: 'tone-crit',
 }
 
 interface AssetForm {
@@ -45,11 +52,25 @@ interface LicenceForm {
 
 const EMPTY_LICENCE: LicenceForm = { name: '', keyRef: '', seatsTotal: '', expiresAt: '' }
 
+function Kpi({ icon, tone, label, value, sub }: { icon: 'package' | 'monitor' | 'box' | 'wrench' | 'key'; tone?: string; label: string; value: string | number; sub?: string }) {
+  return (
+    <div className="ops-kpi">
+      <div className="ops-kpi-head">
+        <span className={`ops-kpi-icon${tone ? ` ${tone}` : ''}`}><Icon name={icon} size={16} /></span>
+      </div>
+      <span className={`ops-kpi-value${tone === 'tone-ok' ? ' tone-ok' : tone === 'tone-warn' ? ' tone-warn' : tone === 'tone-crit' ? ' tone-crit' : ''}`}>{value}</span>
+      <span className="ops-kpi-label">{label}</span>
+      {sub ? <span className="ops-kpi-sub">{sub}</span> : null}
+    </div>
+  )
+}
+
 export default function AssetsPage() {
   const canManage = useAuth((s) => s.memberships.some((m) => m.permissions.includes('asset.manage')))
   const confirm = useConfirm()
   const [assets, setAssets] = useState<Asset[] | null>(null)
   const [licences, setLicences] = useState<Licence[]>([])
+  const [tab, setTab] = useState<'assets' | 'licences'>('assets')
   const [q, setQ] = useState('')
   const [typeFilter, setTypeFilter] = useState<AssetType | ''>('')
   const [statusFilter, setStatusFilter] = useState<AssetStatus | ''>('')
@@ -207,6 +228,8 @@ export default function AssetsPage() {
   }
 
   const assetName = (id: string | null) => assets?.find((a) => a.id === id)?.name ?? '—'
+  const count = (s: AssetStatus) => (assets ?? []).filter((a) => a.status === s).length
+  const assigneeLabel = (a: Asset) => a.assigned_user_name ?? (a.assignment_status === 'shared' ? 'Shared pool' : a.owner_name ?? '—')
 
   return (
     <Shell>
@@ -224,10 +247,26 @@ export default function AssetsPage() {
       {error ? <Alert kind="error">{error}</Alert> : null}
       {notice ? <Alert kind="info">{notice}</Alert> : null}
 
-      <Panel
-        title="Assets"
-        toolbar={
-          <div className="toolbar">
+      <div className="ops-kpi-row">
+        <Kpi icon="package" label="Total assets" value={assets?.length ?? '—'} sub={`${licences.length} licences tracked`} />
+        <Kpi icon="monitor" tone="tone-info" label="In use" value={count('in_use')} />
+        <Kpi icon="box" tone="tone-ok" label="Available" value={count('available')} />
+        <Kpi icon="wrench" tone="tone-warn" label="In repair" value={count('in_repair')} sub={`${count('retired')} retired · ${count('lost')} lost`} />
+        <Kpi icon="key" label="Assigned" value={(assets ?? []).filter((a) => a.assignment_status === 'assigned' || a.assignment_status === 'temporary').length} sub="To staff members" />
+      </div>
+
+      <div className="tabs">
+        <button type="button" className={`tab ${tab === 'assets' ? 'active' : ''}`} onClick={() => setTab('assets')}>
+          Assets {assets ? <span className="tab-count">{assets.length}</span> : null}
+        </button>
+        <button type="button" className={`tab ${tab === 'licences' ? 'active' : ''}`} onClick={() => setTab('licences')}>
+          Licences <span className="tab-count">{licences.length}</span>
+        </button>
+      </div>
+
+      {tab === 'assets' ? (
+        <>
+          <div className="ops-toolbar">
             <input className="field-input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search assets…" aria-label="Search assets" />
             <select className="field-input" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as AssetType | '')} aria-label="Filter by type">
               <option value="">All types</option>
@@ -238,63 +277,107 @@ export default function AssetsPage() {
               {STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
             </select>
           </div>
-        }
-        empty={assets !== null && assets.length === 0}
-      >
-        {assets === null ? (
-          <div className="etch" style={{ padding: 24 }}>Loading assets…</div>
-        ) : (
-          <ul className="channel-list">
-            {assets.map((a) => (
-              <li key={a.id} className="channel-card">
-                <div className="channel-main">
-                  <span className="channel-name">{a.name}</span>
-                  <span className="channel-meta mono">
-                    {a.tag} · {a.type} · {STATUS_LABELS[a.status] ?? a.status}
-                    {a.owner_name ? ` · asset owner ${a.owner_name}` : ''}
-                    {a.device_name ? ` · ${a.device_name}` : ''}
-                    {a.assigned_user_name ? ` · assigned to ${a.assigned_user_name}` : a.assignment_status === 'shared' ? ' · shared device' : ''}
-                  </span>
-                </div>
-                {canManage ? (
-                  <div className="channel-actions">
-                    {a.qr_payload ? <button className="btn btn-ghost btn-sm" onClick={() => setQrAsset(a)}><Icon name="eye" size={14} />Label</button> : null}
-                    <button className="btn btn-ghost btn-sm" onClick={() => openEdit(a)}><Icon name="edit" size={14} />Edit</button>
-                    <button className="btn btn-ghost btn-sm" onClick={() => void removeAsset(a)}><Icon name="delete" size={14} />Delete</button>
-                  </div>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        )}
-      </Panel>
 
-      <div style={{ height: 16 }} />
-
-      <Panel
-        title="Licences"
-        subtitle={`${licences.length} tracked`}
-        empty={licences.length === 0}
-      >
-        <ul className="channel-list">
-          {licences.map((l) => (
-            <li key={l.id} className="channel-card">
-              <div className="channel-main">
-                <span className="channel-name">{l.name}</span>
-                <span className="channel-meta mono">
-                  {assetName(l.asset_id)} · seats {l.seats_used}/{l.seats_total}
-                  {l.expires_at ? ` · expires ${l.expires_at}` : ''}
-                </span>
-              </div>
-              {canManage ? (
-                <div className="channel-actions">
-                  <button className="btn btn-ghost btn-sm" onClick={() => void removeLicence(l)}><Icon name="delete" size={14} />Delete</button>
-                </div>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      </Panel>
+          {assets === null ? (
+            <div className="etch" style={{ padding: 24 }}>Loading assets…</div>
+          ) : assets.length === 0 ? (
+            <div className="ops-empty"><strong>No assets match</strong><span>Adjust your search or add a new asset.</span></div>
+          ) : (
+            <div className="ops-table-wrap">
+              <table className="ops-table">
+                <thead>
+                  <tr>
+                    <th>Asset</th>
+                    <th>Tag</th>
+                    <th>Type</th>
+                    <th>Status</th>
+                    <th>Assigned to</th>
+                    <th>Location</th>
+                    <th>Warranty</th>
+                    {canManage ? <th style={{ textAlign: 'right' }}>Actions</th> : null}
+                  </tr>
+                </thead>
+                <tbody>
+                  {assets.map((a) => (
+                    <tr key={a.id}>
+                      <td>
+                        <div className="ops-cell-primary">
+                          <strong>{a.name}</strong>
+                          {a.device_name ? <small>{a.device_name}</small> : null}
+                        </div>
+                      </td>
+                      <td><span className="mono muted">{a.tag}</span></td>
+                      <td><span className="mono muted">{a.type}</span></td>
+                      <td><span className={`ops-pill ${STATUS_TONES[a.status] ?? 'tone-muted'}`}>{STATUS_LABELS[a.status] ?? a.status}</span></td>
+                      <td>{assigneeLabel(a)}</td>
+                      <td className="muted">{a.location ?? '—'}</td>
+                      <td className="mono muted">{a.warranty_until ?? '—'}</td>
+                      {canManage ? (
+                        <td>
+                          <div className="ops-actions">
+                            {a.qr_payload ? (
+                              <button className="btn btn-ghost btn-sm" title="Asset label" aria-label="View asset label" onClick={() => setQrAsset(a)}><Icon name="eye" size={14} /></button>
+                            ) : null}
+                            <button className="btn btn-ghost btn-sm" title="Edit" aria-label="Edit asset" onClick={() => openEdit(a)}><Icon name="edit" size={14} /></button>
+                            <button className="btn btn-ghost btn-sm" title="Delete" aria-label="Delete asset" onClick={() => void removeAsset(a)}><Icon name="delete" size={14} /></button>
+                          </div>
+                        </td>
+                      ) : null}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      ) : licences.length === 0 ? (
+        <div className="ops-empty"><strong>No licences yet</strong><span>Track software entitlements and seat usage here.</span></div>
+      ) : (
+        <div className="ops-table-wrap">
+          <table className="ops-table">
+            <thead>
+              <tr>
+                <th>Licence</th>
+                <th>Linked asset</th>
+                <th style={{ minWidth: 220 }}>Seat usage</th>
+                <th>Expires</th>
+                {canManage ? <th style={{ textAlign: 'right' }}>Actions</th> : null}
+              </tr>
+            </thead>
+            <tbody>
+              {licences.map((l) => {
+                const pct = l.seats_total > 0 ? Math.min(100, (l.seats_used / l.seats_total) * 100) : 0
+                const tone = pct >= 95 ? 'crit' : pct >= 75 ? 'warn' : 'ok'
+                return (
+                  <tr key={l.id}>
+                    <td>
+                      <div className="ops-cell-primary">
+                        <strong>{l.name}</strong>
+                        {l.key_ref ? <small>{l.key_ref}</small> : null}
+                      </div>
+                    </td>
+                    <td className="muted">{assetName(l.asset_id)}</td>
+                    <td>
+                      <div className="ops-progress">
+                        <div className="ops-progress-track"><div className={`ops-progress-fill ${tone}`} style={{ width: `${pct}%` }} /></div>
+                        <span className="ops-progress-num">{l.seats_used}/{l.seats_total}</span>
+                      </div>
+                    </td>
+                    <td className="mono muted">{l.expires_at ?? '—'}</td>
+                    {canManage ? (
+                      <td>
+                        <div className="ops-actions">
+                          <button className="btn btn-ghost btn-sm" title="Delete" aria-label="Delete licence" onClick={() => void removeLicence(l)}><Icon name="delete" size={14} /></button>
+                        </div>
+                      </td>
+                    ) : null}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <Modal
         open={assetOpen}

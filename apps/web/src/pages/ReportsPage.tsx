@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import { Shell } from '../components/Shell.js'
 import { Alert } from '../components/ui.js'
+import { Icon } from '../components/Icons.js'
 import { STATUS_LABELS } from '../lib/tickets.js'
 import {
   getOverviewReport, getTicketReport, getAnalyticsReport, getComplianceReport,
@@ -418,14 +419,14 @@ export default function ReportsPage() {
       {/* ─── Tabs ─── */}
       <div className="rpt-tabs">
         {([
-          { id: 'overview', label: 'Overview', icon: '◈' },
-          { id: 'tickets', label: 'Tickets', icon: '☐' },
-          { id: 'agents', label: 'Agents', icon: '◉' },
-          { id: 'sessions', label: 'Sessions', icon: '▶' },
-          { id: 'compliance', label: 'Compliance', icon: '⛨' },
-        ] as { id: Tab; label: string; icon: string }[]).map(t => (
+          { id: 'overview', label: 'Overview', icon: 'chart' },
+          { id: 'tickets', label: 'Tickets', icon: 'ticket' },
+          { id: 'agents', label: 'Agents', icon: 'user' },
+          { id: 'sessions', label: 'Sessions', icon: 'monitor' },
+          { id: 'compliance', label: 'Compliance', icon: 'shield' },
+        ] as { id: Tab; label: string; icon: 'chart' | 'ticket' | 'user' | 'monitor' | 'shield' }[]).map(t => (
           <button key={t.id} className={`rpt-tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>
-            <span className="rpt-tab-icon">{t.icon}</span> {t.label}
+            <span className="rpt-tab-icon"><Icon name={t.icon} size={14} /></span> {t.label}
           </button>
         ))}
       </div>

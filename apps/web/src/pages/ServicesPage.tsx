@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Shell } from '../components/Shell.js'
-import { Alert, Field, Modal, PageHeader, Panel, useConfirm } from '../components/ui.js'
+import { Alert, Field, Modal, PageHeader, useConfirm } from '../components/ui.js'
 import { useAuth } from '../lib/auth.js'
+import { Icon } from '../components/Icons.js'
 import { createService, deleteService, listServices, updateService, type Service } from '../lib/catalogue.js'
 
 interface FormState {
@@ -13,10 +14,23 @@ interface FormState {
 
 const EMPTY_FORM: FormState = { name: '', description: '', approvalRequired: false, enabled: true }
 
+function Kpi({ icon, tone, label, value }: { icon: 'layers' | 'check' | 'shield'; tone?: string; label: string; value: string | number }) {
+  return (
+    <div className="ops-kpi">
+      <div className="ops-kpi-head">
+        <span className={`ops-kpi-icon${tone ? ` ${tone}` : ''}`}><Icon name={icon} size={16} /></span>
+      </div>
+      <span className={`ops-kpi-value${tone === 'tone-ok' ? ' tone-ok' : tone === 'tone-warn' ? ' tone-warn' : ''}`}>{value}</span>
+      <span className="ops-kpi-label">{label}</span>
+    </div>
+  )
+}
+
 export default function ServicesPage() {
   const canManage = useAuth((s) => s.memberships.some((m) => m.permissions.includes('catalogue.manage')))
   const confirm = useConfirm()
   const [items, setItems] = useState<Service[] | null>(null)
+  const [q, setQ] = useState('')
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [editing, setEditing] = useState<Service | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
@@ -94,49 +108,73 @@ export default function ServicesPage() {
     }
   }
 
+  const filtered = (items ?? []).filter((s) => !q.trim() || s.name.toLowerCase().includes(q.toLowerCase()) || s.description.toLowerCase().includes(q.toLowerCase()))
+  const enabledCount = (items ?? []).filter((s) => s.enabled).length
+  const approvalCount = (items ?? []).filter((s) => s.approval_required).length
+
   return (
     <Shell>
       <PageHeader
         title="Service catalogue"
         subtitle="Requestable items with optional approval before fulfilment."
-        actions={canManage ? <button className="btn btn-primary btn-sm" onClick={openCreate}>New service</button> : undefined}
+        actions={canManage ? <button className="btn btn-primary btn-sm" onClick={openCreate}><Icon name="add" size={14} />New service</button> : undefined}
       />
 
       {error ? <Alert kind="error">{error}</Alert> : null}
       {notice ? <Alert kind="info">{notice}</Alert> : null}
 
-      <Panel
-        title="Catalogue"
-        subtitle={`${items?.length ?? 0} service${items?.length === 1 ? '' : 's'}`}
-        empty={items !== null && items.length === 0}
-      >
-        {items === null ? (
-          <div className="etch" style={{ padding: 24 }}>Loading services…</div>
-        ) : (
-          <ul className="channel-list">
-            {items.map((s) => (
-              <li key={s.id} className="channel-card">
-                <div className="channel-main">
-                  <span className="channel-name">
-                    {s.name} {!s.enabled ? <span className="muted">(disabled)</span> : null}
-                  </span>
-                  <span className="channel-meta mono">
-                    {s.approval_required ? 'approval required' : 'no approval'}
-                    {s.category_name ? ` · ${s.category_name}` : ''}
-                  </span>
-                  {s.description ? <span className="channel-meta">{s.description.slice(0, 160)}{s.description.length > 160 ? '…' : ''}</span> : null}
+      <div className="ops-kpi-row">
+        <Kpi icon="layers" label="Total services" value={items?.length ?? '—'} />
+        <Kpi icon="check" tone="tone-ok" label="Enabled" value={enabledCount} />
+        <Kpi icon="shield" tone="tone-warn" label="Approval required" value={approvalCount} />
+      </div>
+
+      <div className="ops-toolbar">
+        <input className="field-input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search services…" aria-label="Search services" />
+        <span className="spacer" />
+        <span className="etch">{filtered.length} of {items?.length ?? 0} services</span>
+      </div>
+
+      {items === null ? (
+        <div className="etch" style={{ padding: 24 }}>Loading services…</div>
+      ) : filtered.length === 0 ? (
+        <div className="ops-empty"><strong>No services found</strong><span>Create a service so your team can request it.</span></div>
+      ) : (
+        <div className="ops-card-grid">
+          {filtered.map((s) => (
+            <div key={s.id} className="ops-card">
+              <div className="ops-card-head">
+                <span className="ops-card-icon"><Icon name="server" size={17} /></span>
+                <div className="ops-card-title">
+                  <strong>{s.name}</strong>
+                  <small>{s.category_name ?? 'Uncategorised'}</small>
+                </div>
+              </div>
+              <p className="ops-card-desc">{s.description ? (s.description.length > 160 ? `${s.description.slice(0, 160)}…` : s.description) : 'No description provided.'}</p>
+              <div className="ops-card-foot">
+                <div className="ops-badges">
+                  {s.enabled ? (
+                    <span className="ops-pill tone-ok">Active</span>
+                  ) : (
+                    <span className="ops-pill tone-muted flat">Disabled</span>
+                  )}
+                  {s.approval_required ? (
+                    <span className="ops-pill tone-warn">Approval required</span>
+                  ) : (
+                    <span className="ops-pill tone-info flat">Auto-fulfil</span>
+                  )}
                 </div>
                 {canManage ? (
-                  <div className="channel-actions">
-                    <button className="btn btn-ghost btn-sm" onClick={() => openEdit(s)}>Edit</button>
-                    <button className="btn btn-ghost btn-sm" onClick={() => void remove(s)}>Delete</button>
+                  <div className="ops-actions">
+                    <button className="btn btn-ghost btn-sm" title="Edit" aria-label={`Edit ${s.name}`} onClick={() => openEdit(s)}><Icon name="edit" size={14} /></button>
+                    <button className="btn btn-ghost btn-sm" title="Delete" aria-label={`Delete ${s.name}`} onClick={() => void remove(s)}><Icon name="delete" size={14} /></button>
                   </div>
                 ) : null}
-              </li>
-            ))}
-          </ul>
-        )}
-      </Panel>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       <Modal
         open={modalOpen}
