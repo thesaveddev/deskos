@@ -11,6 +11,10 @@ COPY packages/shared/package.json packages/shared/
 COPY packages/ui/package.json packages/ui/
 RUN npm install --workspace=@deskos/api --workspace=@deskos/web --workspace=@deskos/relay --workspace=@deskos/shared --workspace=@deskos/ui --include=dev
 
+# npm hoists shared deps to the root; ensure per-workspace node_modules dirs
+# exist so the prod-stage COPY below is deterministic.
+RUN mkdir -p apps/api/node_modules apps/relay/node_modules
+
 # -- build --
 COPY . .
 RUN npm run build --workspace=@deskos/web
