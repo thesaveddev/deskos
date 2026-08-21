@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { Shell } from '../components/Shell.js'
 import { Alert, Modal } from '../components/ui.js'
@@ -13,7 +13,8 @@ import {
   listLockReleaseRequests, requestTicketLockRelease, resolveLockReleaseRequest,
   listActiveTicketLocks,
   startViewingTicket, stopViewingTicket, heartbeatViewing, getTicketViewers,
-  slaSummary, STATUS_LABELS, formatWhen, type Attachment, type Thread, type Ticket, type TicketDevice, type TicketLink,
+  slaSummary, STATUS_LABELS, formatWhen, fetchAttachmentBlob, searchLinkTargets,
+  type Attachment, type Thread, type Ticket, type TicketDevice, type TicketLink, type LinkSearchResult,
   type Escalation, type Team, type TicketLockInfo, type LockReleaseRequest, type LockedTicketSummary,
 } from '../lib/tickets.js'
 import { listCannedResponses, type CannedResponse } from '../lib/canned.js'
@@ -56,7 +57,18 @@ export default function TicketDetailPage() {
   const [linkType, setLinkType] = useState('related')
   const [linkTargetType, setLinkTargetType] = useState('ticket')
   const [linkTargetId, setLinkTargetId] = useState('')
+  const [linkTargetLabel, setLinkTargetLabel] = useState('')
+  const [linkQuery, setLinkQuery] = useState('')
+  const [linkResults, setLinkResults] = useState<LinkSearchResult[]>([])
+  const [linkSearchOpen, setLinkSearchOpen] = useState(false)
+  const [linkSearching, setLinkSearching] = useState(false)
   const [showLinkForm, setShowLinkForm] = useState(false)
+  const linkDebounceRef = useRef<number | undefined>(undefined)
+
+  // Image preview (zoom + download for image attachments)
+  const [previewImage, setPreviewImage] = useState<{ id: string; filename: string; url: string } | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewZoom, setPreviewZoom] = useState(1)
   const [aiSummary, setAiSummary] = useState<string | null>(null)
   const [aiSummaryBusy, setAiSummaryBusy] = useState(false)
   const [aiSimilar, setAiSimilar] = useState<SimilarTicket[]>([])
@@ -222,6 +234,32 @@ export default function TicketDetailPage() {
       void unlockTicket(id)
     }
   }, [id])
+
+  // Debounced search for link targets (ticket / asset / kb).
+  useEffect(() => {
+    const q = linkQuery.trim()
+    if (q.length < 1 || linkTargetLabel) {
+      setLinkResults([])
+      setLinkSearchOpen(false)
+      setLinkSearching(false)
+      return
+    }
+    setLinkSearching(true)
+    window.clearTimeout(linkDebounceRef.current)
+    linkDebounceRef.current = window.setTimeout(() => {
+      searchLinkTargets(linkTargetType, q)
+        .then((res) => {
+          setLinkResults(res.results)
+          setLinkSearchOpen(true)
+        })
+        .catch(() => {
+          setLinkResults([])
+          setLinkSearchOpen(true)
+        })
+        .finally(() => setLinkSearching(false))
+    }, 250)
+    return () => window.clearTimeout(linkDebounceRef.current)
+  }, [linkQuery, linkTargetType, linkTargetLabel])
 
   if (error) {
     return (
@@ -428,11 +466,32 @@ export default function TicketDetailPage() {
     try {
       await addTicketLink(ticket.id, { linkType, targetType: linkTargetType, targetId: linkTargetId.trim() })
       setLinkTargetId('')
+      setLinkTargetLabel('')
       setShowLinkForm(false)
       await load()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not link')
     }
+  }
+
+  const selectLinkTarget = (result: LinkSearchResult) => {
+    setLinkTargetId(result.id)
+    setLinkTargetLabel(result.label)
+    setLinkQuery('')
+    setLinkResults([])
+    setLinkSearchOpen(false)
+  }
+
+  const clearLinkTarget = () => {
+    setLinkTargetId('')
+    setLinkTargetLabel('')
+    setLinkQuery('')
+    setLinkResults([])
+  }
+
+  const changeLinkTargetType = (type: string) => {
+    setLinkTargetType(type)
+    clearLinkTarget()
   }
 
   const removeLink = async (link: TicketLink) => {
@@ -443,6 +502,28 @@ export default function TicketDetailPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not unlink')
     }
+  }
+
+  const isImageAttachment = (attachment: Attachment) => (attachment.mime ?? '').startsWith('image/')
+
+  const openImagePreview = async (attachment: Attachment) => {
+    setPreviewLoading(true)
+    setError(null)
+    try {
+      const url = await fetchAttachmentBlob(getAccessToken() ?? '', attachment.id)
+      setPreviewZoom(1)
+      setPreviewImage({ id: attachment.id, filename: attachment.filename, url })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load image')
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
+
+  const closeImagePreview = () => {
+    if (previewImage) URL.revokeObjectURL(previewImage.url)
+    setPreviewImage(null)
+    setPreviewZoom(1)
   }
 
   const runAiSummary = async () => {
@@ -622,8 +703,10 @@ export default function TicketDetailPage() {
 
       {error ? <Alert kind="error">{error}</Alert> : null}
 
-      {/* Compact lock and viewer status indicators */}
-      <div className="ticket-presence-status" aria-label="Ticket presence status">        <button
+      {/* Lock, viewer, and endpoint context on one compact row */}
+      <div className="ticket-context-bar" aria-label="Ticket presence and endpoint context">
+        <div className="ticket-presence-status">
+        <button
           type="button"
           className={`ticket-status-icon ${ticketLock ? 'is-locked' : 'is-unlocked'}${hasPendingReleaseRequest ? ' has-release-request' : ''}`}
           onClick={() => { setShowLockModal(true); if (canOverrideTicketLock) void loadAllLocks() }}
@@ -638,7 +721,6 @@ export default function TicketDetailPage() {
           <span className="sr-only">{ticketLock ? `${lockIsMine ? 'Locked to' : 'Locked by'} ${ticketLock.locked_by_name || ticketLock.locked_by_email}` : 'Unlocked'}</span>
         </button>
         {ticketLock && canOverrideTicketLock && !lockIsMine ? <span className="ticket-status-hint">Admin release available in lock actions</span> : null}
-        {readOnlyForLock ? <div className="ticket-readonly-notice"><Icon name="lock" size={16} /><div><strong>Read-only view</strong><span>{blockingName} is viewing or working on this ticket. Use the lock icon to request release.</span></div></div> : null}
         <span
           className={`ticket-status-icon ${viewers.length > 0 ? 'is-viewing' : 'is-not-viewing'}`}
           data-tooltip={viewers.length > 0
@@ -649,6 +731,28 @@ export default function TicketDetailPage() {
           <Icon name={viewers.length > 0 ? 'eye' : 'eye-off'} size={17} />
           <span className="sr-only">{viewers.length > 0 ? `Viewing: ${viewers.map((viewer) => viewer.name || viewer.email).join(', ')}` : 'Not being viewed'}</span>
         </span>
+        </div>
+        {readOnlyForLock ? <div className="ticket-readonly-notice"><Icon name="lock" size={16} /><div><strong>Read-only view</strong><span>{blockingName} is viewing or working on this ticket. Use the lock icon to request release.</span></div></div> : null}
+        <div className="ticket-endpoint-inline">
+          <span className="etch">Endpoint</span>
+          {ticketDevice ? (
+            <Link to={`/devices/${ticketDevice.id}`} className="ticket-device-summary">
+              <span className="device-avatar">{ticketDevice.name.slice(0, 1).toUpperCase()}</span>
+              <span><strong>{ticketDevice.name}</strong><small>{ticketDevice.hostname || ticketDevice.os || 'Device details'}</small></span>
+            </Link>
+          ) : <span className="muted">No device linked</span>}
+          <select
+            className="field-input select-sm ticket-endpoint-select"
+            value={ticket.device_id ?? ''}
+            onChange={(event) => void changeDevice(event.target.value)}
+            disabled={deviceSaving || readOnlyForLock}
+            aria-label="Linked device"
+          >
+            <option value="">No device linked</option>
+            {ticketDevice && !devices.some((device) => device.id === ticketDevice.id) ? <option value={ticketDevice.id}>{ticketDevice.name}</option> : null}
+            {devices.map((device) => <option key={device.id} value={device.id}>{device.name}{device.hostname ? ` · ${device.hostname}` : ''}</option>)}
+          </select>
+        </div>
       </div>
 
       <Modal open={showLockModal} onClose={() => setShowLockModal(false)} title="Ticket lock" width={560}>
@@ -660,29 +764,6 @@ export default function TicketDetailPage() {
           {canOverrideTicketLock ? <div className="ticket-lock-modal-requests"><div className="ticket-lock-modal-allhead"><span className="etch">All locked tickets</span><button type="button" className="btn btn-ghost btn-sm" onClick={() => void loadAllLocks()} disabled={allLocksBusy}>{allLocksBusy ? 'Refreshing…' : 'Refresh'}</button></div>{allLocks.length === 0 ? <span className="muted">No tickets are currently locked.</span> : allLocks.map((lock) => <div className="ticket-release-request" key={lock.id}><div><strong><span className="mono">#{lock.ticket_number}</span> {lock.ticket_subject}</strong><span className="muted">Locked by {lock.locked_by_name ?? lock.locked_by_email ?? 'agent'} · expires {formatWhen(lock.expires_at)}</span></div><div className="ticket-release-request-actions"><button type="button" className="btn btn-ghost btn-sm" onClick={() => void releaseAnyLock(lock.ticket_id)} disabled={lockBusy}><Icon name="unlock" size={14} />Release</button></div></div>)}</div> : null}
         </div>
       </Modal>
-
-      <section className="ticket-device-context">
-        <div className="ticket-device-context-label">
-          <span className="etch">Endpoint context</span>
-          {ticketDevice ? (
-            <Link to={`/devices/${ticketDevice.id}`} className="ticket-device-summary">
-              <span className="device-avatar">{ticketDevice.name.slice(0, 1).toUpperCase()}</span>
-              <span><strong>{ticketDevice.name}</strong><small>{ticketDevice.hostname || ticketDevice.os || 'Device details'}</small></span>
-            </Link>
-          ) : <span className="muted">No device linked to this ticket.</span>}
-        </div>
-        <select
-          className="field-input select-sm"
-          value={ticket.device_id ?? ''}
-          onChange={(event) => void changeDevice(event.target.value)}
-          disabled={deviceSaving || readOnlyForLock}
-          aria-label="Linked device"
-        >
-          <option value="">No device linked</option>
-          {ticketDevice && !devices.some((device) => device.id === ticketDevice.id) ? <option value={ticketDevice.id}>{ticketDevice.name}</option> : null}
-          {devices.map((device) => <option key={device.id} value={device.id}>{device.name}{device.hostname ? ` · ${device.hostname}` : ''}</option>)}
-        </select>
-      </section>
 
       {extKeys.length > 0 ? (
         <section className="ticket-ext">
@@ -751,7 +832,7 @@ export default function TicketDetailPage() {
               <span className="ticket-links-icon" aria-hidden="true"><Icon name="link" size={15} /></span>
               <div>
                 <strong>Link related work</strong>
-                <span>Connect this ticket to another ticket, asset, article, or session.</span>
+                <span>Search and connect this ticket to another ticket, asset, or knowledge article.</span>
               </div>
             </div>
             <div className="ticket-link-form">
@@ -762,13 +843,43 @@ export default function TicketDetailPage() {
                 <option value="child">Child</option>
                 <option value="duplicates">Duplicates</option>
               </select>
-              <select className="field-input select-sm" value={linkTargetType} onChange={(e) => setLinkTargetType(e.target.value)} disabled={readOnlyForLock} aria-label="Target type">
+              <select className="field-input select-sm" value={linkTargetType} onChange={(e) => changeLinkTargetType(e.target.value)} disabled={readOnlyForLock} aria-label="Target type">
                 <option value="ticket">Ticket</option>
                 <option value="asset">Asset</option>
                 <option value="kb">KB article</option>
-                <option value="session">Session</option>
               </select>
-              <input className="field-input mono" value={linkTargetId} onChange={(e) => setLinkTargetId(e.target.value)} disabled={readOnlyForLock} placeholder="Paste item ID" aria-label="Target ID" />
+              <div className="link-target-search">
+                {linkTargetLabel ? (
+                  <div className="link-target-chip">
+                    <span className="mono" title={linkTargetLabel}>{linkTargetLabel}</span>
+                    <button type="button" className="link-target-chip-clear" onClick={clearLinkTarget} aria-label="Clear selection"><Icon name="close" size={13} /></button>
+                  </div>
+                ) : (
+                  <>
+                    <input
+                      className="field-input mono"
+                      value={linkQuery}
+                      onChange={(e) => setLinkQuery(e.target.value)}
+                      disabled={readOnlyForLock}
+                      placeholder={`Search ${linkTargetType === 'kb' ? 'articles' : linkTargetType === 'asset' ? 'assets' : 'tickets'}…`}
+                      aria-label="Search target"
+                      onFocus={() => { if (linkResults.length > 0) setLinkSearchOpen(true) }}
+                    />
+                    {linkSearchOpen ? (
+                      <div className="link-target-results">
+                        {linkSearching ? <div className="link-target-state">Searching…</div> : null}
+                        {!linkSearching && linkResults.length === 0 ? <div className="link-target-state">No matches</div> : null}
+                        {linkResults.map((result) => (
+                          <button type="button" key={`${result.type}-${result.id}`} className="link-target-result" onClick={() => selectLinkTarget(result)}>
+                            <span className="link-target-result-type">{result.type}</span>
+                            <span className="link-target-result-label">{result.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </>
+                )}
+              </div>
               <button className="btn btn-primary btn-sm" disabled={readOnlyForLock || !linkTargetId.trim()} onClick={() => void addLink()}>
                 <Icon name="link" size={15} /> Link
               </button>
@@ -899,19 +1010,42 @@ export default function TicketDetailPage() {
               <li key={a.id} className="attachment-row">
                 <button
                   className="attachment-link"
-                  onClick={() => void downloadAttachment(getAccessToken() ?? '', a.id, a.filename)}
-                  title="Download"
+                  onClick={() => (isImageAttachment(a) ? void openImagePreview(a) : void downloadAttachment(getAccessToken() ?? '', a.id, a.filename))}
+                  title={isImageAttachment(a) ? 'Preview' : 'Download'}
                 >
-                  <span className="attachment-icon">📎</span>
+                  <span className="attachment-icon"><Icon name={isImageAttachment(a) ? 'image' : 'file'} size={14} /></span>
                   <span className="attachment-name">{a.filename}</span>
                 </button>
                 <span className="muted mono">{Math.max(1, Math.round(a.size_bytes / 1024))} KB · {a.uploader_name ?? '—'}</span>
+                <span className="attachment-row-actions">
+                  {isImageAttachment(a) ? <button className="icon-btn" title="Preview" aria-label={`Preview ${a.filename}`} onClick={() => void openImagePreview(a)}><Icon name="eye" size={14} /></button> : null}
+                  <button className="icon-btn" title="Download" aria-label={`Download ${a.filename}`} onClick={() => void downloadAttachment(getAccessToken() ?? '', a.id, a.filename)}><Icon name="download" size={14} /></button>
+                </span>
               </li>
             ))}
           </ul>
         )}
       </div>
       </div>{/* end ticket-detail-scroll */}
+
+      <Modal open={Boolean(previewImage) || previewLoading} onClose={closeImagePreview} title={previewImage?.filename ?? 'Attachment preview'} width={980}>
+        {previewLoading ? (
+          <div className="image-viewer-state">Loading image…</div>
+        ) : previewImage ? (
+          <div className="image-viewer">
+            <div className="image-viewer-stage">
+              <img src={previewImage.url} alt={previewImage.filename} style={{ width: `${previewZoom * 100}%` }} draggable={false} />
+            </div>
+            <div className="image-viewer-toolbar">
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPreviewZoom((z) => Math.max(0.25, Math.round((z - 0.25) * 100) / 100))} title="Zoom out" aria-label="Zoom out"><Icon name="minus" size={14} /></button>
+              <span className="mono">{Math.round(previewZoom * 100)}%</span>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPreviewZoom((z) => Math.min(3, Math.round((z + 0.25) * 100) / 100))} title="Zoom in" aria-label="Zoom in"><Icon name="add" size={14} /></button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPreviewZoom(1)} title="Reset zoom">Reset</button>
+              <button type="button" className="btn btn-primary btn-sm" onClick={() => void downloadAttachment(getAccessToken() ?? '', previewImage.id, previewImage.filename)}><Icon name="download" size={14} />Download</button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
 
       <div className="composer ticket-composer-fixed">
         <div className="composer-tabs">

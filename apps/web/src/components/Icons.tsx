@@ -11,7 +11,7 @@ export type IconName =
   | 'package' | 'server' | 'flag' | 'chart' | 'box' | 'layers' | 'database' | 'book'
   | 'sun' | 'moon' | 'sparkles' | 'chat' | 'keyboard' | 'plug' | 'building'
   | 'users' | 'globe' | 'bell' | 'smartphone' | 'briefcase' | 'activity'
-  | 'minus' | 'arrow-right'
+  | 'minus' | 'arrow-right' | 'image'
 
 const paths: Record<IconName, JSX.Element> = {
   add: <><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></>,
@@ -83,6 +83,7 @@ const paths: Record<IconName, JSX.Element> = {
   activity: <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>,
   minus: <line x1="5" y1="12" x2="19" y2="12"/>,
   'arrow-right': <><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></>,
+  image: <><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></>,
 }
 
 export function Icon({ name, size = 16, strokeWidth = 2, ...props }: { name: IconName; size?: number; strokeWidth?: number } & Omit<SVGProps<SVGSVGElement>, 'name'>) {

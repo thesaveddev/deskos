@@ -28,6 +28,36 @@ export async function ticketLinkRoutes(app: FastifyInstance): Promise<void> {
   const read = [authenticate, requireTenant, requirePermission('ticket.read')]
   const write = [authenticate, requireTenant, requirePermission('ticket.write')]
 
+  app.get('/links/search', { preHandler: read }, async (request) => {
+    const ctx = request.tenantCtx!
+    const query = request.query as Record<string, string | undefined>
+    const type = query.type ?? 'ticket'
+    const q = String(query.q ?? '').trim()
+    if (q.length < 1) return { results: [] }
+
+    return withTenant(app.db, ctx.tenantId, async (client) => {
+      if (type === 'asset') {
+        const { rows } = await client.query(
+          `SELECT id, name, tag FROM assets WHERE name ILIKE $1 OR tag ILIKE $1 ORDER BY name LIMIT 12`,
+          [`%${q}%`],
+        )
+        return { results: rows.map((row) => ({ id: row.id, type: 'asset', label: `${row.tag} · ${row.name}` })) }
+      }
+      if (type === 'kb') {
+        const { rows } = await client.query(
+          `SELECT id, title FROM kb_articles WHERE title ILIKE $1 ORDER BY title LIMIT 12`,
+          [`%${q}%`],
+        )
+        return { results: rows.map((row) => ({ id: row.id, type: 'kb', label: row.title })) }
+      }
+      const { rows } = await client.query(
+        `SELECT id, number, subject FROM tickets WHERE subject ILIKE $1 OR number::text = $2 ORDER BY number DESC LIMIT 12`,
+        [`%${q}%`, q.replace(/^#/, '')],
+      )
+      return { results: rows.map((row) => ({ id: row.id, type: 'ticket', label: `#${row.number} ${row.subject}` })) }
+    })
+  })
+
   app.get('/tickets/:id/links', { preHandler: read }, async (request) => {
     const ctx = request.tenantCtx!
     const { id } = request.params as { id: string }

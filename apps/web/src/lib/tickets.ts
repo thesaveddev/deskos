@@ -175,6 +175,25 @@ export function searchAll(q: string): Promise<{ tickets: Array<{ id: string; num
   return api(`/search?q=${encodeURIComponent(q)}`)
 }
 
+export interface LinkSearchResult {
+  id: string
+  type: 'ticket' | 'asset' | 'kb'
+  label: string
+}
+
+export function searchLinkTargets(type: string, q: string): Promise<{ results: LinkSearchResult[] }> {
+  return api(`/links/search?type=${encodeURIComponent(type)}&q=${encodeURIComponent(q)}`)
+}
+
+export async function fetchAttachmentBlob(token: string, id: string): Promise<string> {
+  const res = await fetch(`/api/v1/attachments/${id}`, {
+    headers: { authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) throw new Error(`Could not load attachment (${res.status})`)
+  const blob = await res.blob()
+  return URL.createObjectURL(blob)
+}
+
 export const STATUS_LABELS: Record<string, string> = {
   new: 'New',
   open: 'Open',
