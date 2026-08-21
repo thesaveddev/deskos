@@ -1,18 +1,30 @@
 name: Deploy to Production
 
 on:
-  push:
+  # Deploy only after the E2E suite passes on master. A red E2E run blocks the
+  # release; manual dispatch is available for emergency/operator deploys.
+  workflow_run:
+    workflows: ["E2E"]
+    types: [completed]
     branches: [master]
   workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
 
 jobs:
   deploy:
     name: Deploy ReyDesk to VPS
     runs-on: ubuntu-latest
     environment: production
+    timeout-minutes: 15
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.head_branch == 'master' && github.event.workflow_run.conclusion == 'success') }}
     steps:
-      - name: Checkout
+      - name: Checkout tested revision
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.2.0
