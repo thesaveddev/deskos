@@ -6,8 +6,8 @@ import { requirePermission } from '../../middleware/requirePermission.js'
 import { requireTenant } from '../../middleware/requireTenant.js'
 import '../../types.js'
 
-function dateFilter(from?: string, to?: string, qualifier = ''): { clause: string; params: any[] } {
-  const params: any[] = []
+function dateFilter(from?: string, to?: string, qualifier = ''): { clause: string; params: unknown[] } {
+  const params: unknown[] = []
   const col = qualifier ? `${qualifier}.created_at` : 'created_at'
   let clause = ''
   if (from) { params.push(from); clause += ` AND ${col} >= $${params.length}::timestamptz` }
@@ -22,7 +22,7 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
     { preHandler: [authenticate, requireTenant, requirePermission('report.read')] },
     async (request) => {
       const ctx = request.tenantCtx!
-      const q = (request.query as any)
+      const q = (request.query ?? {}) as { from?: string; to?: string }
       const { clause, params } = dateFilter(q.from, q.to)
 
       return withTenant(app.db, ctx.tenantId, async (client) => {
@@ -176,8 +176,6 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
     { preHandler: [authenticate, requireTenant, requirePermission('report.read')] },
     async (request) => {
       const ctx = request.tenantCtx!
-      const q = (request.query as any)
-      const { clause, params } = dateFilter(q.from, q.to)
 
       return withTenant(app.db, ctx.tenantId, async (client) => {
         const byStatus = await client.query(
@@ -332,7 +330,7 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
     { preHandler: [authenticate, requireTenant, requirePermission('report.read')] },
     async (request, reply) => {
       const ctx = request.tenantCtx!
-      const q = (request.query as any)
+      const q = (request.query ?? {}) as { from?: string; to?: string }
       const { clause, params } = dateFilter(q.from, q.to, 't')
 
       return withTenant(app.db, ctx.tenantId, async (client) => {
@@ -351,7 +349,7 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
         )
 
         const header = 'Number,Subject,Status,Priority,Type,Source,Impact,Urgency,Created,First Response,Resolved,Closed,SLA Response Breached,SLA Resolution Breached,Requester,Assignee,Team,Category'
-        const csv = [header, ...rows.rows.map((r: any) =>
+        const csv = [header, ...rows.rows.map((r) =>
           [
             r.number,
             `"${(r.subject ?? '').replace(/"/g, '""')}"`,

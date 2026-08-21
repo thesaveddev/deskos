@@ -12,6 +12,7 @@ export interface AuthUser {
   id: string
   email: string
   name: string
+  is_platform_admin?: boolean
 }
 
 export interface TenantContext {

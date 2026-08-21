@@ -1,4 +1,4 @@
-import { withTenant, type DbClient, type DbPool } from '../../db/pool.js'
+import type { DbClient, DbPool } from '../../db/pool.js'
 import { assertTeamAcceptsTickets } from '../teams/team-policy.js'
 
 /* ── Escalation ──────────────────────────────────────────────── */
@@ -293,27 +293,6 @@ export async function bulkUpdateTickets(
   }
 
   return rowCount ?? 0
-}
-
-/* ── Teams list (for forwarding) ─────────────────────────────── */
-
-export async function listTeams(db: DbClient | DbPool, tenantId: string): Promise<Array<{ id: string; name: string }>> {
-  const { rows } = await db.query(
-    'SELECT id, name, accepts_tickets FROM teams WHERE tenant_id = $1 ORDER BY name',
-    [tenantId],
-  )
-  return rows
-}
-
-export async function listTeamMembers(db: DbClient | DbPool, tenantId: string, teamId: string): Promise<Array<{ id: string; name: string; email: string }>> {
-  const { rows } = await db.query(
-    `SELECT u.id, u.name, u.email FROM users u
-     JOIN memberships m ON m.user_id = u.id
-     WHERE m.tenant_id = $1 AND m.status = 'active'
-     ORDER BY u.name`,
-    [tenantId],
-  )
-  return rows
 }
 
 /* ── Escalation paths (routing rules) ───────────────────────── */

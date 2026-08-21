@@ -11,9 +11,6 @@ import {
   markPasswordResetTokenUsed,
   generateEmailVerificationToken,
   verifyEmailVerificationToken,
-  isAccountLocked,
-  recordFailedLogin,
-  resetFailedLoginCount,
 } from './auth.password-reset.js'
 import '../../types.js'
 

@@ -244,6 +244,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const [sessionKeyExpires, setSessionKeyExpires] = useState<string | null>(null)
   const [sessionKeyBusy, setSessionKeyBusy] = useState(false)
   const remoteWrapRef = useRef<HTMLDivElement>(null)
+  const notificationsWrapRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const refresh = () => setSessionDock(readSessionDock())
@@ -266,6 +267,18 @@ export function Shell({ children }: { children: ReactNode }) {
     document.addEventListener('mousedown', onDown)
     return () => document.removeEventListener('mousedown', onDown)
   }, [showSessionKey])
+
+  // Close the notifications dropdown when the user clicks outside it.
+  useEffect(() => {
+    if (!notificationsOpen) return
+    const onDown = (event: MouseEvent) => {
+      if (notificationsWrapRef.current && !notificationsWrapRef.current.contains(event.target as Node)) {
+        setNotificationsOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [notificationsOpen])
 
   // Global Ctrl+L shortcut to lock screen
   useEffect(() => {
@@ -433,7 +446,7 @@ export function Shell({ children }: { children: ReactNode }) {
           </button>
 
           <div className="topbar-icons">
-            <div className="topbar-notifications-wrap">
+            <div className="topbar-notifications-wrap" ref={notificationsWrapRef}>
               <button
                 type="button"
                 className="topbar-icon-btn notification-trigger"

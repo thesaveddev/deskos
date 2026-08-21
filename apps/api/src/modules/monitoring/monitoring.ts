@@ -154,7 +154,7 @@ async function heldForDuration(client: DbClient, deviceId: string, rule: { metri
   const first = rows[0]
   const current = sample[rule.metric]
   if (current == null) return false
-  return rows.every((row) => monitoringConditionMatches(rule.condition, Number(row[rule.metric])) && Number(first[rule.metric]) !== undefined)
+  return rows.every((row) => monitoringConditionMatches(rule.condition, Number(row[rule.metric])) && first[rule.metric] != null)
 }
 
 async function raiseMonitoringAlert(client: DbClient, tenantId: string, device: { id: string; name: string; group_id?: string | null; device_type?: DeviceType }, rule: { id: string; name: string; metric: MonitoringMetric; condition: MonitoringCondition; action: MonitoringAction; business_hours_id?: string | null; maintenance_windows?: unknown; min_duration_seconds?: number }, value: MonitoringScalar): Promise<boolean> {

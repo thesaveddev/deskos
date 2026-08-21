@@ -38,7 +38,7 @@ describe('magic-link authentication', () => {
     expect(request.statusCode).toBe(200)
     expect(request.json()).toEqual({ ok: true })
     expect(app.mailer.sent.length).toBe(before + 1)
-    expect(app.mailer.sent.at(-1)?.html).toContain('Sign in to DeskOS')
+    expect(app.mailer.sent.at(-1)?.html).toContain('Sign in to ReyDesk')
     expect(app.mailer.sent.at(-1)?.html).toContain('#e8a33d')
 
     const token = tokenFromLastEmail(app)

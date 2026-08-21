@@ -40,7 +40,9 @@ const magicLinkVerifySchema = z.object({
 })
 
 function magicLinkSettings(settings: unknown): { portalEnabled: boolean; staffEnabled: boolean } {
-  const raw = settings && typeof settings === 'object' ? (settings as Record<string, any>).magic_links : undefined
+  const raw = settings && typeof settings === 'object'
+    ? (settings as Record<string, unknown>).magic_links as { portal_enabled?: boolean; staff_enabled?: boolean } | undefined
+    : undefined
   return {
     // Customer portal magic links are the safe default for end users.
     portalEnabled: raw?.portal_enabled !== false,
@@ -189,7 +191,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         LIMIT 20`,
       params,
     )
-    const membership = rows.find((row: any) => magicLinkAllowed(row.org_role, row.settings))
+    const membership = rows.find((row) => magicLinkAllowed(row.org_role, row.settings))
 
     // Keep the response identical for unknown, disabled, and known accounts.
     // This prevents the endpoint from becoming an account or organization
@@ -277,8 +279,8 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       `SELECT m.org_role, t.settings FROM memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.user_id = $1 AND m.status = 'active'`,
       [user.id],
     )
-    const orgMfaPolicy = memberships.find((m: any) => m.settings?.mfa_policy)?.settings?.mfa_policy ?? 'optional'
-    const isAdminOrOwner = memberships.some((m: any) => ADMIN_OR_OWNER_ROLES.includes(m.org_role))
+    const orgMfaPolicy = memberships.find((m) => m.settings?.mfa_policy)?.settings?.mfa_policy ?? 'optional'
+    const isAdminOrOwner = memberships.some((m) => ADMIN_OR_OWNER_ROLES.includes(m.org_role))
 
     const mfaEnforced = orgMfaPolicy === 'required' || (orgMfaPolicy === 'admin_only' && isAdminOrOwner)
 
@@ -427,7 +429,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       `SELECT m.org_role, t.settings FROM memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.user_id = $1 AND m.status = 'active'`,
       [request.user!.id],
     )
-    const cannotDisable = policies.some((item: any) => item.settings?.mfa_policy === 'required' || (item.settings?.mfa_policy === 'admin_only' && ADMIN_OR_OWNER_ROLES.includes(item.org_role)))
+    const cannotDisable = policies.some((item) => item.settings?.mfa_policy === 'required' || (item.settings?.mfa_policy === 'admin_only' && ADMIN_OR_OWNER_ROLES.includes(item.org_role)))
     if (cannotDisable) throw new AppError(403, 'mfa_policy_required', 'Your organization requires MFA for this account. Ask an administrator to change the policy first.')
     const { code } = mfaCodeSchema.parse(request.body)
     const { rows } = await app.db.query('SELECT mfa_secret FROM users WHERE id = $1 AND mfa_enabled = true', [request.user!.id])

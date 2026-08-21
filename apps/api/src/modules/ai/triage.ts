@@ -355,7 +355,6 @@ export async function runTicketTriage(deps: TriageDeps, tenantId: string, ticket
     const nextRound = current.round + (decision.action === 'ask_user' ? 1 : 0)
     let nextStatus: TriageStatus = 'waiting_for_user'
     let nextTicketStatus = result.rows[0].status as string
-    let shouldEmail = true
 
     if (decision.action === 'resolve' && policy.autoResolve && decision.confidence >= policy.resolveConfidence) {
       nextStatus = 'resolved'

@@ -22,14 +22,14 @@ export async function ticketLockRoutes(app: FastifyInstance) {
 
   // Managers can review all active locks without opening each ticket.
   app.get('/tickets/locks', { preHandler: requirePermission('settings.manage') }, async (req, reply) => {
-    const ctx = (req as any).tenantCtx
+    const ctx = req.tenantCtx!
     const locks = await listActiveTicketLocks(app.db, ctx.tenantId)
     return reply.send({ locks })
   })
 
   app.get('/tickets/:id/lock', { preHandler: requirePermission('ticket.write') }, async (req, reply) => {
-    const ctx = (req as any).tenantCtx
-    const userId = (req as any).user.id as string
+    const ctx = req.tenantCtx!
+    const userId = req.user!.id
     const { id } = req.params as { id: string }
     const lock = await getTicketLock(app.db, ctx.tenantId, id)
     const isMine = lock?.locked_by === userId
@@ -39,8 +39,8 @@ export async function ticketLockRoutes(app: FastifyInstance) {
   // Acquire or renew a lock. A second agent receives a clear conflict instead
   // of silently taking over the ticket.
   app.post('/tickets/:id/lock', { preHandler: requirePermission('ticket.write') }, async (req, reply) => {
-    const ctx = (req as any).tenantCtx
-    const userId = (req as any).user.id as string
+    const ctx = req.tenantCtx!
+    const userId = req.user!.id
     const { id } = req.params as { id: string }
     const result = await acquireTicketLock(app.db, ctx.tenantId, id, userId)
     if (!result.lock) {
@@ -62,8 +62,8 @@ export async function ticketLockRoutes(app: FastifyInstance) {
 
   // Unlock (agent navigated away)
   app.delete('/tickets/:id/lock', { preHandler: requirePermission('ticket.write') }, async (req, reply) => {
-    const ctx = (req as any).tenantCtx
-    const userId = (req as any).user.id as string
+    const ctx = req.tenantCtx!
+    const userId = req.user!.id
     const { id } = req.params as { id: string }
     await unlockTicket(app.db, ctx.tenantId, id, userId)
     return reply.send({ ok: true })
@@ -71,8 +71,8 @@ export async function ticketLockRoutes(app: FastifyInstance) {
 
   // Request that the current lock owner release the ticket.
   app.post('/tickets/:id/lock/release-request', { preHandler: requirePermission('ticket.read') }, async (req, reply) => {
-    const ctx = (req as any).tenantCtx
-    const userId = (req as any).user.id as string
+    const ctx = req.tenantCtx!
+    const userId = req.user!.id
     const { id } = req.params as { id: string }
     const body = releaseRequestSchema.parse(req.body ?? {})
     try {
@@ -85,16 +85,16 @@ export async function ticketLockRoutes(app: FastifyInstance) {
   })
 
   app.get('/tickets/:id/lock/release-requests', { preHandler: requirePermission('ticket.read') }, async (req, reply) => {
-    const ctx = (req as any).tenantCtx
-    const userId = (req as any).user.id as string
+    const ctx = req.tenantCtx!
+    const userId = req.user!.id
     const { id } = req.params as { id: string }
     const requests = await listLockReleaseRequests(app.db, ctx.tenantId, id, userId, canManageLocks(ctx.orgRole))
     return reply.send({ requests })
   })
 
   app.post('/tickets/:id/lock/release-requests/:requestId/resolve', { preHandler: requirePermission('ticket.read') }, async (req, reply) => {
-    const ctx = (req as any).tenantCtx
-    const userId = (req as any).user.id as string
+    const ctx = req.tenantCtx!
+    const userId = req.user!.id
     const { id, requestId } = req.params as { id: string; requestId: string }
     const body = releaseDecisionSchema.parse(req.body ?? {})
     try {
@@ -108,7 +108,7 @@ export async function ticketLockRoutes(app: FastifyInstance) {
 
   // Force unlock (owner/IT manager/service desk manager only)
   app.delete('/tickets/:id/lock/force', { preHandler: requirePermission('settings.manage') }, async (req, reply) => {
-    const ctx = (req as any).tenantCtx
+    const ctx = req.tenantCtx!
     const { id } = req.params as { id: string }
     await forceUnlock(app.db, ctx.tenantId, id)
     return reply.send({ ok: true })
@@ -116,8 +116,8 @@ export async function ticketLockRoutes(app: FastifyInstance) {
 
   // Heartbeat lock (while viewing)
   app.post('/tickets/:id/lock/heartbeat', { preHandler: requirePermission('ticket.write') }, async (req, reply) => {
-    const ctx = (req as any).tenantCtx
-    const userId = (req as any).user.id as string
+    const ctx = req.tenantCtx!
+    const userId = req.user!.id
     const { id } = req.params as { id: string }
     const extended = await heartbeatLock(app.db, ctx.tenantId, id, userId)
     return reply.send({ ok: extended })
@@ -126,31 +126,31 @@ export async function ticketLockRoutes(app: FastifyInstance) {
   // ── Viewing endpoints ──
 
   app.post('/tickets/:id/viewing', { preHandler: requirePermission('ticket.read') }, async (req, reply) => {
-    const ctx = (req as any).tenantCtx
-    const userId = (req as any).user.id as string
+    const ctx = req.tenantCtx!
+    const userId = req.user!.id
     const { id } = req.params as { id: string }
     await startViewing(app.db, ctx.tenantId, id, userId)
     return reply.send({ ok: true })
   })
 
   app.delete('/tickets/:id/viewing', { preHandler: requirePermission('ticket.read') }, async (req, reply) => {
-    const ctx = (req as any).tenantCtx
-    const userId = (req as any).user.id as string
+    const ctx = req.tenantCtx!
+    const userId = req.user!.id
     const { id } = req.params as { id: string }
     await stopViewing(app.db, ctx.tenantId, id, userId)
     return reply.send({ ok: true })
   })
 
   app.post('/tickets/:id/viewing/heartbeat', { preHandler: requirePermission('ticket.read') }, async (req, reply) => {
-    const ctx = (req as any).tenantCtx
-    const userId = (req as any).user.id as string
+    const ctx = req.tenantCtx!
+    const userId = req.user!.id
     const { id } = req.params as { id: string }
     await heartbeatViewing(app.db, ctx.tenantId, id, userId)
     return reply.send({ ok: true })
   })
 
   app.get('/tickets/:id/viewers', { preHandler: requirePermission('ticket.read') }, async (req, reply) => {
-    const ctx = (req as any).tenantCtx
+    const ctx = req.tenantCtx!
     const { id } = req.params as { id: string }
     const viewers = await getViewers(app.db, ctx.tenantId, id)
     return reply.send({ viewers })

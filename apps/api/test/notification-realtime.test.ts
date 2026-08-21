@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { FastifyInstance } from 'fastify'
 import { notifyInTxn, subscribeNotifications } from '../src/core/notify.js'
-import { authHeaders, createTestApp, signupOwner } from './helpers.js'
+import { createTestApp, signupOwner } from './helpers.js'
 
 describe('real-time notifications', () => {
   let app: FastifyInstance

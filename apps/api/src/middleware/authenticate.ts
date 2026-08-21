@@ -18,12 +18,12 @@ export async function authenticate(request: FastifyRequest, _reply: FastifyReply
   }
 
   const { rows } = await request.server.db.query(
-    'SELECT id, email, name, status FROM users WHERE id = $1',
+    'SELECT id, email, name, status, is_platform_admin FROM users WHERE id = $1',
     [payload.sub],
   )
   const user = rows[0]
   if (!user || user.status !== 'active') {
     throw AppError.unauthorized('Account is not active')
   }
-  request.user = { id: user.id, email: user.email, name: user.name }
+  request.user = { id: user.id, email: user.email, name: user.name, is_platform_admin: user.is_platform_admin }
 }

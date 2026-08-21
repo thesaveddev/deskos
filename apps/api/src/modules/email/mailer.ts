@@ -59,11 +59,11 @@ export interface BrandedEmailOptions {
 }
 
 function escapeHtml(value: string): string {
-  return value.replace(/[&<>\"']/g, (character) => ({
+  return value.replace(/[&<>"']/g, (character) => ({
     '&': '&amp;',
     '<': '&lt;',
     '>': '&gt;',
-    '\"': '&quot;',
+    '"': '&quot;',
     "'": '&#39;',
   })[character] ?? character)
 }

@@ -123,7 +123,7 @@ export async function ingestInboundCall(
   input: NormalizedInboundCall,
 ): Promise<{ call: Record<string, unknown>; match: CallMatch; created: boolean; changed: boolean }> {
   const match = await matchCallToTicket(client, tenantId, input, integration.auto_match)
-  let ticketId = match.ticketId
+  const ticketId = match.ticketId
   // Deliberately do not create a ticket for an ambiguous number. A technician
   // should choose from candidates rather than attach a call to the wrong case.
   const ext = { ...input.ext, match: { status: match.status, contactId: match.contactId ?? null, contactName: match.contactName ?? null, candidateCount: match.candidates.length } }

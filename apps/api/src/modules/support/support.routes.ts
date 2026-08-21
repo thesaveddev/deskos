@@ -2,8 +2,6 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { AppError } from '../../core/errors.js'
 import { authenticate } from '../../middleware/authenticate.js'
-import { requireTenant } from '../../middleware/requireTenant.js'
-import { requirePermission } from '../../middleware/requirePermission.js'
 import {
   createSupportTicket, listSupportTickets, getSupportTicket, updateSupportTicket,
   addSupportTicketThread, getSupportTicketThreads,
@@ -54,7 +52,7 @@ export async function supportRoutes(app: FastifyInstance): Promise<void> {
     const ticket = await getSupportTicket(app.db, Number(id))
     if (!ticket) throw AppError.notFound('Support ticket not found')
     // Only the ticket author or platform admin can view
-    const isAdmin = (request.user as any)?.is_platform_admin
+    const isAdmin = request.user?.is_platform_admin
     if (ticket.user_id !== request.user!.id && !isAdmin) {
       throw AppError.forbidden('Access denied')
     }
@@ -68,7 +66,7 @@ export async function supportRoutes(app: FastifyInstance): Promise<void> {
     const body = replySchema.parse(request.body)
     const ticket = await getSupportTicket(app.db, Number(id))
     if (!ticket) throw AppError.notFound('Support ticket not found')
-    const isAdmin = (request.user as any)?.is_platform_admin
+    const isAdmin = request.user?.is_platform_admin
     if (ticket.user_id !== request.user!.id && !isAdmin) {
       throw AppError.forbidden('Access denied')
     }
@@ -84,7 +82,7 @@ export async function supportRoutes(app: FastifyInstance): Promise<void> {
 
   /** Platform metrics dashboard */
   app.get('/admin/metrics', { preHandler: [authenticate] }, async (request) => {
-    const isAdmin = (request.user as any)?.is_platform_admin
+    const isAdmin = request.user?.is_platform_admin
     if (!isAdmin) throw AppError.forbidden('Platform admin access required')
     const metrics = await getPlatformMetrics(app.db)
     return metrics
@@ -92,7 +90,7 @@ export async function supportRoutes(app: FastifyInstance): Promise<void> {
 
   /** List all organizations */
   app.get('/admin/orgs', { preHandler: [authenticate] }, async (request) => {
-    const isAdmin = (request.user as any)?.is_platform_admin
+    const isAdmin = request.user?.is_platform_admin
     if (!isAdmin) throw AppError.forbidden('Platform admin access required')
     const orgs = await listOrganizations(app.db)
     return { orgs }
@@ -100,7 +98,7 @@ export async function supportRoutes(app: FastifyInstance): Promise<void> {
 
   /** List all support tickets (admin) */
   app.get('/admin/support-tickets', { preHandler: [authenticate] }, async (request) => {
-    const isAdmin = (request.user as any)?.is_platform_admin
+    const isAdmin = request.user?.is_platform_admin
     if (!isAdmin) throw AppError.forbidden('Platform admin access required')
     const { status } = request.query as { status?: string }
     const tickets = await listSupportTickets(app.db, { status })
@@ -109,7 +107,7 @@ export async function supportRoutes(app: FastifyInstance): Promise<void> {
 
   /** Update a support ticket (admin — assign, resolve, change priority) */
   app.patch('/admin/support-tickets/:id', { preHandler: [authenticate] }, async (request) => {
-    const isAdmin = (request.user as any)?.is_platform_admin
+    const isAdmin = request.user?.is_platform_admin
     if (!isAdmin) throw AppError.forbidden('Platform admin access required')
     const { id } = request.params as { id: string }
     const body = updateSchema.parse(request.body)
@@ -120,7 +118,7 @@ export async function supportRoutes(app: FastifyInstance): Promise<void> {
 
   /** Admin reply to a support ticket (as internal note or message) */
   app.post('/admin/support-tickets/:id/reply', { preHandler: [authenticate] }, async (request, reply) => {
-    const isAdmin = (request.user as any)?.is_platform_admin
+    const isAdmin = request.user?.is_platform_admin
     if (!isAdmin) throw AppError.forbidden('Platform admin access required')
     const { id } = request.params as { id: string }
     const body = z.object({

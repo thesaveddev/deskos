@@ -16,20 +16,20 @@ export async function notesRoutes(app: FastifyInstance) {
   app.addHook('preHandler', requireTenant)
 
   app.get('/notes', async (req, reply) => {
-    const ctx = (req as any).tenantCtx
-    const userId = (req as any).user.id as string
+    const ctx = req.tenantCtx!
+    const userId = req.user!.id
     return reply.send({ notes: await withTenant(app.db, ctx.tenantId, (client) => listNotes(client, ctx.tenantId, userId)) })
   })
 
   app.get('/notes/categories', async (req, reply) => {
-    const ctx = (req as any).tenantCtx
-    const userId = (req as any).user.id as string
+    const ctx = req.tenantCtx!
+    const userId = req.user!.id
     return reply.send({ categories: await withTenant(app.db, ctx.tenantId, (client) => listCategories(client, ctx.tenantId, userId)) })
   })
 
   app.post('/notes/categories', async (req, reply) => {
-    const ctx = (req as any).tenantCtx
-    const userId = (req as any).user.id as string
+    const ctx = req.tenantCtx!
+    const userId = req.user!.id
     const body = (req.body || {}) as Record<string, unknown>
     const name = typeof body.name === 'string' ? body.name.trim() : ''
     if (!name || name.length > 60) throw AppError.badRequest('Category name is required and must be 60 characters or fewer')
@@ -43,8 +43,8 @@ export async function notesRoutes(app: FastifyInstance) {
   })
 
   app.delete('/notes/categories/:id', async (req, reply) => {
-    const ctx = (req as any).tenantCtx
-    const userId = (req as any).user.id as string
+    const ctx = req.tenantCtx!
+    const userId = req.user!.id
     const { id } = req.params as { id: string }
     const deleted = await withTenant(app.db, ctx.tenantId, (client) => deleteCategory(client, ctx.tenantId, userId, id))
     if (!deleted) return reply.code(404).send({ error: 'Category not found' })
@@ -52,8 +52,8 @@ export async function notesRoutes(app: FastifyInstance) {
   })
 
   app.post('/notes', async (req, reply) => {
-    const ctx = (req as any).tenantCtx
-    const userId = (req as any).user.id as string
+    const ctx = req.tenantCtx!
+    const userId = req.user!.id
     const body = (req.body || {}) as Record<string, unknown>
     const imageData = typeof body.image_data === 'string' ? body.image_data : null
     if (imageData && (!imageData.startsWith('data:image/') || imageData.length > IMAGE_MAX)) throw AppError.badRequest('Image must be a valid image smaller than 1.5 MB')
@@ -67,8 +67,8 @@ export async function notesRoutes(app: FastifyInstance) {
   })
 
   app.patch('/notes/:id', async (req, reply) => {
-    const ctx = (req as any).tenantCtx
-    const userId = (req as any).user.id as string
+    const ctx = req.tenantCtx!
+    const userId = req.user!.id
     const { id } = req.params as { id: string }
     const body = (req.body || {}) as Record<string, unknown>
     const imageData = body.image_data === null ? null : typeof body.image_data === 'string' ? body.image_data : undefined
@@ -84,8 +84,8 @@ export async function notesRoutes(app: FastifyInstance) {
   })
 
   app.delete('/notes/:id', async (req, reply) => {
-    const ctx = (req as any).tenantCtx
-    const userId = (req as any).user.id as string
+    const ctx = req.tenantCtx!
+    const userId = req.user!.id
     const { id } = req.params as { id: string }
     const deleted = await withTenant(app.db, ctx.tenantId, (client) => deleteNote(client, ctx.tenantId, userId, Number(id)))
     if (!deleted) return reply.code(404).send({ error: 'Note not found' })

@@ -264,17 +264,18 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
     }).partial().optional(),
   }).strict()
 
-  function mergeTenantSettings(raw: Record<string, any>) {
+  function mergeTenantSettings(raw: Record<string, unknown>) {
+    const section = (key: string): Record<string, unknown> => (raw[key] as Record<string, unknown> | undefined) ?? {}
     return {
       ...DEFAULT_SETTINGS,
       ...raw,
-      portal: { ...DEFAULT_SETTINGS.portal, ...(raw.portal ?? {}) },
-      magic_links: { ...DEFAULT_SETTINGS.magic_links, ...(raw.magic_links ?? {}) },
-      ai_triage: { ...DEFAULT_SETTINGS.ai_triage, ...(raw.ai_triage ?? {}) },
-      remote_support: { ...DEFAULT_SETTINGS.remote_support, ...(raw.remote_support ?? {}) },
-      endpoints: { ...DEFAULT_SETTINGS.endpoints, ...(raw.endpoints ?? {}) },
-      monitoring: { ...DEFAULT_SETTINGS.monitoring, ...(raw.monitoring ?? {}) },
-      data_retention: { ...DEFAULT_SETTINGS.data_retention, ...(raw.data_retention ?? {}) },
+      portal: { ...DEFAULT_SETTINGS.portal, ...section('portal') },
+      magic_links: { ...DEFAULT_SETTINGS.magic_links, ...section('magic_links') },
+      ai_triage: { ...DEFAULT_SETTINGS.ai_triage, ...section('ai_triage') },
+      remote_support: { ...DEFAULT_SETTINGS.remote_support, ...section('remote_support') },
+      endpoints: { ...DEFAULT_SETTINGS.endpoints, ...section('endpoints') },
+      monitoring: { ...DEFAULT_SETTINGS.monitoring, ...section('monitoring') },
+      data_retention: { ...DEFAULT_SETTINGS.data_retention, ...section('data_retention') },
     }
   }
 
@@ -284,7 +285,7 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
     async (request) => {
       const ctx = request.tenantCtx!
       const { rows } = await app.db.query('SELECT settings FROM tenants WHERE id = $1', [ctx.tenantId])
-      const raw = (rows[0]?.settings ?? {}) as Record<string, any>
+      const raw = (rows[0]?.settings ?? {}) as Record<string, unknown>
       return { settings: mergeTenantSettings(raw) }
     },
   )
@@ -294,12 +295,15 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
     { preHandler: [authenticate, requireTenant, requirePermission('settings.manage')] },
     async (request, reply) => {
       const ctx = request.tenantCtx!
-      const body = tenantSettingsPatchSchema.parse(request.body || {}) as Record<string, any>
+      const body = tenantSettingsPatchSchema.parse(request.body || {}) as Record<string, unknown>
       const { rows } = await app.db.query('SELECT settings FROM tenants WHERE id = $1', [ctx.tenantId])
-      const current = mergeTenantSettings((rows[0]?.settings ?? {}) as Record<string, any>) as Record<string, any>
+      const current = mergeTenantSettings((rows[0]?.settings ?? {}) as Record<string, unknown>) as Record<string, unknown>
       for (const [key, value] of Object.entries(body)) {
-        if (value && typeof value === 'object' && !Array.isArray(value)) current[key] = { ...(current[key] ?? {}), ...value }
-        else current[key] = value
+        if (value && typeof value === 'object' && !Array.isArray(value)) {
+          current[key] = { ...(current[key] as Record<string, unknown> ?? {}), ...(value as Record<string, unknown>) }
+        } else {
+          current[key] = value
+        }
       }
       const merged = mergeTenantSettings(current)
       await app.db.query('UPDATE tenants SET settings = $2::jsonb WHERE id = $1', [ctx.tenantId, JSON.stringify(merged)])

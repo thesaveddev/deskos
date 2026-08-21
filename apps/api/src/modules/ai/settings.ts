@@ -112,7 +112,32 @@ function validateEndpoint(raw: string, production: boolean): string {
   return url.toString().replace(/\/$/, '')
 }
 
-function entitlementFor(row: Record<string, any>): AiEntitlement {
+interface AiRuntimeRow {
+  enabled?: boolean | null
+  provider_mode?: string | null
+  provider?: string | null
+  base_url?: string | null
+  model?: string | null
+  api_key_enc?: string | null
+  model_allowlist?: string | null
+  monthly_request_limit?: number | null
+  monthly_token_limit?: number | null
+  api_key_version?: number | null
+  api_key_rotated_at?: string | Date | null
+  retention_days?: number | null
+  redact_content?: boolean | null
+  last_tested_at?: string | Date | null
+  last_test_ok?: boolean | null
+  last_test_error?: string | null
+  plan_slug?: string | null
+  ai_enabled?: boolean | null
+  ai_monthly_requests?: number | null
+  ai_monthly_tokens?: number | null
+  requests_used?: number
+  tokens_used?: number
+}
+
+function entitlementFor(row: AiRuntimeRow): AiEntitlement {
   if (!row.plan_slug) return TRIAL_ENTITLEMENT
   return {
     plan: String(row.plan_slug),
@@ -123,7 +148,7 @@ function entitlementFor(row: Record<string, any>): AiEntitlement {
   }
 }
 
-async function loadRuntimeRow(pool: DbPool, tenantId: string): Promise<Record<string, any>> {
+async function loadRuntimeRow(pool: DbPool, tenantId: string): Promise<AiRuntimeRow> {
   return withTenant(pool, tenantId, async (client) => {
     const result = await client.query(
       `SELECT s.enabled, s.provider_mode, s.provider, s.base_url, s.model, s.api_key_enc,
@@ -158,7 +183,8 @@ export async function getTenantAiRuntime(
   const row = await loadRuntimeRow(pool, tenantId)
   const entitlement = entitlementFor(row)
   const mode: AiProviderMode = row.provider_mode === 'byok' ? 'byok' : 'managed'
-  const provider: AiProviderName = ['openai_compatible', 'azure_openai', 'ollama', 'vllm'].includes(row.provider) ? row.provider : 'openai_compatible'
+  const rawProvider = row.provider ?? ''
+  const provider: AiProviderName = ['openai_compatible', 'azure_openai', 'ollama', 'vllm'].includes(rawProvider) ? rawProvider as AiProviderName : 'openai_compatible'
   const apiKey = mode === 'byok' && typeof row.api_key_enc === 'string' && isEncryptedSecret(row.api_key_enc)
     ? decryptSecret(row.api_key_enc, config.emailKey)
     : mode === 'managed' ? config.ai.apiKey : ''

@@ -12,10 +12,6 @@ const VISIBILITIES = ['internal', 'portal', 'public'] as const
 const STATUSES = ['draft', 'review', 'published', 'archived'] as const
 const RELATION_TYPES = ['related', 'prerequisite', 'follow_up'] as const
 
-type Visibility = (typeof VISIBILITIES)[number]
-
-type ArticleStatus = (typeof STATUSES)[number]
-
 const folderSchema = z.object({
   name: z.string().trim().min(1).max(120),
   parentId: z.string().uuid().nullable().optional(),

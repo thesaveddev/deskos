@@ -28,7 +28,7 @@ describe('ICE server configuration', () => {
     const turn = servers.filter((server) => typeof server.urls === 'string' && server.urls.startsWith('turn'))
     expect(turn).toHaveLength(2)
     for (const server of turn) {
-      expect(server.username).toMatch(/^\d+:deskos$/)
+      expect(server.username).toMatch(/^\d+:reydesk$/)
       expect(
         verifyTurnCredential(TURN_SECRET, server.username!, server.credential!),
       ).toBe(true)

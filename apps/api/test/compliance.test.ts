@@ -78,7 +78,10 @@ describe('compliance dashboards and analytics', () => {
     const body = res.json()
     expect(body.sessions.total).toBe(0)
     expect(body.sessions.byType).toEqual([])
-    expect(body.workload).toEqual([])
+    // Ticket creation auto-assigns to the creator, so the owner shows one open workload entry.
+    expect(body.workload).toHaveLength(1)
+    expect(body.workload[0].open).toBe(1)
+    expect(body.workload[0].resolved).toBe(0)
     expect(body.sla.complianceRate).toBe(100)
   })
 

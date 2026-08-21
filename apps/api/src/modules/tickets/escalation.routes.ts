@@ -10,6 +10,8 @@ import {
   forwardTicket, mergeTickets,
   listActivity,
   bulkUpdateTickets,
+  type EscalationPolicy,
+  type EscalationPath,
 } from './escalation.service.js'
 
 export async function escalationRoutes(app: FastifyInstance) {
@@ -19,29 +21,29 @@ export async function escalationRoutes(app: FastifyInstance) {
   // ── Escalation policies ──
 
   app.get('/escalation-policies', { preHandler: requirePermission('ticket.read') }, async (req, reply) => {
-    const ctx = (req as any).tenantCtx
+    const ctx = req.tenantCtx!
     const policies = await withTenant(app.db, ctx.tenantId, (client) => listEscalationPolicies(client, ctx.tenantId))
     return reply.send({ policies })
   })
 
   app.post('/escalation-policies', { preHandler: requirePermission('ticket.write') }, async (req, reply) => {
-    const ctx = (req as any).tenantCtx
-    const body = (req.body || {}) as Record<string, unknown>
-    const policy = await withTenant(app.db, ctx.tenantId, (client) => createEscalationPolicy(client, ctx.tenantId, body as any))
+    const ctx = req.tenantCtx!
+    const body = (req.body ?? {}) as Partial<EscalationPolicy>
+    const policy = await withTenant(app.db, ctx.tenantId, (client) => createEscalationPolicy(client, ctx.tenantId, body))
     return reply.code(201).send({ policy })
   })
 
   app.patch('/escalation-policies/:id', { preHandler: requirePermission('ticket.write') }, async (req, reply) => {
-    const ctx = (req as any).tenantCtx
+    const ctx = req.tenantCtx!
     const { id } = req.params as { id: string }
-    const body = (req.body || {}) as Record<string, unknown>
-    const policy = await withTenant(app.db, ctx.tenantId, (client) => updateEscalationPolicy(client, ctx.tenantId, Number(id), body as any))
+    const body = (req.body ?? {}) as Partial<EscalationPolicy>
+    const policy = await withTenant(app.db, ctx.tenantId, (client) => updateEscalationPolicy(client, ctx.tenantId, Number(id), body))
     if (!policy) return reply.code(404).send({ error: 'Policy not found' })
     return reply.send({ policy })
   })
 
   app.delete('/escalation-policies/:id', { preHandler: requirePermission('ticket.write') }, async (req, reply) => {
-    const ctx = (req as any).tenantCtx
+    const ctx = req.tenantCtx!
     const { id } = req.params as { id: string }
     const deleted = await withTenant(app.db, ctx.tenantId, (client) => deleteEscalationPolicy(client, ctx.tenantId, Number(id)))
     if (!deleted) return reply.code(404).send({ error: 'Policy not found' })
@@ -51,33 +53,33 @@ export async function escalationRoutes(app: FastifyInstance) {
   // ── Escalation paths (manual routing rules) ──
 
   app.get('/escalation-paths', { preHandler: requirePermission('ticket.read') }, async (req, reply) => {
-    const ctx = (req as any).tenantCtx
+    const ctx = req.tenantCtx!
     const paths = await withTenant(app.db, ctx.tenantId, (client) => listEscalationPaths(client, ctx.tenantId))
     return reply.send({ paths })
   })
 
   app.post('/escalation-paths', { preHandler: requirePermission('ticket.write') }, async (req, reply) => {
-    const ctx = (req as any).tenantCtx
-    const body = (req.body || {}) as Record<string, unknown>
+    const ctx = req.tenantCtx!
+    const body = (req.body ?? {}) as Partial<EscalationPath>
     try {
-      const path = await withTenant(app.db, ctx.tenantId, (client) => createEscalationPath(client, ctx.tenantId, body as any))
+      const path = await withTenant(app.db, ctx.tenantId, (client) => createEscalationPath(client, ctx.tenantId, body))
       return reply.code(201).send({ path })
-    } catch (e: any) {
-      return reply.code(400).send({ error: e.message || 'Invalid escalation path' })
+    } catch (e) {
+      return reply.code(400).send({ error: e instanceof Error ? e.message : 'Invalid escalation path' })
     }
   })
 
   app.patch('/escalation-paths/:id', { preHandler: requirePermission('ticket.write') }, async (req, reply) => {
-    const ctx = (req as any).tenantCtx
+    const ctx = req.tenantCtx!
     const { id } = req.params as { id: string }
-    const body = (req.body || {}) as Record<string, unknown>
-    const path = await withTenant(app.db, ctx.tenantId, (client) => updateEscalationPath(client, ctx.tenantId, Number(id), body as any))
+    const body = (req.body ?? {}) as Partial<EscalationPath>
+    const path = await withTenant(app.db, ctx.tenantId, (client) => updateEscalationPath(client, ctx.tenantId, Number(id), body))
     if (!path) return reply.code(404).send({ error: 'Path not found' })
     return reply.send({ path })
   })
 
   app.delete('/escalation-paths/:id', { preHandler: requirePermission('ticket.write') }, async (req, reply) => {
-    const ctx = (req as any).tenantCtx
+    const ctx = req.tenantCtx!
     const { id } = req.params as { id: string }
     const deleted = await withTenant(app.db, ctx.tenantId, (client) => deleteEscalationPath(client, ctx.tenantId, Number(id)))
     if (!deleted) return reply.code(404).send({ error: 'Path not found' })
@@ -87,7 +89,7 @@ export async function escalationRoutes(app: FastifyInstance) {
   // Paths that match a ticket's current team / category / priority, so the
   // detail view can pre-fill the Escalate form in one click.
   app.get('/tickets/:id/escalation-paths', { preHandler: requirePermission('ticket.read') }, async (req, reply) => {
-    const ctx = (req as any).tenantCtx
+    const ctx = req.tenantCtx!
     const { id } = req.params as { id: string }
     const paths = await withTenant(app.db, ctx.tenantId, async (client) => {
       const ticket = (await client.query(
@@ -108,20 +110,20 @@ export async function escalationRoutes(app: FastifyInstance) {
   // ── Escalate a ticket ──
 
   app.post('/tickets/:id/escalate', { preHandler: requirePermission('ticket.write') }, async (req, reply) => {
-    const ctx = (req as any).tenantCtx
+    const ctx = req.tenantCtx!
     const { id } = req.params as { id: string }
-    const body = (req.body || {}) as { to_team_id?: string; to_assignee_id?: string; reason: string }
+    const body = (req.body ?? {}) as { to_team_id?: string; to_assignee_id?: string; reason: string }
     if (!body.reason) return reply.code(400).send({ error: 'reason is required' })
     try {
       const escalation = await withTenant(app.db, ctx.tenantId, (client) => escalateTicket(client, ctx.tenantId, id, ctx.userId, body))
       return reply.code(201).send({ escalation })
-    } catch (e: any) {
-      return reply.code(404).send({ error: e.message || 'Ticket not found' })
+    } catch (e) {
+      return reply.code(404).send({ error: e instanceof Error ? e.message : 'Ticket not found' })
     }
   })
 
   app.get('/tickets/:id/escalations', { preHandler: requirePermission('ticket.read') }, async (req, reply) => {
-    const ctx = (req as any).tenantCtx
+    const ctx = req.tenantCtx!
     const { id } = req.params as { id: string }
     const escalations = await withTenant(app.db, ctx.tenantId, (client) => getTicketEscalations(client, ctx.tenantId, id))
     return reply.send({ escalations })
@@ -130,22 +132,22 @@ export async function escalationRoutes(app: FastifyInstance) {
   // ── Forward ticket ──
 
   app.post('/tickets/:id/forward', { preHandler: requirePermission('ticket.write') }, async (req, reply) => {
-    const ctx = (req as any).tenantCtx
+    const ctx = req.tenantCtx!
     const { id } = req.params as { id: string }
-    const body = (req.body || {}) as { to_team_id?: string; to_assignee_id?: string; note?: string }
+    const body = (req.body ?? {}) as { to_team_id?: string; to_assignee_id?: string; note?: string }
     try {
       await withTenant(app.db, ctx.tenantId, (client) => forwardTicket(client, ctx.tenantId, id, ctx.userId, body))
       return reply.send({ ok: true })
-    } catch (e: any) {
-      return reply.code(404).send({ error: e.message || 'Ticket not found' })
+    } catch (e) {
+      return reply.code(404).send({ error: e instanceof Error ? e.message : 'Ticket not found' })
     }
   })
 
   // ── Merge tickets ──
 
   app.post('/tickets/merge', { preHandler: requirePermission('ticket.write') }, async (req, reply) => {
-    const ctx = (req as any).tenantCtx
-    const body = (req.body || {}) as { primary_id: string; duplicate_ids: string[] }
+    const ctx = req.tenantCtx!
+    const body = (req.body ?? {}) as { primary_id: string; duplicate_ids: string[] }
     if (!body.primary_id || !body.duplicate_ids?.length) {
       return reply.code(400).send({ error: 'primary_id and duplicate_ids are required' })
     }
@@ -156,8 +158,8 @@ export async function escalationRoutes(app: FastifyInstance) {
   // ── Bulk update ──
 
   app.post('/tickets/bulk', { preHandler: requirePermission('ticket.write') }, async (req, reply) => {
-    const ctx = (req as any).tenantCtx
-    const body = (req.body || {}) as { ticket_ids: string[]; status?: string; assignee_id?: string; team_id?: string; priority?: string }
+    const ctx = req.tenantCtx!
+    const body = (req.body ?? {}) as { ticket_ids: string[]; status?: string; assignee_id?: string; team_id?: string; priority?: string }
     if (!body.ticket_ids?.length) return reply.code(400).send({ error: 'ticket_ids is required' })
     const count = await withTenant(app.db, ctx.tenantId, (client) => bulkUpdateTickets(client, ctx.tenantId, body.ticket_ids, ctx.userId, {
       status: body.status,
@@ -171,7 +173,7 @@ export async function escalationRoutes(app: FastifyInstance) {
   // ── Activity log ──
 
   app.get('/tickets/:id/activity', { preHandler: requirePermission('ticket.read') }, async (req, reply) => {
-    const ctx = (req as any).tenantCtx
+    const ctx = req.tenantCtx!
     const { id } = req.params as { id: string }
     const activity = await withTenant(app.db, ctx.tenantId, (client) => listActivity(client, ctx.tenantId, id))
     return reply.send({ activity })
