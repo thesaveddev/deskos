@@ -560,10 +560,10 @@ export default function TicketDetailPage() {
             ))}
           </select>
           <button className="btn btn-ghost btn-sm" disabled={readOnlyForLock} onClick={() => { setShowEscalate(!showEscalate); setShowForward(false) }}>
-            ⬆ Escalate
+            <Icon name="activity" size={14} />Escalate
           </button>
           <button className="btn btn-ghost btn-sm" disabled={readOnlyForLock} onClick={() => { setShowForward(!showForward); setShowEscalate(false) }}>
-            ➤ Forward
+            <Icon name="forward" size={14} />Forward
           </button>
         </div>
 
@@ -571,6 +571,7 @@ export default function TicketDetailPage() {
         {showEscalate && (
           <div className="ticket-escalate-form">
             <h4 className="ticket-escalate-title">Escalate ticket</h4>
+            <p className="ticket-escalate-hint">Raise to a higher-level team with a reason. This bumps the escalation level and records a permanent entry in the escalation history.</p>
             <select className="field-input select-sm" value={escTeam} onChange={(e) => setEscTeam(e.target.value)}>
               <option value="">Keep current team</option>
               {teams.filter((t) => t.accepts_tickets !== false).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -588,7 +589,8 @@ export default function TicketDetailPage() {
         {/* Forward form */}
         {showForward && (
           <div className="ticket-escalate-form">
-            <h4 className="ticket-escalate-title">Forward to team</h4>
+            <h4 className="ticket-escalate-title">Forward to another team</h4>
+            <p className="ticket-escalate-hint">Hand this ticket to the correct team. No escalation level is raised and no escalation history entry is written — this is a simple hand-off.</p>
             <select className="field-input select-sm" value={fwdTeam} onChange={(e) => setFwdTeam(e.target.value)}>
               <option value="">Select a team…</option>
               {teams.filter((t) => t.accepts_tickets !== false).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}

@@ -245,6 +245,44 @@ export interface Team {
   accepts_tickets?: boolean
 }
 
+export interface EscalationPath {
+  id: number
+  name: string
+  description: string
+  source_team_id: string | null
+  source_category_id: string | null
+  source_priority: string[]
+  target_team_id: string
+  target_assignee_id: string | null
+  auto_assign: boolean
+  enabled: boolean
+  position: number
+  target_team_name?: string
+  target_assignee_name?: string
+  source_team_name?: string
+  source_category_name?: string
+}
+
+export function listEscalationPaths(): Promise<{ paths: EscalationPath[] }> {
+  return api('/escalation-paths')
+}
+
+export function createEscalationPath(data: Partial<EscalationPath>): Promise<{ path: EscalationPath }> {
+  return api('/escalation-paths', { method: 'POST', body: data })
+}
+
+export function updateEscalationPath(id: number, data: Partial<EscalationPath>): Promise<{ path: EscalationPath }> {
+  return api(`/escalation-paths/${id}`, { method: 'PATCH', body: data })
+}
+
+export function deleteEscalationPath(id: number): Promise<{ ok: boolean }> {
+  return api(`/escalation-paths/${id}`, { method: 'DELETE' })
+}
+
+export function getTicketEscalationPaths(ticketId: string): Promise<{ paths: EscalationPath[] }> {
+  return api(`/tickets/${ticketId}/escalation-paths`)
+}
+
 export function escalateTicket(id: string, data: { to_team_id?: string; to_assignee_id?: string; reason: string }): Promise<{ escalation: Escalation }> {
   return api(`/tickets/${id}/escalate`, { method: 'POST', body: data })
 }

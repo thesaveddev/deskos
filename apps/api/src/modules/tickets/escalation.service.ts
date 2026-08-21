@@ -1,4 +1,4 @@
-import type { DbPool } from '../../db/pool.js'
+import { withTenant, type DbClient, type DbPool } from '../../db/pool.js'
 import { assertTeamAcceptsTickets } from '../teams/team-policy.js'
 
 /* ── Escalation ──────────────────────────────────────────────── */
@@ -33,7 +33,7 @@ export interface TicketEscalation {
   created_at: string
 }
 
-export async function listEscalationPolicies(db: DbPool, tenantId: string): Promise<EscalationPolicy[]> {
+export async function listEscalationPolicies(db: DbClient | DbPool, tenantId: string): Promise<EscalationPolicy[]> {
   const { rows } = await db.query(
     `SELECT * FROM escalation_policies WHERE tenant_id = $1 ORDER BY trigger_after_minutes ASC`,
     [tenantId],
@@ -42,7 +42,7 @@ export async function listEscalationPolicies(db: DbPool, tenantId: string): Prom
 }
 
 export async function createEscalationPolicy(
-  db: DbPool,
+  db: DbClient | DbPool,
   tenantId: string,
   data: Partial<EscalationPolicy>,
 ): Promise<EscalationPolicy> {
@@ -67,7 +67,7 @@ export async function createEscalationPolicy(
 }
 
 export async function updateEscalationPolicy(
-  db: DbPool,
+  db: DbClient | DbPool,
   tenantId: string,
   policyId: number,
   data: Partial<EscalationPolicy>,
@@ -89,7 +89,7 @@ export async function updateEscalationPolicy(
   return rows[0] ?? null
 }
 
-export async function deleteEscalationPolicy(db: DbPool, tenantId: string, policyId: number): Promise<boolean> {
+export async function deleteEscalationPolicy(db: DbClient | DbPool, tenantId: string, policyId: number): Promise<boolean> {
   const { rowCount } = await db.query(
     'DELETE FROM escalation_policies WHERE id = $1 AND tenant_id = $2',
     [policyId, tenantId],
@@ -100,7 +100,7 @@ export async function deleteEscalationPolicy(db: DbPool, tenantId: string, polic
 /* ── Escalate a ticket ───────────────────────────────────────── */
 
 export async function escalateTicket(
-  db: DbPool,
+  db: DbClient | DbPool,
   tenantId: string,
   ticketId: string,
   userId: string,
@@ -147,7 +147,7 @@ export async function escalateTicket(
   return rows[0]
 }
 
-export async function getTicketEscalations(db: DbPool, tenantId: string, ticketId: string): Promise<TicketEscalation[]> {
+export async function getTicketEscalations(db: DbClient | DbPool, tenantId: string, ticketId: string): Promise<TicketEscalation[]> {
   const { rows } = await db.query(
     `SELECT e.*, u.name AS escalated_by_name
      FROM ticket_escalations e
@@ -162,7 +162,7 @@ export async function getTicketEscalations(db: DbPool, tenantId: string, ticketI
 /* ── Forward / Transfer ──────────────────────────────────────── */
 
 export async function forwardTicket(
-  db: DbPool,
+  db: DbClient | DbPool,
   tenantId: string,
   ticketId: string,
   userId: string,
@@ -194,7 +194,7 @@ export async function forwardTicket(
 /* ── Merge tickets ───────────────────────────────────────────── */
 
 export async function mergeTickets(
-  db: DbPool,
+  db: DbClient | DbPool,
   tenantId: string,
   primaryId: string,
   duplicateIds: string[],
@@ -232,7 +232,7 @@ export interface TicketActivity {
 }
 
 export async function logActivity(
-  db: DbPool,
+  db: DbClient | DbPool,
   tenantId: string,
   ticketId: string,
   actorId: string,
@@ -246,7 +246,7 @@ export async function logActivity(
   )
 }
 
-export async function listActivity(db: DbPool, tenantId: string, ticketId: string): Promise<TicketActivity[]> {
+export async function listActivity(db: DbClient | DbPool, tenantId: string, ticketId: string): Promise<TicketActivity[]> {
   const { rows } = await db.query(
     `SELECT a.*, u.name AS actor_name
      FROM ticket_activity a
@@ -262,7 +262,7 @@ export async function listActivity(db: DbPool, tenantId: string, ticketId: strin
 /* ── Bulk actions ────────────────────────────────────────────── */
 
 export async function bulkUpdateTickets(
-  db: DbPool,
+  db: DbClient | DbPool,
   tenantId: string,
   ticketIds: string[],
   userId: string,
@@ -297,7 +297,7 @@ export async function bulkUpdateTickets(
 
 /* ── Teams list (for forwarding) ─────────────────────────────── */
 
-export async function listTeams(db: DbPool, tenantId: string): Promise<Array<{ id: string; name: string }>> {
+export async function listTeams(db: DbClient | DbPool, tenantId: string): Promise<Array<{ id: string; name: string }>> {
   const { rows } = await db.query(
     'SELECT id, name, accepts_tickets FROM teams WHERE tenant_id = $1 ORDER BY name',
     [tenantId],
@@ -305,13 +305,136 @@ export async function listTeams(db: DbPool, tenantId: string): Promise<Array<{ i
   return rows
 }
 
-export async function listTeamMembers(db: DbPool, tenantId: string, teamId: string): Promise<Array<{ id: string; name: string; email: string }>> {
+export async function listTeamMembers(db: DbClient | DbPool, tenantId: string, teamId: string): Promise<Array<{ id: string; name: string; email: string }>> {
   const { rows } = await db.query(
     `SELECT u.id, u.name, u.email FROM users u
      JOIN memberships m ON m.user_id = u.id
      WHERE m.tenant_id = $1 AND m.status = 'active'
      ORDER BY u.name`,
     [tenantId],
+  )
+  return rows
+}
+
+/* ── Escalation paths (routing rules) ───────────────────────── */
+
+export interface EscalationPath {
+  id: number
+  tenant_id: string
+  name: string
+  description: string
+  source_team_id: string | null
+  source_category_id: string | null
+  source_priority: string[]
+  target_team_id: string
+  target_assignee_id: string | null
+  auto_assign: boolean
+  enabled: boolean
+  position: number
+  created_at: string
+  target_team_name?: string
+  target_assignee_name?: string
+  source_team_name?: string
+  source_category_name?: string
+}
+
+const ESCALATION_PATH_SELECT = `
+  SELECT ep.*, tt.name AS target_team_name, ta.name AS target_assignee_name,
+         st.name AS source_team_name, sc.name AS source_category_name
+    FROM escalation_paths ep
+    LEFT JOIN teams tt ON tt.id = ep.target_team_id
+    LEFT JOIN users ta ON ta.id = ep.target_assignee_id
+    LEFT JOIN teams st ON st.id = ep.source_team_id
+    LEFT JOIN categories sc ON sc.id = ep.source_category_id
+`
+
+export async function listEscalationPaths(db: DbClient | DbPool, tenantId: string): Promise<EscalationPath[]> {
+  const { rows } = await db.query(
+    `${ESCALATION_PATH_SELECT} WHERE ep.tenant_id = $1 ORDER BY ep.position ASC, ep.created_at ASC`,
+    [tenantId],
+  )
+  return rows
+}
+
+export async function createEscalationPath(
+  db: DbClient | DbPool,
+  tenantId: string,
+  data: Partial<EscalationPath>,
+): Promise<EscalationPath> {
+  if (!data.target_team_id) throw new Error('target_team_id is required')
+  const { rows } = await db.query(
+    `INSERT INTO escalation_paths
+       (tenant_id, name, description, source_team_id, source_category_id, source_priority,
+        target_team_id, target_assignee_id, auto_assign, enabled, position)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+    [
+      tenantId,
+      data.name || 'Untitled path',
+      data.description || '',
+      data.source_team_id || null,
+      data.source_category_id || null,
+      data.source_priority || [],
+      data.target_team_id,
+      data.target_assignee_id || null,
+      data.auto_assign ?? false,
+      data.enabled ?? true,
+      data.position ?? 0,
+    ],
+  )
+  return rows[0]
+}
+
+export async function updateEscalationPath(
+  db: DbClient | DbPool,
+  tenantId: string,
+  pathId: number,
+  data: Partial<EscalationPath>,
+): Promise<EscalationPath | null> {
+  const allowed = ['name', 'description', 'source_team_id', 'source_category_id', 'source_priority', 'target_team_id', 'target_assignee_id', 'auto_assign', 'enabled', 'position'] as const
+  const fields: string[] = []
+  const values: unknown[] = []
+  let idx = 3
+  for (const key of allowed) {
+    const val = data[key]
+    if (val === undefined) continue
+    fields.push(`${key} = $${idx}`)
+    values.push(val)
+    idx++
+  }
+  if (fields.length === 0) return null
+  const { rows } = await db.query(
+    `UPDATE escalation_paths SET ${fields.join(', ')} WHERE id = $1 AND tenant_id = $2 RETURNING *`,
+    [pathId, tenantId, ...values],
+  )
+  return rows[0] ?? null
+}
+
+export async function deleteEscalationPath(db: DbClient | DbPool, tenantId: string, pathId: number): Promise<boolean> {
+  const { rowCount } = await db.query(
+    'DELETE FROM escalation_paths WHERE id = $1 AND tenant_id = $2',
+    [pathId, tenantId],
+  )
+  return (rowCount ?? 0) > 0
+}
+
+/**
+ * Return the enabled paths that match a ticket's current team, category, and
+ * priority. Used by the ticket detail to pre-fill the Escalate form. A path
+ * matches when every non-empty condition matches (AND semantics).
+ */
+export async function matchEscalationPaths(
+  db: DbClient | DbPool,
+  tenantId: string,
+  ticket: { team_id: string | null; category_id?: string | null; priority: string },
+): Promise<EscalationPath[]> {
+  const { rows } = await db.query(
+    `${ESCALATION_PATH_SELECT}
+      WHERE ep.tenant_id = $1 AND ep.enabled = true
+        AND (ep.source_team_id IS NULL OR ep.source_team_id = $2)
+        AND (ep.source_category_id IS NULL OR ep.source_category_id = $3)
+        AND (cardinality(ep.source_priority) = 0 OR $4 = ANY(ep.source_priority))
+      ORDER BY ep.position ASC, ep.created_at ASC`,
+    [tenantId, ticket.team_id ?? null, ticket.category_id ?? null, ticket.priority],
   )
   return rows
 }

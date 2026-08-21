@@ -7,7 +7,8 @@ import { Icon } from '../components/Icons.js'
 /* ── Types ──────────────────────────────────────────────────── */
 interface SlaPolicy { id: string; name: string; is_default: boolean; matrix: Record<string, { response: number; resolution: number }> }
 interface Category { id: string; name: string; description: string }
-interface EscalationPolicy { id: number; name: string; trigger_after_minutes: number; trigger_on_priority: string[]; target_team_id: string | null; auto_assign: boolean; enabled: boolean }
+interface EscalationPolicy { id: number; name: string; description: string; source_status: string; target_status: string; trigger_after_minutes: number; trigger_on_priority: string[]; target_team_id: string | null; target_role: string | null; auto_assign: boolean; enabled: boolean }
+interface EscalationPath { id: number; name: string; description: string; source_team_id: string | null; source_category_id: string | null; source_priority: string[]; target_team_id: string; target_assignee_id: string | null; auto_assign: boolean; enabled: boolean; position: number; target_team_name?: string; target_assignee_name?: string; source_team_name?: string; source_category_name?: string }
 interface Team { id: string; name: string; accepts_tickets?: boolean }
 interface Settings {
   ticket_prefix: string; auto_assign_enabled: boolean; auto_close_enabled: boolean; auto_close_after_days: number
@@ -15,7 +16,7 @@ interface Settings {
   default_priority: string; default_type: string
 }
 
-type Tab = 'general' | 'sla' | 'categories' | 'escalation'
+type Tab = 'general' | 'sla' | 'categories' | 'escalation-paths' | 'escalation-policies'
 const PRIO = ['p1', 'p2', 'p3', 'p4']
 const TYPES = ['incident', 'service_request', 'question', 'problem', 'change']
 const fmt = (m: number) => m < 60 ? `${m}m` : m < 1440 ? `${Math.round(m / 60)}h` : `${Math.round(m / 1440)}d`
@@ -47,6 +48,7 @@ export default function TicketSettingsPage() {
   const [slaPolicies, setSlaPolicies] = useState<SlaPolicy[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [escalations, setEscalations] = useState<EscalationPolicy[]>([])
+  const [paths, setPaths] = useState<EscalationPath[]>([])
   const [teams, setTeams] = useState<Team[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -65,28 +67,42 @@ export default function TicketSettingsPage() {
   const [catDesc, setCatDesc] = useState('')
   const [showCatForm, setShowCatForm] = useState(false)
 
-  // Escalation form
+  // Escalation policy form
+  const [escEdit, setEscEdit] = useState<EscalationPolicy | null>(null)
   const [escName, setEscName] = useState('')
   const [escMinutes, setEscMinutes] = useState(60)
   const [escPriorities, setEscPriorities] = useState<string[]>([])
   const [escTeam, setEscTeam] = useState('')
   const [escAutoAssign, setEscAutoAssign] = useState(false)
+  const [escSourceStatus, setEscSourceStatus] = useState('open')
+  const [escTargetStatus, setEscTargetStatus] = useState('escalated')
   const [showEscForm, setShowEscForm] = useState(false)
+
+  // Escalation path (routing rule) form
+  const [pathEdit, setPathEdit] = useState<EscalationPath | null>(null)
+  const [pathName, setPathName] = useState('')
+  const [pathSourceTeam, setPathSourceTeam] = useState('')
+  const [pathSourcePriority, setPathSourcePriority] = useState<string[]>([])
+  const [pathTargetTeam, setPathTargetTeam] = useState('')
+  const [pathAutoAssign, setPathAutoAssign] = useState(false)
+  const [showPathForm, setShowPathForm] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [s, sla, cat, esc, t] = await Promise.allSettled([
+      const [s, sla, cat, esc, pth, t] = await Promise.allSettled([
         api('/tenant/settings') as Promise<{ settings: Settings }>,
         api('/sla-policies') as Promise<{ policies: SlaPolicy[] }>,
         api('/categories') as Promise<{ categories: Category[] }>,
         api('/escalation-policies') as Promise<{ policies: EscalationPolicy[] }>,
+        api('/escalation-paths') as Promise<{ paths: EscalationPath[] }>,
         api('/teams') as Promise<{ teams: Team[] }>,
       ])
       if (s.status === 'fulfilled') setSettings(s.value.settings)
       if (sla.status === 'fulfilled') setSlaPolicies(sla.value.policies || [])
       if (cat.status === 'fulfilled') setCategories(cat.value.categories || [])
       if (esc.status === 'fulfilled') setEscalations(esc.value.policies || [])
+      if (pth.status === 'fulfilled') setPaths(pth.value.paths || [])
       if (t.status === 'fulfilled') setTeams(t.value.teams || [])
     } catch (err) { setError(err instanceof Error ? err.message : 'Failed to load') }
     setLoading(false)
@@ -141,21 +157,87 @@ export default function TicketSettingsPage() {
     try { await api(`/categories/${id}`, { method: 'DELETE' }); await load() } catch { /* */ }
   }
 
-  // ── Escalation ──
+  // ── Escalation policies ──
+  const openNewEsc = () => {
+    setEscEdit(null); setEscName(''); setEscMinutes(60); setEscPriorities([]); setEscTeam('')
+    setEscAutoAssign(false); setEscSourceStatus('open'); setEscTargetStatus('escalated'); setShowEscForm(true)
+  }
+
+  const openEditEsc = (policy: EscalationPolicy) => {
+    setEscEdit(policy); setEscName(policy.name); setEscMinutes(policy.trigger_after_minutes)
+    setEscPriorities(policy.trigger_on_priority || []); setEscTeam(policy.target_team_id || '')
+    setEscAutoAssign(policy.auto_assign); setEscSourceStatus(policy.source_status || 'open')
+    setEscTargetStatus(policy.target_status || 'escalated'); setShowEscForm(true)
+  }
+
   const saveEsc = async () => {
     if (!escName.trim()) return
     setBusy(true)
     try {
-      await api('/escalation-policies', { method: 'POST', body: { name: escName, trigger_after_minutes: escMinutes, trigger_on_priority: escPriorities, target_team_id: escTeam || null, auto_assign: escAutoAssign } })
-      setShowEscForm(false); setEscName(''); setEscMinutes(60); setEscPriorities([]); setEscTeam(''); setEscAutoAssign(false)
-      await load(); notify('Escalation policy created')
+      const body = {
+        name: escName,
+        trigger_after_minutes: escMinutes,
+        trigger_on_priority: escPriorities,
+        target_team_id: escTeam || null,
+        auto_assign: escAutoAssign,
+        source_status: escSourceStatus,
+        target_status: escTargetStatus,
+      }
+      if (escEdit) await api(`/escalation-policies/${escEdit.id}`, { method: 'PATCH', body })
+      else await api('/escalation-policies', { method: 'POST', body })
+      setShowEscForm(false); setEscEdit(null)
+      await load(); notify(escEdit ? 'Escalation policy updated' : 'Escalation policy created')
     } catch (err) { setError(err instanceof Error ? err.message : 'Save failed') }
     setBusy(false)
+  }
+
+  const toggleEsc = async (policy: EscalationPolicy) => {
+    try { await api(`/escalation-policies/${policy.id}`, { method: 'PATCH', body: { enabled: !policy.enabled } }); await load() } catch (err) { setError(err instanceof Error ? err.message : 'Update failed') }
   }
 
   const deleteEsc = async (id: number) => {
     if (!await confirm('Delete this policy?', { title: 'Delete escalation policy', confirmLabel: 'Delete policy', destructive: true })) return
     try { await api(`/escalation-policies/${id}`, { method: 'DELETE' }); await load() } catch { /* */ }
+  }
+
+  // ── Escalation paths (routing rules) ──
+  const openNewPath = () => {
+    setPathEdit(null); setPathName(''); setPathSourceTeam(''); setPathSourcePriority([])
+    setPathTargetTeam(''); setPathAutoAssign(false); setShowPathForm(true)
+  }
+
+  const openEditPath = (path: EscalationPath) => {
+    setPathEdit(path); setPathName(path.name); setPathSourceTeam(path.source_team_id || '')
+    setPathSourcePriority(path.source_priority || []); setPathTargetTeam(path.target_team_id || '')
+    setPathAutoAssign(path.auto_assign); setShowPathForm(true)
+  }
+
+  const savePath = async () => {
+    if (!pathName.trim() || !pathTargetTeam) return
+    setBusy(true)
+    try {
+      const body = {
+        name: pathName,
+        source_team_id: pathSourceTeam || null,
+        source_priority: pathSourcePriority,
+        target_team_id: pathTargetTeam,
+        auto_assign: pathAutoAssign,
+      }
+      if (pathEdit) await api(`/escalation-paths/${pathEdit.id}`, { method: 'PATCH', body })
+      else await api('/escalation-paths', { method: 'POST', body })
+      setShowPathForm(false); setPathEdit(null)
+      await load(); notify(pathEdit ? 'Escalation path updated' : 'Escalation path created')
+    } catch (err) { setError(err instanceof Error ? err.message : 'Save failed') }
+    setBusy(false)
+  }
+
+  const togglePath = async (path: EscalationPath) => {
+    try { await api(`/escalation-paths/${path.id}`, { method: 'PATCH', body: { enabled: !path.enabled } }); await load() } catch (err) { setError(err instanceof Error ? err.message : 'Update failed') }
+  }
+
+  const deletePath = async (id: number) => {
+    if (!await confirm('Delete this escalation path?', { title: 'Delete escalation path', confirmLabel: 'Delete path', destructive: true })) return
+    try { await api(`/escalation-paths/${id}`, { method: 'DELETE' }); await load() } catch { /* */ }
   }
 
   if (loading) return <div className="etch" style={{ padding: 24 }}>Loading…</div>
@@ -166,7 +248,7 @@ export default function TicketSettingsPage() {
       {notice && <Alert kind="info">{notice}</Alert>}
 
       <div className="ts-tabs">
-        {([['general', 'General'], ['sla', 'SLA Policies'], ['categories', 'Categories'], ['escalation', 'Escalation']] as [Tab, string][]).map(([k, l]) => (
+        {([['general', 'General'], ['sla', 'SLA Policies'], ['categories', 'Categories'], ['escalation-paths', 'Escalation paths'], ['escalation-policies', 'Escalation policies']] as [Tab, string][]).map(([k, l]) => (
           <button key={k} className={`ts-tab ${tab === k ? 'active' : ''}`} onClick={() => setTab(k)}>{l}</button>
         ))}
       </div>
@@ -322,12 +404,85 @@ export default function TicketSettingsPage() {
         </div>
       )}
 
-      {/* ═══ ESCALATION ═══ */}
-      {tab === 'escalation' && (
+      {/* ═══ ESCALATION PATHS ═══ */}
+      {tab === 'escalation-paths' && (
         <div className="ts-sections">
           <div className="ts-section-header">
-            <p className="ts-section-desc">Automatically escalate tickets based on time and priority.</p>
-            <button className="btn btn-primary btn-sm" onClick={() => { setEscName(''); setEscMinutes(60); setEscPriorities([]); setEscTeam(''); setEscAutoAssign(false); setShowEscForm(true) }}><Icon name="add" size={14} />New policy</button>
+            <p className="ts-section-desc">One-click routing rules for the manual Escalate action. When a ticket matches the source team and priority, agents see the destination pre-filled.</p>
+            <button className="btn btn-primary btn-sm" onClick={openNewPath}><Icon name="add" size={14} />New path</button>
+          </div>
+
+          {paths.length === 0 && <p className="ts-empty">No escalation paths yet. Create one to speed up manual escalations.</p>}
+
+          <div className="ts-list">
+            {paths.map((p) => (
+              <div key={p.id} className="ts-list-row">
+                <div className="ts-list-info">
+                  <span className="ts-list-name">{p.name}</span>
+                  <span className="ts-list-desc">
+                    {p.source_team_id ? `From ${p.source_team_name || 'team'} ` : 'Any team '}
+                    {p.source_priority.length > 0 ? `· ${p.source_priority.map((x) => x.toUpperCase()).join(', ')} ` : ''}
+                    → {p.target_team_name || '?'}
+                    {p.auto_assign && ' · Auto-assign'}
+                  </span>
+                </div>
+                <div className="ts-list-actions">
+                  <button className={`ts-badge ts-badge-btn ${p.enabled ? 'ts-badge-ok' : 'ts-badge-muted'}`} onClick={() => void togglePath(p)} disabled={!canManage} title={p.enabled ? 'Enabled — click to disable' : 'Disabled — click to enable'}>{p.enabled ? 'On' : 'Off'}</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => openEditPath(p)}><Icon name="edit" size={14} />Edit</button>
+                  <button className="btn btn-ghost btn-sm btn-danger" onClick={() => void deletePath(p.id)}>Delete</button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <Modal open={showPathForm} onClose={() => { if (!busy) setShowPathForm(false) }} title={`${pathEdit ? 'Edit' : 'New'} Escalation Path`} width={560}>
+            <p className="ts-hint" style={{ marginBottom: '1rem' }}>A path matches when the ticket's current team and priority match. Empty conditions match anything.</p>
+            <div className="ts-field" style={{ marginBottom: '1rem' }}>
+              <label className="ts-label">Name</label>
+              <input className="ts-input" value={pathName} onChange={(e) => setPathName(e.target.value)} placeholder="e.g. Desktop → Infrastructure" autoFocus />
+            </div>
+            <div className="ts-grid-2" style={{ marginBottom: '1rem' }}>
+              <div className="ts-field">
+                <label className="ts-label">Source team (optional)</label>
+                <select className="ts-input" value={pathSourceTeam} onChange={(e) => setPathSourceTeam(e.target.value)}>
+                  <option value="">Any team</option>
+                  {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              </div>
+              <div className="ts-field">
+                <label className="ts-label">Target team</label>
+                <select className="ts-input" value={pathTargetTeam} onChange={(e) => setPathTargetTeam(e.target.value)}>
+                  <option value="">Select team…</option>
+                  {teams.filter((t) => t.accepts_tickets !== false).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="ts-field" style={{ marginBottom: '1rem' }}>
+              <label className="ts-label">Source priority (optional)</label>
+              <div className="ts-checkbox-row">
+                {PRIO.map((p) => (
+                  <label key={p} className="ts-checkbox">
+                    <input type="checkbox" checked={pathSourcePriority.includes(p)} onChange={() => setPathSourcePriority((prev) => prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p])} />
+                    <span>{p.toUpperCase()}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <Toggle label="Auto-assign on escalation" desc="Assign to the target team's lead (or first member) when this path is used" checked={pathAutoAssign} onChange={setPathAutoAssign} />
+            <div className="ts-form-actions" style={{ marginTop: '1rem' }}>
+              <button className="btn btn-primary btn-sm" onClick={() => void savePath()} disabled={busy || !pathName.trim() || !pathTargetTeam}>{busy ? 'Saving…' : 'Save'}</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowPathForm(false)}>Cancel</button>
+            </div>
+          </Modal>
+        </div>
+      )}
+
+      {/* ═══ ESCALATION POLICIES ═══ */}
+      {tab === 'escalation-policies' && (
+        <div className="ts-sections">
+          <div className="ts-section-header">
+            <p className="ts-section-desc">Automatically escalate tickets that have been stuck in a status for too long, based on priority.</p>
+            <button className="btn btn-primary btn-sm" onClick={openNewEsc}><Icon name="add" size={14} />New policy</button>
           </div>
 
           {escalations.length === 0 && <p className="ts-empty">No escalation policies yet.</p>}
@@ -338,21 +493,22 @@ export default function TicketSettingsPage() {
                 <div className="ts-list-info">
                   <span className="ts-list-name">{e.name}</span>
                   <span className="ts-list-desc">
-                    After {e.trigger_after_minutes} min
+                    After {e.trigger_after_minutes} min in "{e.source_status || 'open'}"
                     {e.trigger_on_priority.length > 0 && ` · ${e.trigger_on_priority.map((p) => p.toUpperCase()).join(', ')}`}
                     {e.target_team_id && ` → ${teams.find((t) => t.id === e.target_team_id)?.name || '?'}`}
                     {e.auto_assign && ' · Auto-assign'}
                   </span>
                 </div>
                 <div className="ts-list-actions">
-                  <span className={`ts-badge ${e.enabled ? 'ts-badge-ok' : 'ts-badge-muted'}`}>{e.enabled ? 'On' : 'Off'}</span>
+                  <button className={`ts-badge ts-badge-btn ${e.enabled ? 'ts-badge-ok' : 'ts-badge-muted'}`} onClick={() => void toggleEsc(e)} disabled={!canManage} title={e.enabled ? 'Enabled — click to disable' : 'Disabled — click to enable'}>{e.enabled ? 'On' : 'Off'}</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => openEditEsc(e)}><Icon name="edit" size={14} />Edit</button>
                   <button className="btn btn-ghost btn-sm btn-danger" onClick={() => void deleteEsc(e.id)}>Delete</button>
                 </div>
               </div>
             ))}
           </div>
 
-          <Modal open={showEscForm} onClose={() => { if (!busy) setShowEscForm(false) }} title="New Escalation Policy" width={560}>
+          <Modal open={showEscForm} onClose={() => { if (!busy) setShowEscForm(false) }} title={`${escEdit ? 'Edit' : 'New'} Escalation Policy`} width={560}>
             <div className="ts-grid-2" style={{ marginBottom: '1rem' }}>
               <div className="ts-field">
                 <label className="ts-label">Name</label>
@@ -361,6 +517,20 @@ export default function TicketSettingsPage() {
               <div className="ts-field">
                 <label className="ts-label">Trigger after (minutes)</label>
                 <input className="ts-input" type="number" min={1} value={escMinutes} onChange={(e) => setEscMinutes(Number(e.target.value))} />
+              </div>
+            </div>
+            <div className="ts-grid-2" style={{ marginBottom: '1rem' }}>
+              <div className="ts-field">
+                <label className="ts-label">Source status</label>
+                <select className="ts-input" value={escSourceStatus} onChange={(e) => setEscSourceStatus(e.target.value)}>
+                  {['new', 'open', 'in_progress', 'pending_user', 'pending_vendor'].map((s) => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
+                </select>
+              </div>
+              <div className="ts-field">
+                <label className="ts-label">Escalate to status</label>
+                <select className="ts-input" value={escTargetStatus} onChange={(e) => setEscTargetStatus(e.target.value)}>
+                  {['escalated', 'open', 'in_progress'].map((s) => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
+                </select>
               </div>
             </div>
             <div className="ts-field" style={{ marginBottom: '1rem' }}>
@@ -383,7 +553,7 @@ export default function TicketSettingsPage() {
             </div>
             <Toggle label="Auto-assign to team members" checked={escAutoAssign} onChange={setEscAutoAssign} />
             <div className="ts-form-actions" style={{ marginTop: '1rem' }}>
-              <button className="btn btn-primary btn-sm" onClick={() => void saveEsc()} disabled={busy || !escName.trim()}>{busy ? 'Saving…' : 'Create'}</button>
+              <button className="btn btn-primary btn-sm" onClick={() => void saveEsc()} disabled={busy || !escName.trim()}>{busy ? 'Saving…' : 'Save'}</button>
               <button className="btn btn-ghost btn-sm" onClick={() => setShowEscForm(false)}>Cancel</button>
             </div>
           </Modal>
