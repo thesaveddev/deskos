@@ -9,7 +9,7 @@ import { consumeMfaSetupToken, consumeRecoveryCode, createMfaSetupToken, getMfaS
 import { consumeMagicLinkToken, createMagicLinkToken, getMagicLinkToken } from './magic-link.js'
 import { isAccountLocked, recordFailedLogin, resetFailedLoginCount } from './auth.password-reset.js'
 import { AppError } from '../../core/errors.js'
-import { permissionsForRole, isOrgRole } from '../../core/permissions.js'
+import { ADMIN_OR_OWNER_ROLES, permissionsForRole, isOrgRole } from '../../core/permissions.js'
 import { withTenant } from '../../db/pool.js'
 import { authenticate } from '../../middleware/authenticate.js'
 import '../../types.js'
@@ -278,7 +278,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       [user.id],
     )
     const orgMfaPolicy = memberships.find((m: any) => m.settings?.mfa_policy)?.settings?.mfa_policy ?? 'optional'
-    const isAdminOrOwner = memberships.some((m: any) => ['admin', 'owner'].includes(m.org_role))
+    const isAdminOrOwner = memberships.some((m: any) => ADMIN_OR_OWNER_ROLES.includes(m.org_role))
 
     const mfaEnforced = orgMfaPolicy === 'required' || (orgMfaPolicy === 'admin_only' && isAdminOrOwner)
 
@@ -427,7 +427,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       `SELECT m.org_role, t.settings FROM memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.user_id = $1 AND m.status = 'active'`,
       [request.user!.id],
     )
-    const cannotDisable = policies.some((item: any) => item.settings?.mfa_policy === 'required' || (item.settings?.mfa_policy === 'admin_only' && ['admin', 'owner'].includes(item.org_role)))
+    const cannotDisable = policies.some((item: any) => item.settings?.mfa_policy === 'required' || (item.settings?.mfa_policy === 'admin_only' && ADMIN_OR_OWNER_ROLES.includes(item.org_role)))
     if (cannotDisable) throw new AppError(403, 'mfa_policy_required', 'Your organization requires MFA for this account. Ask an administrator to change the policy first.')
     const { code } = mfaCodeSchema.parse(request.body)
     const { rows } = await app.db.query('SELECT mfa_secret FROM users WHERE id = $1 AND mfa_enabled = true', [request.user!.id])
@@ -455,6 +455,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
           slug: r.slug,
           name: r.name,
           branding: (r.settings?.branding ?? {}) as Record<string, unknown>,
+          mfaPolicy: r.settings?.mfa_policy ?? 'optional',
         },
         orgRole: r.org_role,
         permissions: permissionsForRole(r.org_role),

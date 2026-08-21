@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { ApiError, api, clearTokens, getAccessToken, getActiveTenant, setActiveTenant as persistActiveTenant, setTokens } from './api.js'
 
 export interface Membership {
-  tenant: { id: string; slug: string; name: string; branding?: { portalTitle?: string; logoUrl?: string; primaryColor?: string } }
+  tenant: { id: string; slug: string; name: string; branding?: { portalTitle?: string; logoUrl?: string; primaryColor?: string }; mfaPolicy?: string }
   orgRole: string
   permissions: string[]
 }

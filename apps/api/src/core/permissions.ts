@@ -10,6 +10,10 @@ export const ORG_ROLES = [
   'end_user',
 ] as const
 
+// Roles treated as administrators for the `admin_only` MFA policy. The legacy
+// 'admin' role no longer exists; the management roles are the effective admins.
+export const ADMIN_OR_OWNER_ROLES: readonly string[] = ['owner', 'it_manager', 'service_desk_manager']
+
 export type OrgRole = (typeof ORG_ROLES)[number]
 
 export const PERMISSIONS = [

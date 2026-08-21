@@ -118,7 +118,7 @@ describe('tenant settings', () => {
     expect(required.json()).toMatchObject({ mfa_policy: 'required', users_total: 1, users_with_mfa: 0, users_needing_setup: 1 })
 
     await seedActiveMember(app, ownerA.tenantId!, 'analyst')
-    await seedActiveMember(app, ownerA.tenantId!, 'admin')
+    await seedActiveMember(app, ownerA.tenantId!, 'service_desk_manager')
     const adminOnly = await app.inject({
       method: 'PATCH',
       url: '/api/v1/tenant/mfa-policy',

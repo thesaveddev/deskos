@@ -87,7 +87,7 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
            count(*) FILTER (WHERE u.mfa_enabled = true)::int AS users_with_mfa,
            count(*) FILTER (
              WHERE u.mfa_enabled = false
-               AND ($2 = 'required' OR ($2 = 'admin_only' AND m.org_role IN ('admin', 'owner')))
+               AND ($2 = 'required' OR ($2 = 'admin_only' AND m.org_role IN ('owner', 'it_manager', 'service_desk_manager')))
            )::int AS users_needing_setup
          FROM memberships m
          JOIN users u ON u.id = m.user_id
@@ -126,7 +126,7 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
            count(*)::int AS total,
            count(*) FILTER (
              WHERE u.mfa_enabled = false
-               AND ($2 = 'required' OR ($2 = 'admin_only' AND m.org_role IN ('admin', 'owner')))
+               AND ($2 = 'required' OR ($2 = 'admin_only' AND m.org_role IN ('owner', 'it_manager', 'service_desk_manager')))
            )::int AS needing_setup
          FROM memberships m
          JOIN users u ON u.id = m.user_id
