@@ -69,6 +69,43 @@ export default function TicketDetailPage() {
   const [previewImage, setPreviewImage] = useState<{ id: string; filename: string; url: string } | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewZoom, setPreviewZoom] = useState(1)
+
+  // Inline thumbnails for image attachments in the list.
+  const [thumbnails, setThumbnails] = useState<Record<string, string>>({})
+  const thumbUrlsRef = useRef<Record<string, string>>({})
+  const thumbLoadedRef = useRef<Set<string>>(new Set())
+
+  useEffect(() => {
+    if (!id) return
+    let cancelled = false
+    const pending = attachments.filter((a) => (a.mime ?? '').startsWith('image/') && !thumbLoadedRef.current.has(a.id))
+    void Promise.all(pending.map(async (a) => {
+      try {
+        const url = await fetchAttachmentBlob(getAccessToken() ?? '', a.id)
+        return { id: a.id, url } as const
+      } catch {
+        return null
+      }
+    })).then((results) => {
+      if (cancelled) return
+      const next: Record<string, string> = {}
+      for (const result of results) {
+        if (!result) continue
+        next[result.id] = result.url
+        thumbLoadedRef.current.add(result.id)
+        thumbUrlsRef.current[result.id] = result.url
+      }
+      if (Object.keys(next).length > 0) setThumbnails((prev) => ({ ...prev, ...next }))
+    })
+    return () => { cancelled = true }
+  }, [id, attachments])
+
+  useEffect(() => () => {
+    for (const url of Object.values(thumbUrlsRef.current)) URL.revokeObjectURL(url)
+    thumbUrlsRef.current = {}
+    thumbLoadedRef.current.clear()
+  }, [])
+
   const [aiSummary, setAiSummary] = useState<string | null>(null)
   const [aiSummaryBusy, setAiSummaryBusy] = useState(false)
   const [aiSimilar, setAiSimilar] = useState<SimilarTicket[]>([])
@@ -1046,7 +1083,15 @@ export default function TicketDetailPage() {
                   onClick={() => (isImageAttachment(a) ? void openImagePreview(a) : void downloadAttachment(getAccessToken() ?? '', a.id, a.filename))}
                   title={isImageAttachment(a) ? 'Preview' : 'Download'}
                 >
-                  <span className="attachment-icon"><Icon name={isImageAttachment(a) ? 'image' : 'file'} size={14} /></span>
+                  {isImageAttachment(a) ? (
+                    thumbnails[a.id] ? (
+                      <span className="attachment-thumb"><img src={thumbnails[a.id]} alt="" loading="lazy" /></span>
+                    ) : (
+                      <span className="attachment-icon"><Icon name="image" size={14} /></span>
+                    )
+                  ) : (
+                    <span className="attachment-icon"><Icon name="file" size={14} /></span>
+                  )}
                   <span className="attachment-name">{a.filename}</span>
                 </button>
                 <span className="muted mono">{Math.max(1, Math.round(a.size_bytes / 1024))} KB · {a.uploader_name ?? '—'}</span>
