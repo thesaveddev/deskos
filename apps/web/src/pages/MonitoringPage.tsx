@@ -68,6 +68,7 @@ export default function MonitoringPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<'overview' | 'alerts' | 'rules' | 'availability'>('overview')
 
   const load = useCallback(async () => {
     try {
@@ -134,24 +135,31 @@ export default function MonitoringPage() {
       <div className="stat-card"><span className="etch">Average latency</span><strong>{health?.network_latency_ms == null ? '—' : `${health.network_latency_ms} ms`}</strong><small>API round-trip</small></div>
     </div>
 
-    <AvailabilityPoliciesPanel />
+    <nav className="workspace-tabs monitoring-workspace-tabs" aria-label="Monitoring sections">
+      <button type="button" className={`workspace-tab${activeTab === 'overview' ? ' active' : ''}`} onClick={() => setActiveTab('overview')}>Overview</button>
+      <button type="button" className={`workspace-tab${activeTab === 'alerts' ? ' active' : ''}`} onClick={() => setActiveTab('alerts')}>Alerts{alerts.length ? <span>{alerts.length}</span> : null}</button>
+      <button type="button" className={`workspace-tab${activeTab === 'rules' ? ' active' : ''}`} onClick={() => setActiveTab('rules')}>Rules{rules?.length ? <span>{rules.length}</span> : null}</button>
+      <button type="button" className={`workspace-tab${activeTab === 'availability' ? ' active' : ''}`} onClick={() => setActiveTab('availability')}>Availability</button>
+    </nav>
 
-    <div className="monitoring-overview-grid">
+    {activeTab === 'availability' ? <AvailabilityPoliciesPanel /> : null}
+
+    {activeTab === 'overview' ? <div className="monitoring-overview-grid">
       <Panel title="Fleet by device type" subtitle="Different endpoint classes can use different policies.">
         <div className="monitoring-type-list">{overview?.devices.map((item) => <div key={item.device_type} className="monitoring-type-row"><span>{item.device_type.replace('_', ' ')}</span><strong>{item.online}/{item.total}</strong><span className="muted">online</span></div>) ?? <span className="etch">Loading…</span>}</div>
       </Panel>
       <Panel title="30-day health trend" subtitle="Average CPU, memory, and disk from reported telemetry.">
         <div className="monitoring-trend">{overview?.trend.slice(-14).map((point) => <div key={point.day} className="monitoring-trend-day" title={`${point.day}: CPU ${point.cpu_pct}% · memory ${point.mem_pct}% · disk ${point.disk_pct}%`}><i style={{ height: `${Math.max(4, point.cpu_pct)}%` }} /><i style={{ height: `${Math.max(4, point.mem_pct)}%` }} /><i style={{ height: `${Math.max(4, point.disk_pct)}%` }} /></div>) ?? <span className="etch">Loading…</span>}</div>
       </Panel>
-    </div>
+    </div> : null}
 
-    <Panel title="Active alerts" subtitle="Acknowledge noise, snooze maintenance work, or follow the linked ticket." empty={alerts.length === 0}>
+    {activeTab === 'alerts' || activeTab === 'overview' ? <Panel title="Active alerts" subtitle="Acknowledge noise, snooze maintenance work, or follow the linked ticket." empty={alerts.length === 0}>
       <div className="device-alert-list">{alerts.map((alert) => <div key={alert.id} className="device-alert-row"><span className={`alert-severity severity-${alert.severity}`} /><div className="device-alert-main"><strong>{alert.message}</strong><span className="muted mono">{alert.severity} · {new Date(alert.created_at).toLocaleString()}{alert.acknowledged_at ? ' · acknowledged' : ''}{alert.snoozed_until ? ` · snoozed until ${new Date(alert.snoozed_until).toLocaleString()}` : ''}</span></div>{alert.ticket_number ? <span className="mono">#{alert.ticket_number}</span> : null}{canManage && !alert.acknowledged_at ? <button className="btn btn-ghost btn-sm" onClick={() => void acknowledge(alert.id)}>Acknowledge</button> : null}{canManage ? <button className="btn btn-ghost btn-sm" onClick={() => void snooze(alert.id)}>Snooze 1h</button> : null}</div>)}</div>
-    </Panel>
+    </Panel> : null}
 
-    <Panel title="Rules" subtitle="Rules are evaluated after telemetry is safely stored. A failed action cannot stop endpoint reporting." empty={rules !== null && rules.length === 0}>
+    {activeTab === 'rules' || activeTab === 'overview' ? <Panel title="Rules" subtitle="Rules are evaluated after telemetry is safely stored. A failed action cannot stop endpoint reporting." empty={rules !== null && rules.length === 0}>
       {rules === null ? <div className="etch" style={{ padding: 24 }}>Loading rules…</div> : <ul className="channel-list">{rules.map((rule) => <li key={rule.id} className="channel-card"><div className="channel-main"><span className="channel-name">{rule.name} {!rule.enabled ? <span className="muted">(disabled)</span> : null}</span><span className="channel-meta mono">{rule.metric} {rule.condition.op} {formatMetric(rule.metric, rule.condition.value)} · {rule.device_type ?? 'all types'} · {rule.group_name ?? 'all devices'}</span><span className="channel-meta">{rule.action.createTicket ? `creates ${rule.action.ticketPriority.toUpperCase()} ticket` : 'alert only'}{rule.min_duration_seconds ? ` · sustained ${rule.min_duration_seconds}s` : ''}{rule.action.escalation?.levels?.length ? ` · escalates after ${rule.action.escalation.levels[0].afterMinutes}m` : ''}</span></div>{canManage ? <div className="channel-actions"><button className="btn btn-ghost btn-sm" onClick={() => void toggle(rule)}>{rule.enabled ? 'Disable' : 'Enable'}</button><button className="btn btn-ghost btn-sm" onClick={() => openEdit(rule)}>Edit</button><button className="btn btn-ghost btn-sm" onClick={() => void remove(rule)}>Delete</button></div> : null}</li>)}</ul>}
-    </Panel>
+    </Panel> : null}
 
     <Modal open={modalOpen} onClose={() => { if (!busy) { setModalOpen(false); setEditing(null); setForm(EMPTY) } }} title={editing ? 'Edit monitoring rule' : 'New monitoring rule'}>
       <form onSubmit={(event) => void submit(event)}>

@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { Icon } from '../components/Icons.js'
+import { Alert, Field, Modal, PageHeader, Panel } from '../components/ui.js'
 import { Shell } from '../components/Shell.js'
 import { useAuth } from '../lib/auth.js'
 import {
@@ -32,6 +34,9 @@ export default function BillingPage() {
   const [showCancel, setShowCancel] = useState(false)
   const [showAddCard, setShowAddCard] = useState(false)
   const [newCard, setNewCard] = useState({ brand: 'visa', last4: '', exp_month: '', exp_year: '' })
+  const [activeTab, setActiveTab] = useState<'overview' | 'plans' | 'payment' | 'invoices'>('overview')
+  const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
 
   useEffect(() => {
     Promise.allSettled([
@@ -58,7 +63,7 @@ export default function BillingPage() {
         const { subscription } = await (await import('../lib/billing.js')).createSubscription(slug, cycle)
         setSub(subscription)
       }
-    } catch { /* silent */ }
+    } catch (err) { setError(err instanceof Error ? err.message : 'Could not change plan') }
     setChanging(null)
   }
 
@@ -68,7 +73,7 @@ export default function BillingPage() {
       await cancelSubscription()
       setSub((prev) => prev ? { ...prev, status: 'canceled' } : null)
       setShowCancel(false)
-    } catch { /* silent */ }
+    } catch (err) { setError(err instanceof Error ? err.message : 'Could not change plan') }
   }
 
   const handleAddCard = async () => {
@@ -97,6 +102,13 @@ export default function BillingPage() {
 
   const currentPlan = plans.find((p) => p.slug === sub?.plan_slug)
   const price = (plan: Plan) => cycle === 'annual' ? plan.price_annual_cents : plan.price_monthly_cents
+  const usedFeatures = useMemo(() => currentPlan?.features.slice(0, 4) ?? [], [currentPlan])
+  const tabItems = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'plans', label: 'Plans & usage' },
+    { id: 'payment', label: 'Payment methods', count: methods.length },
+    { id: 'invoices', label: 'Invoices', count: invoices.length },
+  ] as const
 
   if (loading) {
     return (
@@ -109,9 +121,12 @@ export default function BillingPage() {
 
   return (
     <Shell>
-      <div className="page-head">
-        <h1 className="page-title">Billing & Subscription</h1>
-      </div>
+      <PageHeader title="Billing & subscription" subtitle="Manage your plan, payment methods, and billing history for this organization." actions={isOwner ? <span className="billing-owner-badge"><Icon name="shield" size={13} />Owner access</span> : <span className="muted">Read-only billing view</span>} />
+      {error ? <Alert kind="error">{error}</Alert> : null}
+      {notice ? <Alert kind="info">{notice}</Alert> : null}
+      <nav className="workspace-tabs billing-workspace-tabs" aria-label="Billing sections">
+        {tabItems.map((tab) => <button key={tab.id} type="button" className={`workspace-tab${activeTab === tab.id ? ' active' : ''}`} onClick={() => setActiveTab(tab.id)}>{tab.label}{'count' in tab && tab.count !== undefined ? <span>{tab.count}</span> : null}</button>)}
+      </nav>
 
       {/* Current plan */}
       <div className="billing-current">
@@ -132,15 +147,17 @@ export default function BillingPage() {
         )}
       </div>
 
+      {activeTab === 'overview' ? <div className="billing-overview-grid"><Panel title="Plan at a glance" subtitle="Your current subscription and included capabilities."><div className="billing-glance"><strong>{currentPlan?.name || 'Free'}</strong><span>{sub?.status ? <StatusBadge status={sub.status} /> : 'No active subscription'}</span><small>{sub ? `Renews ${new Date(sub.current_period_end).toLocaleDateString()}` : 'Choose a plan to unlock team billing features.'}</small></div><div className="billing-feature-list">{usedFeatures.map((feature) => <span key={feature}><Icon name="check" size={13} />{feature}</span>)}</div></Panel><Panel title="Billing actions" subtitle="Common account actions for organization owners."><div className="billing-action-list"><button className="btn btn-ghost btn-sm" onClick={() => setActiveTab('plans')}><Icon name="key" size={14} />Compare plans</button><button className="btn btn-ghost btn-sm" onClick={() => setActiveTab('payment')}><Icon name="key" size={14} />Manage payment methods</button><button className="btn btn-ghost btn-sm" onClick={() => setActiveTab('invoices')}><Icon name="file" size={14} />View invoices</button></div></Panel></div> : null}
+
       {/* Plan switcher */}
-      {isOwner && (
+      {activeTab === 'plans' && isOwner && (
         <div className="billing-cycle-toggle">
           <button className={`btn btn-sm ${cycle === 'monthly' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setCycle('monthly')}>Monthly</button>
           <button className={`btn btn-sm ${cycle === 'annual' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setCycle('annual')}>Annual <span className="billing-save">Save 17%</span></button>
         </div>
       )}
 
-      <div className="billing-plans">
+      {activeTab === 'plans' ? <div className="billing-plans">
         {plans.filter((p) => p.slug !== 'enterprise').map((plan) => {
           const isCurrent = sub?.plan_slug === plan.slug
           const p = price(plan)
@@ -188,10 +205,10 @@ export default function BillingPage() {
           </ul>
           <a href="/contact" className="btn btn-ghost billing-plan-btn">Contact sales</a>
         </div>
-      </div>
+      </div> : null}
 
       {/* Payment methods */}
-      <div className="billing-section">
+      {activeTab === 'payment' ? <div className="billing-section"> 
         <div className="billing-section-header">
           <h2 className="billing-section-title">Payment methods</h2>
           {isOwner && <button className="btn btn-ghost btn-sm" onClick={() => setShowAddCard(!showAddCard)}>{showAddCard ? 'Cancel' : '+ Add card'}</button>}
@@ -233,11 +250,11 @@ export default function BillingPage() {
             ))}
           </div>
         )}
-      </div>
+      </div> : null}
 
       {/* Invoices */}
-      <div className="billing-section">
-        <h2 className="billing-section-title">Invoices</h2>
+      {activeTab === 'invoices' ? <div className="billing-section">
+        <div className="billing-section-header"><div><h2 className="billing-section-title">Invoices</h2><p className="billing-section-subtitle">A record of subscription charges for this organization.</p></div></div>
         {invoices.length === 0 ? (
           <p className="dash-empty">No invoices yet</p>
         ) : (
@@ -258,7 +275,7 @@ export default function BillingPage() {
             ))}
           </div>
         )}
-      </div>
+      </div> : null}
 
       {/* Cancel modal */}
       {showCancel && (

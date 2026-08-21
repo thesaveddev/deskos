@@ -18,14 +18,16 @@ interface LoginResponse {
 interface Props {
   user: LockUser
   onUnlock: () => void
+  onGoToLogin?: () => void
 }
 
-export function LockScreen({ user, onUnlock }: Props) {
+export function LockScreen({ user, onUnlock, onGoToLogin }: Props) {
   const applySession = useAuth((state) => state.applySession)
   const [password, setPassword] = useState('')
   const [mfaCode, setMfaCode] = useState('')
   const [requiresMfa, setRequiresMfa] = useState(false)
   const [useRecoveryCode, setUseRecoveryCode] = useState(false)
+  const [mfaSetupRequired, setMfaSetupRequired] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [time, setTime] = useState(new Date())
@@ -39,6 +41,7 @@ export function LockScreen({ user, onUnlock }: Props) {
     e.preventDefault()
     setLoading(true)
     setError(null)
+    setMfaSetupRequired(false)
 
     try {
       const body = requiresMfa
@@ -59,6 +62,7 @@ export function LockScreen({ user, onUnlock }: Props) {
       setMfaCode('')
       setRequiresMfa(false)
       setUseRecoveryCode(false)
+      setMfaSetupRequired(false)
       onUnlock()
     } catch (err) {
       if (err instanceof ApiError && err.code === 'mfa_required') {
@@ -72,7 +76,9 @@ export function LockScreen({ user, onUnlock }: Props) {
       } else if (err instanceof ApiError && err.code === 'account_locked') {
         setError('This account is temporarily locked after too many failed attempts. Try again later.')
       } else if (err instanceof ApiError && err.code === 'mfa_setup_required') {
-        setError('Your organisation requires MFA setup before this account can sign in. Open the full sign-in page to finish setup.')
+        setMfaSetupRequired(true)
+        setRequiresMfa(false)
+        setError('Your organisation requires MFA setup before this account can sign in.')
       } else if (err instanceof ApiError && err.status >= 500) {
         setError('ReyDesk could not finish unlocking your workspace. Please try again in a moment.')
       } else if (err instanceof ApiError && err.status === 0) {
@@ -104,6 +110,11 @@ export function LockScreen({ user, onUnlock }: Props) {
 
         <form onSubmit={handleSubmit} className="lock-screen-form">
           {error && <div className="lock-screen-error" role="alert" aria-live="polite">{error}</div>}
+          {mfaSetupRequired && onGoToLogin && (
+            <button type="button" className="lock-screen-mfa-switch" onClick={onGoToLogin}>
+              Open the full sign-in page to finish setup →
+            </button>
+          )}
           {!requiresMfa ? (
             <PasswordField
               className="lock-screen-input"

@@ -271,7 +271,7 @@ export function Shell({ children }: { children: ReactNode }) {
     setNotificationsLoading(true)
     try {
       const result = await listNotifications()
-      setNotifications(result.notifications)
+      setNotifications(result.notifications ?? [])
     } catch {
       // A missing notification permission should not break the console shell.
     } finally {

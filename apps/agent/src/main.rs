@@ -57,7 +57,7 @@ use windows::Win32::{
     UI::WindowsAndMessaging::{
         DestroyWindow, GetDlgItem, GetWindowLongPtrW, GetWindowTextW, LoadCursorW,
         SetWindowLongPtrW, SetWindowTextW, ShowWindow, CW_USEDEFAULT, ES_CENTER,
-        GWLP_USERDATA, HMENU, IDC_ARROW, SW_SHOW, WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_DESTROY,
+        GWLP_USERDATA, HMENU, IDC_ARROW, SW_SHOW, WINDOW_STYLE,        WM_CLOSE, WM_COMMAND, WM_DESTROY, WM_RBUTTONUP, WM_LBUTTONDBLCLK,
         WS_CHILD, WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE,
     },
 };
@@ -88,7 +88,7 @@ use windows::{
                 GetSystemMetrics, LoadIconW, MessageBoxW, PostQuitMessage, RegisterClassW,
                 TranslateMessage, IDI_APPLICATION, IDYES, MB_ICONQUESTION, MB_SYSTEMMODAL,
                 MB_YESNO, MSG, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN,
-                SM_YVIRTUALSCREEN, WINDOW_EX_STYLE, WM_APP, WNDCLASSW, WS_OVERLAPPED,
+                SM_YVIRTUALSCREEN, WINDOW_EX_STYLE, WM_APP, WNDCLASSW, WS_OVERLAPPED, TPM_RETURNCMD, CreatePopupMenu, AppendMenuW, TrackPopupMenu, MF_SEPARATOR, MF_STRING,
             },
         },
     },
@@ -312,6 +312,17 @@ const PROTECTED_CONFIG_FORMAT: &str = "deskos-agent.dpapi.v1";
 type RelayWriter = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
 type SharedRelayWriter = Arc<Mutex<RelayWriter>>;
 type TrayStatus = Arc<StdMutex<String>>;
+
+#[cfg(target_os = "windows")]
+const TRAY_STATUS: usize = 4101;
+#[cfg(target_os = "windows")]
+const TRAY_DISCONNECT: usize = 4102;
+#[cfg(target_os = "windows")]
+const TRAY_EXIT: usize = 4103;
+#[cfg(target_os = "windows")]
+const TRAY_OPEN_CHAT: usize = 4104;
+#[cfg(target_os = "windows")]
+const TRAY_WM_MESSAGE: u32 = WM_APP + 1;
 
 #[derive(Debug, Deserialize)]
 struct BrowserIceCandidate {
@@ -2355,6 +2366,7 @@ async fn run_consent_ui(config_path: PathBuf, tray_status: TrayStatus) -> Result
     let mut prompted_sessions = HashSet::new();
     let mut opened_chat = HashSet::new();
     let mut seen_inbox = HashSet::new();
+    let mut chat_window_url: Option<String> = None;
 
     // Serve a lightweight browser chat surface in the logged-in user session so
     // the endpoint user can read technician messages and reply without a native
@@ -2412,8 +2424,16 @@ async fn run_consent_ui(config_path: PathBuf, tray_status: TrayStatus) -> Result
                     }
                     if first_open {
                         let url = format!("http://{chat_address}/chat?session={session_id}");
+                        chat_window_url = Some(url.clone());
                         if let Err(error) = open_enrollment_browser(&url) {
                             eprintln!("[chat] open chat UI: {error:#}");
+                        }
+                    }
+                    if has_new && !first_open {
+                        if let Some(url) = chat_window_url.as_deref() {
+                            if let Err(error) = open_enrollment_browser(url) {
+                                eprintln!("[chat] focus chat UI: {error:#}");
+                            }
                         }
                     }
                 }
@@ -2490,6 +2510,34 @@ unsafe extern "system" fn tray_window_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
+    if message == TRAY_WM_MESSAGE && (lparam.0 as u32 == WM_RBUTTONUP || lparam.0 as u32 == WM_LBUTTONDBLCLK) {
+        let Ok(menu) = CreatePopupMenu() else { return LRESULT(0); };
+        let status = tray_wide("Connection status");
+        let disconnect = tray_wide("Disconnect active sessions");
+        let chat = tray_wide("Open support chat");
+        let exit = tray_wide("Exit ReyDesk helper");
+        let _ = AppendMenuW(menu, MF_STRING, TRAY_STATUS, PCWSTR(status.as_ptr()));
+        let _ = AppendMenuW(menu, MF_STRING, TRAY_DISCONNECT, PCWSTR(disconnect.as_ptr()));
+        let _ = AppendMenuW(menu, MF_STRING, TRAY_OPEN_CHAT, PCWSTR(chat.as_ptr()));
+        let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
+        let _ = AppendMenuW(menu, MF_STRING, TRAY_EXIT, PCWSTR(exit.as_ptr()));
+        let mut point = POINT::default();
+        let _ = GetCursorPos(&mut point);
+        let selected = TrackPopupMenu(menu, TPM_RETURNCMD, point.x, point.y, 0, hwnd, None).0 as u32;
+        let _ = windows::Win32::UI::WindowsAndMessaging::DestroyMenu(menu);
+        if selected == TRAY_EXIT as u32 {
+            PostQuitMessage(0);
+        } else if selected == TRAY_STATUS as u32 {
+            let title = tray_wide("ReyDesk connection status");
+            let body = tray_wide("Open the ReyDesk session console to view active connections and permissions.");
+            MessageBoxW(hwnd, PCWSTR(body.as_ptr()), PCWSTR(title.as_ptr()), MB_SYSTEMMODAL);
+        } else if selected == TRAY_DISCONNECT as u32 {
+            let title = tray_wide("Disconnect");
+            let body = tray_wide("To safely end a session, use the End support button in the consent window or technician console.");
+            MessageBoxW(hwnd, PCWSTR(body.as_ptr()), PCWSTR(title.as_ptr()), MB_SYSTEMMODAL);
+        }
+        return LRESULT(0);
+    }
     if message == windows::Win32::UI::WindowsAndMessaging::WM_DESTROY {
         PostQuitMessage(0);
     }
@@ -2536,7 +2584,7 @@ fn tray_data(
         hWnd: hwnd,
         uID: 1,
         uFlags: NIF_ICON | NIF_MESSAGE | NIF_TIP,
-        uCallbackMessage: WM_APP + 1,
+        uCallbackMessage: TRAY_WM_MESSAGE,
         hIcon: icon,
         ..Default::default()
     };

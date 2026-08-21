@@ -7,6 +7,7 @@ COPY package.json package-lock.json* ./
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
 COPY apps/relay/package.json apps/relay/
+COPY apps/agent/Cargo.toml apps/agent/
 COPY packages/shared/package.json packages/shared/
 COPY packages/ui/package.json packages/ui/
 RUN npm install --workspace=@deskos/api --workspace=@deskos/web --workspace=@deskos/relay --workspace=@deskos/shared --workspace=@deskos/ui --include=dev

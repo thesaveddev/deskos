@@ -87,13 +87,14 @@ async function findAdhocByCode(pool: DbPool, code: string): Promise<AdhocRow | u
 function publicAdhoc(
   row: AdhocRow,
   helperAvailable: boolean,
-): { state: string; reason: string; permissions: string[]; helperAvailable: boolean; claimMode: string } {
+): { state: string; reason: string; permissions: string[]; helperAvailable: boolean; claimMode: string; sessionId?: string } {
   return {
     state: row.state,
     reason: row.reason,
     permissions: row.permissions,
     helperAvailable,
     claimMode: row.claim_mode,
+    ...(row.remote_session_id ? { sessionId: row.remote_session_id } : {}),
   }
 }
 

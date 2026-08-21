@@ -196,6 +196,13 @@ export default function SessionsPage() {
     }
   }
 
+  const sessionTabs = [
+    { label: 'All sessions', value: '', count: total },
+    { label: 'Awaiting consent', value: 'consent_pending', count: state === 'consent_pending' ? total : undefined },
+    { label: 'Active', value: 'active', count: state === 'active' ? total : undefined },
+    { label: 'Ended', value: 'ended', count: state === 'ended' ? total : undefined },
+  ] as const
+
   return (
     <Shell>
       <div className="page-head">
@@ -212,6 +219,12 @@ export default function SessionsPage() {
       </div>
 
       {error ? <Alert kind="error">{error}</Alert> : null}
+
+      <nav className="workspace-tabs session-workspace-tabs" aria-label="Session views">
+        {sessionTabs.map((tab) => <button key={tab.label} type="button" className={`workspace-tab${state === tab.value ? ' active' : ''}`} onClick={() => { setState(tab.value as '' | RemoteSessionState); pagination.goToPage(0) }}>{tab.label}{tab.count !== undefined ? <span>{tab.count}</span> : null}</button>)}
+        <span className="workspace-tab-spacer" />
+        <span className="workspace-context">{loading ? 'Refreshing…' : `${sessions.length} shown`}</span>
+      </nav>
 
       {showCodePanel ? (
         <Modal open={showCodePanel} onClose={() => { if (!codeBusy && !emailBusy) setShowCodePanel(false) }} title="Generate a support code" width={760}>

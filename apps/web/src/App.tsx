@@ -1,76 +1,81 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from 'react'
+import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { LockScreen } from './components/LockScreen.js'
 import { registerServiceWorker } from './lib/push.js'
 import { useIdleTimeout } from './lib/idle.js'
-import { onLockRequest } from './lib/lock.js'
-import AiAgentPage from './pages/AiAgentPage.js'
-import ApprovalsPage from './pages/ApprovalsPage.js'
-import AssetsPage from './pages/AssetsPage.js'
-import AutomationPage from './pages/AutomationPage.js'
-import EmailSettingsPage from './pages/EmailSettingsPage.js'
-import EntraSettingsPage from './pages/EntraSettingsPage.js'
-import CannedResponsesPage from './pages/CannedResponsesPage.js'
-import ConnectPage from './pages/ConnectPage.js'
-import DeviceDetailPage from './pages/DeviceDetailPage.js'
-import DeviceGroupsPage from './pages/DeviceGroupsPage.js'
-import DevicesPage from './pages/DevicesPage.js'
-import GrantsPage from './pages/GrantsPage.js'
-import HomePage from './pages/HomePage.js'
-import IncidentsPage from './pages/IncidentsPage.js'
-import KnowledgeBasePage from './pages/KnowledgeBasePage.js'
-import LearnPage from './pages/LearnPage.js'
-import LandingPage from './pages/LandingPage.js'
-import FeaturesPage from './pages/FeaturesPage.js'
-import UseCasesPage from './pages/UseCasesPage.js'
-import LoginPage from './pages/LoginPage.js'
-import LockPage from './pages/LockPage.js'
-import ForgotPasswordPage from './pages/ForgotPasswordPage.js'
-import ResetPasswordPage from './pages/ResetPasswordPage.js'
-import PricingPage from './pages/PricingPage.js'
-import PrivacyPage from './pages/PrivacyPage.js'
-import TermsPage from './pages/TermsPage.js'
-import AboutPage from './pages/AboutPage.js'
-import AcceptInvitationPage from './pages/AcceptInvitationPage.js'
-import ContactPage from './pages/ContactPage.js'
-import ApiDocsPage from './pages/ApiDocsPage.js'
-import SupportPage from './pages/SupportPage.js'
-import AdminDashboardPage from './pages/AdminDashboardPage.js'
-import AdminSupportPage from './pages/AdminSupportPage.js'
-import StaffPage from './pages/StaffPage.js'
-import NotesPage from './pages/NotesPage.js'
-import BillingPage from './pages/BillingPage.js'
-import ProfilePage from './pages/ProfilePage.js'
-import MonitoringPage from './pages/MonitoringPage.js'
-import MarketplacePage from './pages/MarketplacePage.js'
-import MspPage from './pages/MspPage.js'
-import NewTicketPage from './pages/NewTicketPage.js'
-import NotFoundPage from './pages/NotFoundPage.js'
-import TeamsPage from './pages/TeamsPage.js'
-import PatchPage from './pages/PatchPage.js'
-import NotificationSettingsPage from './pages/NotificationSettingsPage.js'
-import OauthSettingsPage from './pages/OauthSettingsPage.js'
-import ReportsPage from './pages/ReportsPage.js'
-import RmmPage from './pages/RmmPage.js'
-import ScriptsPage from './pages/ScriptsPage.js'
-import ServicesPage from './pages/ServicesPage.js'
-import SessionsPage from './pages/SessionsPage.js'
-import SessionConsolePage from './pages/SessionConsolePage.js'
-import SettingsPage from './pages/SettingsPage.js'
-import SignupPage from './pages/SignupPage.js'
-import TicketDetailPage from './pages/TicketDetailPage.js'
-import ChatPage from './pages/ChatPage.js'
-import CallsPage from './pages/CallsPage.js'
-import CompliancePage from './pages/CompliancePage.js'
-import DeveloperPage from './pages/DeveloperPage.js'
-import SecuritySettingsPage from './pages/SecuritySettingsPage.js'
-import AdSettingsPage from './pages/AdSettingsPage.js'
-import TicketsPage from './pages/TicketsPage.js'
-import WebhooksPage from './pages/WebhooksPage.js'
-import PortalHomePage from './pages/portal/PortalHomePage.js'
-import PortalNewTicketPage from './pages/portal/PortalNewTicketPage.js'
-import PortalTicketPage from './pages/portal/PortalTicketPage.js'
+import { clearLockedUser, onLockRequest } from './lib/lock.js'
+// Route-level code splitting: every page is a lazy chunk so the initial bundle
+// carries only the shell, auth, and the small route primitives. Pages load on
+// demand as the user navigates.
+const AiAgentPage = lazy(() => import('./pages/AiAgentPage.js'))
+const ApprovalsPage = lazy(() => import('./pages/ApprovalsPage.js'))
+const AssetsPage = lazy(() => import('./pages/AssetsPage.js'))
+const AutomationPage = lazy(() => import('./pages/AutomationPage.js'))
+const ConnectPage = lazy(() => import('./pages/ConnectPage.js'))
+const DeviceDetailPage = lazy(() => import('./pages/DeviceDetailPage.js'))
+const DeviceGroupsPage = lazy(() => import('./pages/DeviceGroupsPage.js'))
+const DevicesPage = lazy(() => import('./pages/DevicesPage.js'))
+const GrantsPage = lazy(() => import('./pages/GrantsPage.js'))
+const HomePage = lazy(() => import('./pages/HomePage.js'))
+const IncidentsPage = lazy(() => import('./pages/IncidentsPage.js'))
+const KnowledgeBasePage = lazy(() => import('./pages/KnowledgeBasePage.js'))
+const LearnPage = lazy(() => import('./pages/LearnPage.js'))
+const LandingPage = lazy(() => import('./pages/LandingPage.js'))
+const FeaturesPage = lazy(() => import('./pages/FeaturesPage.js'))
+const UseCasesPage = lazy(() => import('./pages/UseCasesPage.js'))
+const LoginPage = lazy(() => import('./pages/LoginPage.js'))
+const LockPage = lazy(() => import('./pages/LockPage.js'))
+const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage.js'))
+const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage.js'))
+const PricingPage = lazy(() => import('./pages/PricingPage.js'))
+const PrivacyPage = lazy(() => import('./pages/PrivacyPage.js'))
+const TermsPage = lazy(() => import('./pages/TermsPage.js'))
+const AboutPage = lazy(() => import('./pages/AboutPage.js'))
+const AcceptInvitationPage = lazy(() => import('./pages/AcceptInvitationPage.js'))
+const ContactPage = lazy(() => import('./pages/ContactPage.js'))
+const ApiDocsPage = lazy(() => import('./pages/ApiDocsPage.js'))
+const SupportPage = lazy(() => import('./pages/SupportPage.js'))
+const AdminDashboardPage = lazy(() => import('./pages/AdminDashboardPage.js'))
+const AdminSupportPage = lazy(() => import('./pages/AdminSupportPage.js'))
+const StaffPage = lazy(() => import('./pages/StaffPage.js'))
+const NotesPage = lazy(() => import('./pages/NotesPage.js'))
+const BillingPage = lazy(() => import('./pages/BillingPage.js'))
+const ProfilePage = lazy(() => import('./pages/ProfilePage.js'))
+const MonitoringPage = lazy(() => import('./pages/MonitoringPage.js'))
+const MarketplacePage = lazy(() => import('./pages/MarketplacePage.js'))
+const MspPage = lazy(() => import('./pages/MspPage.js'))
+const NewTicketPage = lazy(() => import('./pages/NewTicketPage.js'))
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage.js'))
+const TeamsPage = lazy(() => import('./pages/TeamsPage.js'))
+const PatchPage = lazy(() => import('./pages/PatchPage.js'))
+const ReportsPage = lazy(() => import('./pages/ReportsPage.js'))
+const RmmPage = lazy(() => import('./pages/RmmPage.js'))
+const ScriptsPage = lazy(() => import('./pages/ScriptsPage.js'))
+const ServicesPage = lazy(() => import('./pages/ServicesPage.js'))
+const SessionsPage = lazy(() => import('./pages/SessionsPage.js'))
+const SessionConsolePage = lazy(() => import('./pages/SessionConsolePage.js'))
+const SettingsPage = lazy(() => import('./pages/SettingsPage.js'))
+const SignupPage = lazy(() => import('./pages/SignupPage.js'))
+const TicketDetailPage = lazy(() => import('./pages/TicketDetailPage.js'))
+const ChatPage = lazy(() => import('./pages/ChatPage.js'))
+const CallsPage = lazy(() => import('./pages/CallsPage.js'))
+const CompliancePage = lazy(() => import('./pages/CompliancePage.js'))
+const DeveloperPage = lazy(() => import('./pages/DeveloperPage.js'))
+const TicketsPage = lazy(() => import('./pages/TicketsPage.js'))
+const WebhooksPage = lazy(() => import('./pages/WebhooksPage.js'))
+const PortalHomePage = lazy(() => import('./pages/portal/PortalHomePage.js'))
+const PortalNewTicketPage = lazy(() => import('./pages/portal/PortalNewTicketPage.js'))
+const PortalTicketPage = lazy(() => import('./pages/portal/PortalTicketPage.js'))
 import { useAuth } from './lib/auth.js'
+
+function PageLoader() {
+  return (
+    <div className="route-loader" aria-busy="true" aria-live="polite">
+      <span className="spinner" aria-hidden="true" />
+      <span>Loading…</span>
+    </div>
+  )
+}
 
 function Protected({ children }: { children: ReactNode }) {
   const status = useAuth((s) => s.status)
@@ -90,6 +95,8 @@ function HomeRoute() {
 function IdleLockWrapper({ children }: { children: ReactNode }) {
   const authStatus = useAuth((state) => state.status)
   const currentUser = useAuth((state) => state.user)
+  const logout = useAuth((state) => state.logout)
+  const navigate = useNavigate()
   const [locked, setLocked] = useState(false)
   const [lockedUser, setLockedUser] = useState<typeof currentUser>(null)
   const { isLocked, resetTimer } = useIdleTimeout(
@@ -126,7 +133,16 @@ function IdleLockWrapper({ children }: { children: ReactNode }) {
     resetTimer()
   }, [resetTimer])
 
-  if (locked && lockedUser) return <LockScreen user={lockedUser} onUnlock={unlock} />
+  const goToLogin = useCallback(async () => {
+    setLocked(false)
+    setLockedUser(null)
+    resetTimer()
+    clearLockedUser()
+    await logout()
+    navigate('/login', { replace: true })
+  }, [logout, navigate, resetTimer])
+
+  if (locked && lockedUser) return <LockScreen user={lockedUser} onUnlock={unlock} onGoToLogin={goToLogin} />
   return <>{children}</>
 }
 
@@ -151,6 +167,7 @@ export default function App() {
   // their own guard until authentication is known.
   return (
     <IdleLockWrapper>
+      <Suspense fallback={<PageLoader />}>
     <Routes>
       {/* Public marketing pages */}
       <Route path="/login" element={<LoginPage />} />
@@ -231,6 +248,7 @@ export default function App() {
       <Route path="/portal/tickets/:number" element={<Protected><PortalTicketPage /></Protected>} />
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
+      </Suspense>
     </IdleLockWrapper>
   )
 }

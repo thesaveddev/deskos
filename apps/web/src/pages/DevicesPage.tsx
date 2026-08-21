@@ -127,6 +127,12 @@ export default function DevicesPage() {
   const onlineOnPage = useMemo(() => devices.filter((device) => device.status === 'online').length, [devices])
   const offlineOnPage = useMemo(() => devices.filter((device) => device.status === 'offline').length, [devices])
   const activeFilters = Boolean(query || status || groupId)
+  const deviceTabs = [
+    { label: 'All endpoints', count: total, active: !status },
+    { label: 'Online', count: status === 'online' ? total : undefined, active: status === 'online' },
+    { label: 'Offline', count: status === 'offline' ? total : undefined, active: status === 'offline' },
+    { label: 'Never checked in', count: status === 'never' ? total : undefined, active: status === 'never' },
+  ] as const
 
   return (
     <Shell>
@@ -144,6 +150,10 @@ export default function DevicesPage() {
         <div className="device-summary-card"><span className="device-summary-label">Device groups</span><strong>{groups.length}</strong><small>Available for filtering</small></div>
       </div>
 
+      <nav className="workspace-tabs device-workspace-tabs" aria-label="Endpoint views">
+        {deviceTabs.map((tab) => <button key={tab.label} type="button" className={`workspace-tab${tab.active ? ' active' : ''}`} onClick={() => { setStatus(tab.label === 'All endpoints' ? '' : tab.label === 'Online' ? 'online' : tab.label === 'Offline' ? 'offline' : 'never'); pagination.goToPage(0) }}>{tab.label}{tab.count !== undefined ? <span>{tab.count}</span> : null}</button>)}
+        <Link className="workspace-tab-link" to="/devices/groups"><Icon name="folder" size={14} />Groups</Link>
+      </nav>
       <div className="device-toolbar">
         <div className="device-toolbar-main">
           <div className="device-search-wrap"><Icon name="search" size={15} /><input className="field-input" placeholder="Search name, hostname, or operating system…" value={query} onChange={(event) => { setQuery(event.target.value); pagination.goToPage(0) }} /></div>
@@ -154,7 +164,7 @@ export default function DevicesPage() {
 
       {showFilters ? <div className="device-filter-panel"><div className="device-filter-field"><label className="tickets-filter-label" htmlFor="device-status">Status</label><select id="device-status" className="field-input" value={status} onChange={(event) => { setStatus(event.target.value as '' | DeviceStatus); pagination.goToPage(0) }}>{STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div><div className="device-filter-field"><label className="tickets-filter-label" htmlFor="device-group">Device group</label><select id="device-group" className="field-input" value={groupId} onChange={(event) => { setGroupId(event.target.value); pagination.goToPage(0) }}><option value="">All groups</option>{groups.map((group) => <option key={group.id} value={group.id}>{group.name} · {group.device_count}</option>)}</select></div>{groupsError ? <span className="muted device-filter-error">{groupsError}</span> : null}</div> : null}
 
-      <div className="device-list-head"><div><h2>Endpoint inventory</h2><p>{loading ? 'Refreshing device inventory…' : `${devices.length} shown${total !== devices.length ? ` of ${total}` : ''}`}</p></div><Link className="btn btn-ghost btn-sm" to="/devices/groups"><Icon name="folder" size={14} />Manage groups</Link></div>
+      <div className="device-list-head"><div><h2>Endpoint inventory</h2><p>{loading ? 'Refreshing device inventory…' : `${devices.length} shown${total !== devices.length ? ` of ${total}` : ''}`}</p></div><span className="device-list-context">{activeFilters ? 'Filtered inventory' : 'Live inventory'}</span></div>
 
       {loading ? <div className="device-loading"><span className="etch">Loading devices…</span></div> : devices.length === 0 ? <div className="empty-state"><Icon name="monitor" size={24} /><strong>No devices found</strong><span>{activeFilters ? 'Try changing or clearing your filters.' : 'Enroll your first endpoint to start managing your estate.'}</span>{canManage && !activeFilters ? <button className="btn btn-primary btn-sm" onClick={() => setEnrolOpen(true)}><Icon name="upload" size={14} />Deploy / enrol device</button> : null}</div> : <div className="device-table-wrap"><table className="device-table"><thead><tr><th>Endpoint</th><th>Platform</th><th>Asset tag</th><th>Assigned to</th><th>IP address</th><th>Status</th><th>Group</th><th>Agent</th><th>Last seen</th></tr></thead><tbody>{devices.map((device) => <tr key={device.id}><td><Link to={`/devices/${device.id}`} className="device-name-link"><span className="device-avatar">{device.name.slice(0, 1).toUpperCase()}</span><span><strong>{device.name}</strong><small>{device.hostname || 'No hostname'}</small></span></Link></td><td>{platformLabel(device)}<span className="device-ip">{device.arch || '—'}</span></td><td className="mono">{device.asset_tag || '—'}</td><td>{device.assigned_user_name || (device.assignment_status === 'shared' ? 'Shared device' : <span className="muted">Unassigned</span>)}</td><td className="mono device-ip-cell">{device.ip_address || '—'}</td><td><span className={`status-pill status-${device.status}`}>{statusLabel(device.status)}</span></td><td>{device.group_name ?? <span className="muted">Unassigned</span>}</td><td className="mono">{device.agent_version || '—'}</td><td className="mono">{device.last_seen_at ? formatWhen(device.last_seen_at) : 'Never'}</td></tr>)}</tbody></table></div>}
 
