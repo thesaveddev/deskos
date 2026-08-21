@@ -45,6 +45,8 @@ export default function TicketDetailPage() {
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
+  const [dragActive, setDragActive] = useState(false)
+  const dragCounterRef = useRef(0)
   const [composerMode, setComposerMode] = useState<'public' | 'internal'>('public')
   const [draft, setDraft] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -503,20 +505,54 @@ export default function TicketDetailPage() {
     }
   }
 
-  const onUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    e.target.value = ''
-    if (!file || uploading || !ticket) return
+  const uploadFiles = async (files: File[]) => {
+    if (!ticket || files.length === 0 || uploading) return
     setUploading(true)
     setUploadError(null)
     try {
-      await uploadAttachment(getAccessToken() ?? '', ticket.id, file)
+      for (const file of files) {
+        await uploadAttachment(getAccessToken() ?? '', ticket.id, file)
+      }
       await load()
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : 'Upload failed')
     } finally {
       setUploading(false)
     }
+  }
+
+  const onUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? [])
+    e.target.value = ''
+    void uploadFiles(files)
+  }
+
+  const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    if (readOnlyForLock) return
+    dragCounterRef.current += 1
+    setDragActive(true)
+  }
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+  }
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    dragCounterRef.current -= 1
+    if (dragCounterRef.current <= 0) {
+      dragCounterRef.current = 0
+      setDragActive(false)
+    }
+  }
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    dragCounterRef.current = 0
+    setDragActive(false)
+    if (readOnlyForLock) return
+    void uploadFiles(Array.from(e.dataTransfer.files))
   }
 
   const addLink = async () => {
@@ -1119,12 +1155,24 @@ export default function TicketDetailPage() {
         ))}
       </div>
 
-      <div className="attachments">
+      <div
+        className={`attachments${dragActive ? ' attachments-drag' : ''}`}
+        onDragEnter={handleDragEnter}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        {dragActive ? (
+          <div className="attachments-drop-hint">
+            <Icon name="upload" size={20} />
+            <span>Drop files to attach</span>
+          </div>
+        ) : null}
         <div className="attachments-head">
           <span className="etch">Attachments</span>
           <label className={`btn btn-ghost btn-sm${readOnlyForLock ? ' disabled' : ''}`} title={readOnlyForLock ? 'Attachments are disabled in read-only mode' : 'Attach a file'}>
             {uploading ? 'Uploading…' : 'Add file'}
-            <input type="file" hidden disabled={readOnlyForLock} onChange={(e) => void onUpload(e)} />
+            <input type="file" multiple hidden disabled={readOnlyForLock} onChange={(e) => onUpload(e)} />
           </label>
         </div>
         {uploadError ? <div className="alert alert-error" style={{ margin: '8px 0' }}>{uploadError}</div> : null}
