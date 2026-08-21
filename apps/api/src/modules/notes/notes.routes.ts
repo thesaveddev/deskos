@@ -10,6 +10,21 @@ import {
 
 const COLORS = new Set(['yellow', 'green', 'blue', 'pink', 'purple', 'orange', 'gray'])
 const IMAGE_MAX = 2_000_000
+const MAX_IMAGES = 12
+
+function parseImages(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  return raw.filter((value): value is string => typeof value === 'string')
+}
+
+function assertValidImages(images: string[]): void {
+  if (images.length > MAX_IMAGES) throw AppError.badRequest(`A note can contain at most ${MAX_IMAGES} images`)
+  for (const src of images) {
+    if (!src.startsWith('data:image/') || src.length > IMAGE_MAX) {
+      throw AppError.badRequest('Each image must be a valid image smaller than 1.5 MB')
+    }
+  }
+}
 
 export async function notesRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authenticate)
@@ -55,11 +70,11 @@ export async function notesRoutes(app: FastifyInstance) {
     const ctx = req.tenantCtx!
     const userId = req.user!.id
     const body = (req.body || {}) as Record<string, unknown>
-    const imageData = typeof body.image_data === 'string' ? body.image_data : null
-    if (imageData && (!imageData.startsWith('data:image/') || imageData.length > IMAGE_MAX)) throw AppError.badRequest('Image must be a valid image smaller than 1.5 MB')
+    const images = parseImages(body.images)
+    assertValidImages(images)
     const note = await withTenant(app.db, ctx.tenantId, (client) => createNote(client, ctx.tenantId, userId, {
       title: body.title as string, body: body.body as string, color: body.color as string,
-      category_id: body.category_id as string, image_data: imageData ?? undefined,
+      category_id: body.category_id as string, images,
       position_x: body.position_x as number, position_y: body.position_y as number,
       width: body.width as number, height: body.height as number,
     }))
@@ -71,11 +86,11 @@ export async function notesRoutes(app: FastifyInstance) {
     const userId = req.user!.id
     const { id } = req.params as { id: string }
     const body = (req.body || {}) as Record<string, unknown>
-    const imageData = body.image_data === null ? null : typeof body.image_data === 'string' ? body.image_data : undefined
-    if (imageData && (!imageData.startsWith('data:image/') || imageData.length > IMAGE_MAX)) throw AppError.badRequest('Image must be a valid image smaller than 1.5 MB')
+    const images = body.images === undefined ? undefined : parseImages(body.images)
+    if (images !== undefined) assertValidImages(images)
     const note = await withTenant(app.db, ctx.tenantId, (client) => updateNote(client, ctx.tenantId, userId, Number(id), {
       title: body.title as string, body: body.body as string, color: body.color as string,
-      category_id: body.category_id as string, image_data: imageData,
+      category_id: body.category_id as string, images,
       position_x: body.position_x as number, position_y: body.position_y as number,
       width: body.width as number, height: body.height as number, is_pinned: body.is_pinned as boolean,
     }))

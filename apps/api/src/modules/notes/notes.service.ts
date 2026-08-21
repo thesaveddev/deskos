@@ -22,7 +22,7 @@ export interface Note {
   category_id: string | null
   category_name?: string | null
   category_color?: string | null
-  image_data: string | null
+  images: string[]
   position_x: number
   position_y: number
   width: number
@@ -38,7 +38,8 @@ export async function listNotes(db: NotesDb, tenantId: string, userId: string): 
   const result = await db.query(
     `SELECT n.id, n.tenant_id, n.user_id, n.title, n.body, n.color,
             n.category_id, c.name AS category_name, c.color AS category_color,
-            n.image_data, n.position_x, n.position_y, n.width, n.height,
+            COALESCE(n.images, '[]'::jsonb) AS images,
+            n.position_x, n.position_y, n.width, n.height,
             n.is_pinned, n.created_at, n.updated_at
        FROM notes n
        LEFT JOIN note_categories c ON c.id = n.category_id
@@ -78,14 +79,14 @@ export async function createNote(
   db: NotesDb,
   tenantId: string,
   userId: string,
-  data: Partial<Pick<Note, 'title' | 'body' | 'color' | 'category_id' | 'image_data' | 'position_x' | 'position_y' | 'width' | 'height'>>,
+  data: Partial<Pick<Note, 'title' | 'body' | 'color' | 'category_id' | 'images' | 'position_x' | 'position_y' | 'width' | 'height'>>,
 ): Promise<Note> {
   const color = VALID_COLORS.includes(data.color || '') ? data.color! : 'yellow'
   const result = await db.query(
-    `INSERT INTO notes (tenant_id, user_id, title, body, color, category_id, image_data, position_x, position_y, width, height)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    `INSERT INTO notes (tenant_id, user_id, title, body, color, category_id, images, position_x, position_y, width, height)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11)
      RETURNING *`,
-    [tenantId, userId, data.title || '', data.body || '', color, data.category_id ?? null, data.image_data ?? null,
+    [tenantId, userId, data.title || '', data.body || '', color, data.category_id ?? null, JSON.stringify(data.images ?? []),
       data.position_x ?? 40, data.position_y ?? 40, data.width ?? 220, data.height ?? 220],
   )
   return result.rows[0]
@@ -96,17 +97,22 @@ export async function updateNote(
   tenantId: string,
   userId: string,
   noteId: number,
-  data: Partial<Pick<Note, 'title' | 'body' | 'color' | 'category_id' | 'image_data' | 'position_x' | 'position_y' | 'width' | 'height' | 'is_pinned'>>,
+  data: Partial<Pick<Note, 'title' | 'body' | 'color' | 'category_id' | 'images' | 'position_x' | 'position_y' | 'width' | 'height' | 'is_pinned'>>,
 ): Promise<Note | null> {
   const fields: string[] = []
   const values: unknown[] = []
-  const allowedFields = ['title', 'body', 'color', 'category_id', 'image_data', 'position_x', 'position_y', 'width', 'height', 'is_pinned'] as const
+  const allowedFields = ['title', 'body', 'color', 'category_id', 'images', 'position_x', 'position_y', 'width', 'height', 'is_pinned'] as const
   for (const key of allowedFields) {
     const val = data[key]
     if (val === undefined) continue
     if (key === 'color' && !VALID_COLORS.includes(val as string)) continue
-    fields.push(`${key} = $${values.length + 4}`)
-    values.push(val)
+    if (key === 'images') {
+      fields.push(`images = $${values.length + 4}::jsonb`)
+      values.push(JSON.stringify(val))
+    } else {
+      fields.push(`${key} = $${values.length + 4}`)
+      values.push(val)
+    }
   }
   if (fields.length === 0) return null
   fields.push('updated_at = now()')

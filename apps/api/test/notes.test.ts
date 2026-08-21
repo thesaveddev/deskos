@@ -67,4 +67,39 @@ describe('sticky notes', () => {
     const deletedCategory = await app.inject({ method: 'DELETE', url: `/api/v1/notes/categories/${category.json().category.id}`, headers: authHeaders(owner) })
     expect(deletedCategory.statusCode).toBe(200)
   })
+
+  it('stores and updates multiple inline images on a note', async () => {
+    const img = (n: number) => `data:image/png;base64,${'A'.repeat(n)}`
+    const note = await app.inject({
+      method: 'POST',
+      url: '/api/v1/notes',
+      headers: authHeaders(owner),
+      payload: { body: 'With pictures', color: 'green', images: [img(10), img(20)] },
+    })
+    expect(note.statusCode).toBe(200)
+    expect(note.json().note.images).toEqual([img(10), img(20)])
+
+    const updated = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/notes/${note.json().note.id}`,
+      headers: authHeaders(owner),
+      payload: { images: [img(30)] },
+    })
+    expect(updated.statusCode).toBe(200)
+    expect(updated.json().note.images).toEqual([img(30)])
+
+    const listed = await app.inject({ method: 'GET', url: '/api/v1/notes', headers: authHeaders(owner) })
+    const match = listed.json().notes.find((item: { id: number }) => item.id === note.json().note.id)
+    expect(match.images).toEqual([img(30)])
+  })
+
+  it('rejects note images that are not valid data URLs', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/notes',
+      headers: authHeaders(owner),
+      payload: { body: '', images: ['not-an-image'] },
+    })
+    expect(res.statusCode).toBe(400)
+  })
 })

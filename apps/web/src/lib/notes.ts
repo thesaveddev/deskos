@@ -20,7 +20,7 @@ export interface Note {
   category_id: string | null
   category_name?: string | null
   category_color?: string | null
-  image_data: string | null
+  images: string[]
   position_x: number
   position_y: number
   width: number
@@ -49,11 +49,11 @@ export function listNoteCategories(): Promise<{ categories: NoteCategory[] }> { 
 export function createNoteCategory(data: { name: string; color: string }): Promise<{ category: NoteCategory }> { return api('/notes/categories', { method: 'POST', body: data }) }
 export function deleteNoteCategory(id: string): Promise<{ ok: boolean }> { return api(`/notes/categories/${id}`, { method: 'DELETE' }) }
 
-export function createNote(data: { title?: string; body?: string; color?: string; category_id?: string | null; image_data?: string | null; position_x?: number; position_y?: number; width?: number; height?: number }): Promise<{ note: Note }> {
+export function createNote(data: { title?: string; body?: string; color?: string; category_id?: string | null; images?: string[]; position_x?: number; position_y?: number; width?: number; height?: number }): Promise<{ note: Note }> {
   return api('/notes', { method: 'POST', body: data })
 }
 
-export function updateNote(id: number, data: Partial<Pick<Note, 'title' | 'body' | 'color' | 'category_id' | 'image_data' | 'position_x' | 'position_y' | 'width' | 'height' | 'is_pinned'>>): Promise<{ note: Note }> {
+export function updateNote(id: number, data: Partial<Pick<Note, 'title' | 'body' | 'color' | 'category_id' | 'images' | 'position_x' | 'position_y' | 'width' | 'height' | 'is_pinned'>>): Promise<{ note: Note }> {
   return api(`/notes/${id}`, { method: 'PATCH', body: data })
 }
 
