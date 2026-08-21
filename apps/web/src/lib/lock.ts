@@ -1,4 +1,5 @@
 const LOCKED_USER_KEY = 'deskos.lockedUser'
+const LOCK_STATE_KEY = 'deskos.locked'
 
 /** Dispatch a custom event to instantly lock the current authenticated screen. */
 export function lockScreen() {
@@ -24,6 +25,35 @@ export function readLockedUser(): { id: string; email: string; name: string } | 
 
 export function clearLockedUser() {
   try { sessionStorage.removeItem(LOCKED_USER_KEY) } catch { /* storage may be unavailable */ }
+}
+
+/**
+ * Persist the lock flag in localStorage so every tab agrees the workspace is
+ * locked. localStorage is shared across tabs, unlike sessionStorage, so a new
+ * tab cannot bypass the lock screen by re-hydrating the still-valid token.
+ */
+export function setPersistedLocked(locked: boolean) {
+  try {
+    if (locked) localStorage.setItem(LOCK_STATE_KEY, '1')
+    else localStorage.removeItem(LOCK_STATE_KEY)
+  } catch { /* storage may be unavailable */ }
+}
+
+export function readPersistedLocked(): boolean {
+  try { return localStorage.getItem(LOCK_STATE_KEY) === '1' } catch { return false }
+}
+
+/**
+ * Subscribe to lock/unlock changes made in other tabs. The `storage` event only
+ * fires in tabs other than the one that wrote the key, which is exactly the
+ * cross-tab propagation we need.
+ */
+export function onLockStateChange(handler: (locked: boolean) => void): () => void {
+  const fn = (event: StorageEvent) => {
+    if (event.key === LOCK_STATE_KEY || event.key === null) handler(readPersistedLocked())
+  }
+  window.addEventListener('storage', fn)
+  return () => window.removeEventListener('storage', fn)
 }
 
 /** Subscribe to the lock event. Returns an unsubscribe function. */

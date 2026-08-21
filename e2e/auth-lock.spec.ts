@@ -155,6 +155,27 @@ test.describe('authentication and lock screen', () => {
     await expect(page).toHaveURL(/\/$/)
   })
 
+  test('a fresh tab honours a persisted lock instead of opening the dashboard', async ({ page }) => {
+    await mockDeskOsApi(page)
+    // Simulate a lock that was set in another tab: a valid token plus the
+    // persisted lock flag. The new tab must show the lock screen, not the
+    // dashboard, even though the token is still valid.
+    await page.addInitScript(() => {
+      localStorage.setItem('deskos.locked', '1')
+    })
+    await page.goto('/')
+
+    await expect(page.getByText('James Adeyemi')).toBeVisible()
+    await expect(page.getByPlaceholder('Password')).toBeVisible()
+    await expect(page.getByText(/Good (morning|afternoon|evening), James\./)).not.toBeVisible()
+
+    // Unlocking clears the persisted flag and reveals the dashboard.
+    await page.getByPlaceholder('Password').fill('correct-horse-battery-9')
+    await page.getByRole('button', { name: 'Unlock' }).click()
+    await expect(page.getByText(/Good (morning|afternoon|evening), James\./)).toBeVisible()
+    expect(await page.evaluate(() => localStorage.getItem('deskos.locked'))).toBeNull()
+  })
+
   test('keeps the lock screen usable at a narrow viewport', async ({ page }) => {
     await mockDeskOsApi(page, { authenticated: false })
     await seedLockIdentity(page)

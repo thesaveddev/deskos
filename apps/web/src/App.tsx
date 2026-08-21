@@ -3,7 +3,7 @@ import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { LockScreen } from './components/LockScreen.js'
 import { registerServiceWorker } from './lib/push.js'
 import { useIdleTimeout } from './lib/idle.js'
-import { clearLockedUser, onLockRequest } from './lib/lock.js'
+import { clearLockedUser, onLockRequest, onLockStateChange, readPersistedLocked, setPersistedLocked } from './lib/lock.js'
 // Route-level code splitting: every page is a lazy chunk so the initial bundle
 // carries only the shell, auth, and the small route primitives. Pages load on
 // demand as the user navigates.
@@ -97,52 +97,88 @@ function IdleLockWrapper({ children }: { children: ReactNode }) {
   const currentUser = useAuth((state) => state.user)
   const logout = useAuth((state) => state.logout)
   const navigate = useNavigate()
-  const [locked, setLocked] = useState(false)
+  // Start from the persisted lock state so a fresh tab honours a lock set by
+  // another tab instead of falling straight through to the dashboard.
+  const [locked, setLocked] = useState<boolean>(() => readPersistedLocked())
   const [lockedUser, setLockedUser] = useState<typeof currentUser>(null)
-  const { isLocked, resetTimer } = useIdleTimeout(
+
+  const doLock = useCallback((user: typeof currentUser) => {
+    // Keep a stable snapshot for the lock screen; a later re-hydration must not
+    // replace the signed-in identity with a generic fallback.
+    if (user) setLockedUser(user)
+    setLocked(true)
+    setPersistedLocked(true)
+  }, [])
+
+  const { resetTimer } = useIdleTimeout(
     useCallback(() => {
-      if (authStatus === 'authed' && currentUser) {
-        // Keep an immutable snapshot for the lock screen. Auth hydration or an
-        // expired token must not replace the signed-in user's identity with "User".
-        setLockedUser(currentUser)
-        setLocked(true)
-      }
-    }, [authStatus, currentUser]),
+      if (authStatus === 'authed' && currentUser) doLock(currentUser)
+    }, [authStatus, currentUser, doLock]),
   )
 
+  // Populate the lock-screen identity once auth resolves, including when the
+  // lock originated in another tab and this tab is only now loading.
   useEffect(() => {
-    if (isLocked && authStatus === 'authed' && currentUser) {
+    if (locked && authStatus === 'authed' && currentUser) {
       setLockedUser((previous) => previous ?? currentUser)
-      setLocked(true)
     }
-  }, [authStatus, currentUser, isLocked])
+  }, [authStatus, currentUser, locked])
 
-  // Listen for manual lock requests (from topbar button)
+  // Manual lock requests (topbar button / Ctrl+L).
   useEffect(() => {
     return onLockRequest(() => {
-      if (authStatus === 'authed' && currentUser) {
-        setLockedUser(currentUser)
+      if (authStatus === 'authed' && currentUser) doLock(currentUser)
+    })
+  }, [authStatus, currentUser, doLock])
+
+  // Cross-tab sync: mirror lock/unlock from other tabs so the lock screen
+  // cannot be bypassed by opening the app in a new tab.
+  useEffect(() => {
+    return onLockStateChange((next) => {
+      if (next) {
         setLocked(true)
+      } else {
+        setLocked(false)
+        setLockedUser(null)
+        resetTimer()
       }
     })
-  }, [authStatus, currentUser])
+  }, [resetTimer])
+
+  // If the session ends while locked, drop the persisted lock so the next tab
+  // shows the sign-in page instead of a dead lock screen.
+  useEffect(() => {
+    if (locked && authStatus === 'anon') {
+      setLocked(false)
+      setLockedUser(null)
+      setPersistedLocked(false)
+    }
+  }, [authStatus, locked])
 
   const unlock = useCallback(() => {
     setLocked(false)
     setLockedUser(null)
+    setPersistedLocked(false)
     resetTimer()
   }, [resetTimer])
 
   const goToLogin = useCallback(async () => {
     setLocked(false)
     setLockedUser(null)
+    setPersistedLocked(false)
     resetTimer()
     clearLockedUser()
     await logout()
     navigate('/login', { replace: true })
   }, [logout, navigate, resetTimer])
 
-  if (locked && lockedUser) return <LockScreen user={lockedUser} onUnlock={unlock} onGoToLogin={goToLogin} />
+  if (locked) {
+    const user = lockedUser ?? currentUser
+    if (user) return <LockScreen user={user} onUnlock={unlock} onGoToLogin={goToLogin} />
+    // Auth is still resolving while the workspace is locked; hold the loader
+    // until the identity is known so the dashboard never flashes.
+    return <PageLoader />
+  }
   return <>{children}</>
 }
 
