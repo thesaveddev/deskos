@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import LandingLayout from '../components/LandingLayout'
 import { Modal } from '../components/ui.js'
+import { Icon } from '../components/Icons.js'
 import { api } from '../lib/api.js'
 
 interface SupportTicket {
@@ -133,7 +134,7 @@ export default function SupportPage() {
           {/* Action bar */}
           <div className="support-actions">
             <button className="btn btn-primary" onClick={() => { setShowForm(true); setSelected(null) }}>
-              + New ticket
+              <Icon name="add" size={15} />New ticket
             </button>
           </div>
 

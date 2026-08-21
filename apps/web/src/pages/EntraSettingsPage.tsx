@@ -51,6 +51,11 @@ export default function EntraSettingsPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [actionConnection, setActionConnection] = useState<EntraConnection | null>(null)
+  const [actionUpn, setActionUpn] = useState('')
+  const [actionType, setActionType] = useState<'resetPassword' | 'requireMfa'>('resetPassword')
+  const [actionNewPassword, setActionNewPassword] = useState('')
+  const [actionBusy, setActionBusy] = useState(false)
 
   const refresh = useCallback(async () => {
     try {
@@ -162,25 +167,35 @@ export default function EntraSettingsPage() {
     }
   }
 
-  async function handleAction(connection: EntraConnection) {
-    const upn = window.prompt(`User principal name for ${connection.name} (e.g. user@domain.com):`)
-    if (!upn) return
-    const requireMfa = await confirm('Choose whether to require MFA for this directory user.', { title: 'Directory user action', confirmLabel: 'Require MFA', cancelLabel: 'Reset password' })
-    const body = requireMfa
-      ? { action: 'requireMfa' as const, upn }
-      : { action: 'resetPassword' as const, upn, newPassword: window.prompt('New temporary password:') ?? undefined }
-    setBusy(true)
+  function openAction(connection: EntraConnection) {
+    setActionConnection(connection)
+    setActionUpn('')
+    setActionType('resetPassword')
+    setActionNewPassword('')
     setError(null)
     setNotice(null)
+  }
+
+  async function submitAction(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!actionConnection || actionBusy || !actionUpn.trim()) return
+    setActionBusy(true)
+    setError(null)
+    setNotice(null)
+    const upn = actionUpn.trim()
     try {
-      const result = await runEntraAction(connection.id, body)
+      const body = actionType === 'resetPassword'
+        ? { action: 'resetPassword' as const, upn, newPassword: actionNewPassword || undefined }
+        : { action: 'requireMfa' as const, upn }
+      const result = await runEntraAction(actionConnection.id, body)
       setNotice(`${body.action} on ${upn}: ${result.status} — ${result.detail}`)
+      setActionConnection(null)
       await refresh()
       setTab('actions')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Action failed')
     } finally {
-      setBusy(false)
+      setActionBusy(false)
     }
   }
 
@@ -262,7 +277,7 @@ export default function EntraSettingsPage() {
                 <div className="directory-connection-actions">
                   <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void handleTest(connection.id, connection.name)}><Icon name="check" size={14} />Test</button>
                   <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void handleSync(connection.id, connection.name)}><Icon name="refresh" size={14} />Sync</button>
-                  <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void handleAction(connection)}><Icon name="wrench" size={14} />Action</button>
+                  <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => openAction(connection)}><Icon name="wrench" size={14} />Action</button>
                   <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => openEdit(connection)}><Icon name="edit" size={14} />Edit</button>
                   <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void handleDelete(connection)}><Icon name="delete" size={14} />Remove</button>
                 </div>
@@ -332,6 +347,37 @@ export default function EntraSettingsPage() {
           <Field label="Client ID"><input className="field-input" value={form.clientId} onChange={(event) => setField('clientId', event.target.value)} required /></Field>
           <PasswordField label="Client secret" hint={editing ? 'Leave blank to keep the existing secret' : 'The secret is encrypted and will not be shown again'} className="field-input" value={form.clientSecret} onChange={(event) => setField('clientSecret', event.target.value)} required={!editing} />
           <label className="field checkbox-field"><input type="checkbox" checked={form.enabled} onChange={(event) => setField('enabled', event.target.checked)} />Enabled</label>
+        </form>
+      </Modal>
+
+      <Modal
+        open={Boolean(actionConnection)}
+        onClose={() => { if (!actionBusy) setActionConnection(null) }}
+        title={actionConnection ? `Directory action — ${actionConnection.name}` : 'Directory action'}
+        width={520}
+        footer={<>
+          <button type="button" className="btn btn-ghost" onClick={() => setActionConnection(null)} disabled={actionBusy}>Cancel</button>
+          <button type="submit" form="entra-action-form" className="btn btn-primary" disabled={actionBusy || !actionUpn.trim() || (actionType === 'resetPassword' && !actionNewPassword.trim())}>
+            <Icon name="wrench" size={14} />{actionBusy ? 'Running…' : 'Run action'}
+          </button>
+        </>}
+      >
+        <form id="entra-action-form" onSubmit={(event) => void submitAction(event)} className="directory-form">
+          <p className="directory-form-intro">Perform a scoped account action on a directory user. The action is recorded in the audit trail and appears in the Account actions tab.</p>
+          <Field label="User principal name" hint="e.g. user@domain.com">
+            <input className="field-input mono" value={actionUpn} onChange={(event) => setActionUpn(event.target.value)} placeholder="user@domain.com" required autoFocus />
+          </Field>
+          <Field label="Action">
+            <select className="field-input" value={actionType} onChange={(event) => setActionType(event.target.value as 'resetPassword' | 'requireMfa')}>
+              <option value="resetPassword">Reset password</option>
+              <option value="requireMfa">Require MFA</option>
+            </select>
+          </Field>
+          {actionType === 'resetPassword' ? (
+            <Field label="New temporary password" hint="The user will be prompted to change it at next sign-in">
+              <PasswordField className="field-input" value={actionNewPassword} onChange={(event) => setActionNewPassword(event.target.value)} required />
+            </Field>
+          ) : null}
         </form>
       </Modal>
     </div>

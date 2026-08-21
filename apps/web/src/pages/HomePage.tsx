@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { Shell } from '../components/Shell.js'
 import { QuickTicketModal } from '../components/QuickTicketModal.js'
+import { Icon } from '../components/Icons.js'
 import { useAuth } from '../lib/auth.js'
 import { ticketCounts, listTickets, type Ticket } from '../lib/tickets.js'
 import { getTicketReport, formatMinutes, type TicketReport } from '../lib/reports.js'
@@ -284,7 +285,7 @@ function EndUserDashboard({ myTickets, onNewTicket }: { myTickets: Ticket[]; onN
         <div className="dash-card">
           <div className="dash-card-header">
             <h3 className="dash-card-title">Your recent tickets</h3>
-            <button type="button" className="btn btn-primary btn-sm" onClick={onNewTicket}>New ticket</button>
+            <button type="button" className="btn btn-primary btn-sm" onClick={onNewTicket}><Icon name="add" size={14} />New ticket</button>
           </div>
           {myTickets.length > 0 ? (
             <div className="dash-ticket-list">
