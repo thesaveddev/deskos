@@ -11,6 +11,8 @@ export interface Device {
   asset_tag?: string | null
   assignment_status?: AssignmentStatus | null
   assigned_user_name?: string | null
+  assigned_user_email?: string | null
+  assigned_department?: string | null
   name: string
   hostname: string
   os: string
@@ -24,6 +26,9 @@ export interface Device {
   manufacturer?: string
   model?: string
   directory_last_seen_at?: string | null
+  agent_device_id?: string | null
+  linked_agent_name?: string | null
+  linked_agent_hostname?: string | null
   device_type?: DeviceType
   power_source?: string
   battery_pct?: number | null

@@ -264,15 +264,18 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
           `SELECT d.id, d.name, d.hostname, d.os, d.os_version, d.arch, d.ip_address,
                   d.agent_version, d.device_type, d.power_source, d.battery_pct, d.battery_health_pct, d.uptime_seconds, d.last_inventory_at,
                   d.source, d.managed_by, d.serial_number, d.manufacturer, d.model, d.directory_last_seen_at,
+                  d.agent_device_id,
                   d.group_id, d.enrolled_at, d.last_seen_at, d.created_at,
                   g.name AS group_name,
-                  a.tag AS asset_tag, da.assignment_status, au.name AS assigned_user_name,
+                  a.tag AS asset_tag, da.assignment_status, au.name AS assigned_user_name, au.email AS assigned_user_email, da.department AS assigned_department,
+                  ad.name AS linked_agent_name, ad.hostname AS linked_agent_hostname,
                   ${statusExpr} AS status
              FROM devices d
              LEFT JOIN device_groups g ON g.id = d.group_id
              LEFT JOIN assets a ON a.device_id = d.id
              LEFT JOIN device_assignments da ON da.device_id = d.id AND da.ended_at IS NULL
              LEFT JOIN users au ON au.id = da.user_id
+             LEFT JOIN devices ad ON ad.id = d.agent_device_id
              ${where}
             ORDER BY d.created_at DESC
             LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
@@ -294,12 +297,15 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
           `SELECT d.id, d.tenant_id, d.group_id, d.name, d.hostname, d.os, d.os_version,
                   d.arch, d.ip_address, d.agent_version, d.device_type, d.power_source, d.battery_pct, d.battery_health_pct, d.uptime_seconds, d.last_inventory_at,
                   d.source, d.managed_by, d.serial_number, d.manufacturer, d.model, d.directory_last_seen_at,
+                  d.agent_device_id,
                   NULL::text AS agent_token_hash,
                   d.enrolled_at, d.last_seen_at, d.created_at, d.updated_at,
                   g.name AS group_name,
+                  ad.name AS linked_agent_name, ad.hostname AS linked_agent_hostname,
                   ${statusExpr} AS status
              FROM devices d
              LEFT JOIN device_groups g ON g.id = d.group_id
+             LEFT JOIN devices ad ON ad.id = d.agent_device_id
             WHERE d.id = $1`,
           [id],
         )

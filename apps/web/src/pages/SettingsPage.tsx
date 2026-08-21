@@ -14,6 +14,7 @@ import CannedResponsesPage from './CannedResponsesPage.js'
 import NotificationSettingsPage from './NotificationSettingsPage.js'
 import SecuritySettingsPage from './SecuritySettingsPage.js'
 import EntraSettingsPage from './EntraSettingsPage.js'
+import AdSettingsPage from './AdSettingsPage.js'
 import PublicApiSettingsPage from './PublicApiSettingsPage.js'
 import AiSettingsPanel from '../components/AiSettingsPanel.js'
 import '../styles/settings.css'
@@ -98,7 +99,7 @@ function normalizeWorkspaceSettings(raw: unknown): WorkspaceSettings {
   }
 }
 
-type SettingsTab = 'home' | 'preferences' | 'tickets' | 'email' | 'canned' | 'notifications' | 'ai' | 'security' | 'active-directory' | 'branding' | 'portal' | 'remote' | 'devices' | 'monitoring' | 'data' | 'integrations' | 'api'
+type SettingsTab = 'home' | 'preferences' | 'tickets' | 'email' | 'canned' | 'notifications' | 'ai' | 'security' | 'active-directory' | 'ad' | 'branding' | 'portal' | 'remote' | 'devices' | 'monitoring' | 'data' | 'integrations' | 'api'
 
 interface SettingLink {
   to: string
@@ -131,7 +132,8 @@ const GROUPS: Array<{ label: string; links: SettingLink[] }> = [
     label: 'Security & access',
     links: [
       { to: '/settings/security', tab: 'security', label: 'Authentication', description: 'MFA policy, passkeys, and user security actions', icon: 'shield' },
-      { to: '/settings/active-directory', tab: 'active-directory', label: 'Directory sync', description: 'Active Directory and Entra ID connections', icon: 'user' },
+      { to: '/settings/active-directory', tab: 'active-directory', label: 'Directory sync', description: 'Microsoft Entra ID directory connections', icon: 'user' },
+      { to: '/settings/ad', tab: 'ad', label: 'On-prem Active Directory', description: 'LDAP/LDAPS domain controller sync and actions', icon: 'server' },
       { to: '/settings/api', tab: 'api', label: 'Public API', description: 'OAuth clients, scopes, and developer documentation', icon: 'key' },
     ],
   },
@@ -411,7 +413,7 @@ function SettingsHome() {
 export default function SettingsPage() {
   const location = useLocation()
   const path = location.pathname
-  const active: SettingsTab = path === '/settings' ? 'home' : path.includes('/preferences') ? 'preferences' : path.includes('/tickets') ? 'tickets' : path.includes('/email') ? 'email' : path.includes('/canned') ? 'canned' : path.includes('/notifications') ? 'notifications' : path.includes('/settings/ai') ? 'ai' : path.includes('/security') ? 'security' : path.includes('/active-directory') ? 'active-directory' : path.includes('/branding') ? 'branding' : path.includes('/portal') ? 'portal' : path.includes('/remote') ? 'remote' : path.includes('/devices') ? 'devices' : path.includes('/monitoring') ? 'monitoring' : path.includes('/data') ? 'data' : path.includes('/integrations') ? 'integrations' : 'api'
+  const active: SettingsTab = path === '/settings' ? 'home' : path.includes('/preferences') ? 'preferences' : path.includes('/tickets') ? 'tickets' : path.includes('/email') ? 'email' : path.includes('/canned') ? 'canned' : path.includes('/notifications') ? 'notifications' : path.includes('/settings/ai') ? 'ai' : path.includes('/security') ? 'security' : path.includes('/active-directory') ? 'active-directory' : path.includes('/branding') ? 'branding' : path.includes('/portal') ? 'portal' : path.includes('/remote') ? 'remote' : path.includes('/devices') ? 'devices' : path.includes('/monitoring') ? 'monitoring' : path.includes('/data') ? 'data' : path.includes('/integrations') ? 'integrations' : path.includes('/settings/ad') ? 'ad' : 'api'
   return <Shell><div className="settings-page"><div className="page-head settings-page-head"><div className="page-head-main"><h1 className="page-title">Settings</h1><p className="page-subtitle">Organization-wide controls, operational defaults, and personal preferences.</p></div><NavLink className="btn btn-ghost btn-sm" to="/"><Icon name="back" size={14} />Back to dashboard</NavLink></div><div className="settings-layout"><SettingsNavigation active={active} /><main className="settings-content">{active === 'home' && <SettingsHome />}{active === 'preferences' && <PreferencesSettings />}{active === 'tickets' && <TicketSettingsPage />}{active === 'email' && <EmailSettingsPage />}{active === 'canned' && <CannedResponsesPage />}{active === 'notifications' && <NotificationSettingsPage />}{active === 'ai' && <AiSettingsPanel />}{active === 'security' && <SecuritySettingsPage />}
-{active === 'active-directory' && <EntraSettingsPage />}{active === 'branding' && <BrandingSettings />}{active === 'portal' && <OperationalSettings tab="portal" />}{active === 'remote' && <OperationalSettings tab="remote" />}{active === 'devices' && <OperationalSettings tab="devices" />}{active === 'monitoring' && <OperationalSettings tab="monitoring" />}{active === 'data' && <OperationalSettings tab="data" />}{active === 'integrations' && <IntegrationsSettings />}{active === 'api' && <ApiSettings />}</main></div></div></Shell>
+{active === 'active-directory' && <EntraSettingsPage />}{active === 'ad' && <AdSettingsPage />}{active === 'branding' && <BrandingSettings />}{active === 'portal' && <OperationalSettings tab="portal" />}{active === 'remote' && <OperationalSettings tab="remote" />}{active === 'devices' && <OperationalSettings tab="devices" />}{active === 'monitoring' && <OperationalSettings tab="monitoring" />}{active === 'data' && <OperationalSettings tab="data" />}{active === 'integrations' && <IntegrationsSettings />}{active === 'api' && <ApiSettings />}</main></div></div></Shell>
 }

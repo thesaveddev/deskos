@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { recordAudit } from '../../core/audit.js'
 import { AppError } from '../../core/errors.js'
 import { checkUpdate } from '../../core/update.js'
-import { withTenant } from '../../db/pool.js'
+import { withTenant, type DbClient } from '../../db/pool.js'
 import { evaluateDevice, recordExperienceEvent } from '../dex/dex.js'
 import { evaluateAnomalies, evaluateMonitoringRules } from '../monitoring/monitoring.js'
 import { notify } from '../../core/notify.js'
@@ -23,6 +23,9 @@ const enrolSchema = z.object({
   ip: z.string().max(64).optional(),
   agentVersion: z.string().max(40).optional(),
   deviceType: z.enum(['laptop', 'workstation', 'server', 'network_device', 'mobile', 'other']).optional(),
+  serialNumber: z.string().max(200).optional(),
+  manufacturer: z.string().max(120).optional(),
+  model: z.string().max(120).optional(),
 })
 
 const heartbeatSchema = z.object({}).strict()
@@ -39,6 +42,9 @@ const inventorySchema = z.object({
   batteryPct: z.number().min(0).max(100).nullable().optional(),
   batteryHealthPct: z.number().min(0).max(100).nullable().optional(),
   uptimeSeconds: z.number().int().min(0).max(2_000_000_000).optional(),
+  serialNumber: z.string().max(200).optional(),
+  manufacturer: z.string().max(120).optional(),
+  model: z.string().max(120).optional(),
 })
 
 const metricsSchema = z.object({
@@ -62,6 +68,28 @@ const updateTelemetrySchema = z.object({
   outcome: z.enum(['checked', 'downloaded', 'verified', 'applied', 'failed', 'rolled_back']),
   reason: z.string().max(500).optional(),
 })
+
+/**
+ * Link directory-discovered devices (Entra/Intune or on-prem AD) to the live
+ * agent device once they can be recognised by serial number. Matching is
+ * best-effort: it must never break enrolment or inventory reporting.
+ */
+async function matchDirectoryDevices(client: DbClient, tenantId: string, deviceId: string, serial: string | undefined): Promise<number> {
+  const normalized = serial?.trim()
+  if (!normalized) return 0
+  const result = await client.query(
+    `UPDATE devices
+        SET agent_device_id = $1, updated_at = now()
+      WHERE tenant_id = $2
+        AND id <> $1
+        AND source <> 'agent'
+        AND serial_number <> ''
+        AND lower(serial_number) = lower($3)
+        AND (agent_device_id IS NULL OR agent_device_id <> $1)`,
+    [deviceId, tenantId, normalized],
+  )
+  return result.rowCount ?? 0
+}
 
 /**
  * Agent-facing endpoints. Auth = per-device bearer token issued at enrolment
@@ -111,10 +139,13 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
             `UPDATE devices SET hostname = COALESCE(NULLIF($2, ''), hostname), os = COALESCE(NULLIF($3, ''), os),
                     os_version = COALESCE(NULLIF($4, ''), os_version), arch = COALESCE(NULLIF($5, ''), arch),
                     ip_address = COALESCE(NULLIF($6, ''), ip_address), agent_version = COALESCE(NULLIF($7, ''), agent_version),
-                    device_type = COALESCE(NULLIF($8, ''), device_type), agent_token_hash = $9, last_seen_at = now(), updated_at = now()
+                    device_type = COALESCE(NULLIF($8, ''), device_type), serial_number = COALESCE(NULLIF($9, ''), serial_number),
+                    manufacturer = COALESCE(NULLIF($10, ''), manufacturer), model = COALESCE(NULLIF($11, ''), model),
+                    agent_token_hash = $12, last_seen_at = now(), updated_at = now()
               WHERE id = $1`,
-            [existing.id, body.hostname ?? '', body.os ?? '', body.osVersion ?? '', body.arch ?? '', body.ip ?? '', body.agentVersion ?? '', body.deviceType ?? '', hashToken(deviceToken)],
+            [existing.id, body.hostname ?? '', body.os ?? '', body.osVersion ?? '', body.arch ?? '', body.ip ?? '', body.agentVersion ?? '', body.deviceType ?? '', body.serialNumber ?? '', body.manufacturer ?? '', body.model ?? '', hashToken(deviceToken)],
           )
+          await matchDirectoryDevices(client, tenantId, existing.id, body.serialNumber)
           return existing
         }
       }
@@ -134,14 +165,17 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
       const name = body.name ?? body.hostname ?? 'Unnamed device'
       const res = await client.query(
         `INSERT INTO devices
-           (tenant_id, name, hostname, os, os_version, arch, ip_address, agent_version, device_type, agent_token_hash, last_seen_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
+           (tenant_id, name, hostname, os, os_version, arch, ip_address, agent_version, device_type,
+            serial_number, manufacturer, model, agent_token_hash, last_seen_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now())
          RETURNING id, name`,
         [
           tenantId, name, body.hostname ?? '', body.os ?? '', body.osVersion ?? '',
-          body.arch ?? '', body.ip ?? '', body.agentVersion ?? '', body.deviceType ?? 'workstation', hashToken(deviceToken),
+          body.arch ?? '', body.ip ?? '', body.agentVersion ?? '', body.deviceType ?? 'workstation',
+          body.serialNumber ?? '', body.manufacturer ?? '', body.model ?? '', hashToken(deviceToken),
         ],
       )
+      await matchDirectoryDevices(client, tenantId, res.rows[0].id, body.serialNumber)
       await recordAudit(client, tenantId, {
         actorType: 'agent',
         action: 'device.enrolled',
@@ -229,6 +263,9 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
         ['battery_pct', 'batteryPct'],
         ['battery_health_pct', 'batteryHealthPct'],
         ['uptime_seconds', 'uptimeSeconds'],
+        ['serial_number', 'serialNumber'],
+        ['manufacturer', 'manufacturer'],
+        ['model', 'model'],
       ] as const) {
         const value = body[key]
         if (value !== undefined) {
@@ -244,6 +281,7 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
         values,
       )
       if (!res.rows[0]) throw AppError.notFound('Device not found')
+      await matchDirectoryDevices(client, ctx.tenantId, ctx.deviceId, body.serialNumber)
       return { ok: true, device: res.rows[0] }
     })
   })

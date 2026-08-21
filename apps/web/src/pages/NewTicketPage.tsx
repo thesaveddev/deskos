@@ -49,6 +49,18 @@ export default function NewTicketPage() {
       .catch((err) => setDeviceLoadError(err instanceof Error ? err.message : 'Device linking unavailable'))
   }, [])
 
+  const handleDeviceChange = (id: string) => {
+    setDeviceId(id)
+    const device = devices.find((item) => item.id === id)
+    if (!device) return
+    // Auto-fill the requester from the device's assigned owner when the fields
+    // are still empty, so technicians don't retype what the inventory already
+    // knows. Manual input is never overwritten.
+    if (!reqName.trim() && device.assigned_user_name) setReqName(device.assigned_user_name)
+    if (!reqEmail.trim() && device.assigned_user_email) setReqEmail(device.assigned_user_email)
+    if (!reqDept.trim() && device.assigned_department) setReqDept(device.assigned_department)
+  }
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = Array.from(e.target.files || [])
     setFiles((prev) => [...prev, ...selected])
@@ -208,10 +220,10 @@ export default function NewTicketPage() {
                 </select>
               </Field>
             </div>
-            <Field label="Affected device" hint={deviceLoadError ?? 'Optional — links the ticket to endpoint health and alerts.'}>
-              <select className="field-input" value={deviceId} onChange={(e) => setDeviceId(e.target.value)} disabled={Boolean(deviceLoadError)}>
+            <Field label="Affected device" hint={deviceLoadError ?? 'Optional — links the ticket to endpoint health and alerts, and auto-fills the assigned owner.'}>
+              <select className="field-input" value={deviceId} onChange={(e) => handleDeviceChange(e.target.value)} disabled={Boolean(deviceLoadError)}>
                 <option value="">No device linked</option>
-                {devices.map((device) => <option key={device.id} value={device.id}>{device.name}{device.hostname ? ` · ${device.hostname}` : ''}</option>)}
+                {devices.map((device) => <option key={device.id} value={device.id}>{device.name}{device.hostname ? ` · ${device.hostname}` : ''}{device.assigned_user_name ? ` — ${device.assigned_user_name}` : ''}</option>)}
               </select>
             </Field>
           </div>

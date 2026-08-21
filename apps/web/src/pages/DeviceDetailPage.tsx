@@ -295,6 +295,7 @@ export default function DeviceDetailPage() {
             <span className="device-avatar device-avatar-large">{device.name.slice(0, 1).toUpperCase()}</span>
             <span className={`status-pill status-${device.status}`}>{statusLabel(device.status)}</span>
             {device.source === 'directory' ? <span className="directory-device-badge">{device.managed_by === 'intune' ? 'Directory · Intune' : device.managed_by === 'ad' ? 'Directory · AD' : 'Directory'}</span> : null}
+            {device.agent_device_id ? <span className="directory-device-badge directory-device-matched" title={`Linked to ${device.linked_agent_name || 'enrolled agent'}`}>Agent-linked</span> : null}
             <span className="mono muted">{device.agent_version ? `agent ${device.agent_version}` : 'agent version unknown'}</span>
           </div>
           <h1 className="ticket-subject">{device.name}</h1>
