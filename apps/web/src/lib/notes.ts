@@ -44,6 +44,31 @@ export function getColorStyle(colorName: string) {
   return NOTE_COLORS.find((c) => c.name === colorName) || NOTE_COLORS[0]
 }
 
+export function readImageFile(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+}
+
+export function readClipboardImages(data: DataTransfer | null): File[] {
+  if (!data) return []
+  const files: File[] = []
+  if (data.items) {
+    for (const item of Array.from(data.items)) {
+      if (item.kind === 'file' && item.type.startsWith('image/')) {
+        const file = item.getAsFile()
+        if (file) files.push(file)
+      }
+    }
+  } else if (data.files) {
+    for (const file of Array.from(data.files)) if (file.type.startsWith('image/')) files.push(file)
+  }
+  return files
+}
+
 export function listNotes(): Promise<{ notes: Note[] }> { return api('/notes') }
 export function listNoteCategories(): Promise<{ categories: NoteCategory[] }> { return api('/notes/categories') }
 export function createNoteCategory(data: { name: string; color: string }): Promise<{ category: NoteCategory }> { return api('/notes/categories', { method: 'POST', body: data }) }

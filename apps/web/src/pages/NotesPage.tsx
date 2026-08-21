@@ -3,17 +3,18 @@ import { Shell } from '../components/Shell.js'
 import { Icon } from '../components/Icons.js'
 import {
   listNotes, createNote, updateNote, deleteNote,
-  getColorStyle, NOTE_COLORS,
+  getColorStyle, NOTE_COLORS, readImageFile, readClipboardImages,
   type Note,
 } from '../lib/notes.js'
 
-function StickyNote({ note, onMove, onResize, onEdit, onColor, onPin, onDelete }: {
+function StickyNote({ note, onMove, onResize, onEdit, onColor, onPin, onImages, onDelete }: {
   note: Note
   onMove: (id: number, x: number, y: number) => void
   onResize: (id: number, w: number, h: number) => void
   onEdit: (id: number, body: string) => void
   onColor: (id: number, color: string) => void
   onPin: (id: number) => void
+  onImages: (id: number, images: string[]) => void
   onDelete: (id: number) => void
 }) {
   const color = getColorStyle(note.color)
@@ -24,6 +25,7 @@ function StickyNote({ note, onMove, onResize, onEdit, onColor, onPin, onDelete }
   const [saving, setSaving] = useState(false)
   const width = Math.min(Math.max(note.width || 220, 180), 240)
   const height = Math.min(Math.max(note.height || 220, 180), 300)
+  const images = note.images ?? []
 
   useEffect(() => setBody(note.body), [note.body])
   useEffect(() => () => { if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current) }, [])
@@ -41,6 +43,24 @@ function StickyNote({ note, onMove, onResize, onEdit, onColor, onPin, onDelete }
     if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current)
     if (body !== note.body) onEdit(note.id, body)
     setSaving(false)
+  }
+
+  const addImages = (files: File[]) => {
+    if (files.length === 0) return
+    Promise.all(files.map(readImageFile))
+      .then((sources) => onImages(note.id, [...images, ...sources]))
+      .catch(() => {})
+  }
+
+  const handlePaste = (event: React.ClipboardEvent) => {
+    const files = readClipboardImages(event.clipboardData)
+    if (files.length === 0) return
+    event.preventDefault()
+    addImages(files)
+  }
+
+  const removeImage = (index: number) => {
+    onImages(note.id, images.filter((_, imageIndex) => imageIndex !== index))
   }
 
   const handleDragStart = (event: React.MouseEvent) => {
@@ -99,15 +119,31 @@ function StickyNote({ note, onMove, onResize, onEdit, onColor, onPin, onDelete }
         value={body}
         onChange={(event) => { setBody(event.target.value); saveBody(event.target.value) }}
         onBlur={flushBody}
+        onPaste={handlePaste}
         placeholder="Write something…"
         aria-label="Note content"
         style={{ color: color.text }}
       />
 
+      {images.length > 0 ? (
+        <div className="sticky-images" aria-label="Note images">
+          {images.map((src, index) => (
+            <span key={index} className="sticky-image-thumb">
+              <img src={src} alt="" />
+              <button type="button" className="sticky-image-remove" onClick={() => removeImage(index)} title="Remove image" aria-label="Remove image"><Icon name="close" size={10} /></button>
+            </span>
+          ))}
+        </div>
+      ) : null}
+
       <footer className="sticky-footer" style={{ borderTopColor: color.border }}>
         <div className="sticky-color-row" aria-label="Note background color">
           {NOTE_COLORS.map((item) => <button type="button" key={item.name} className={`sticky-color-dot${note.color === item.name ? ' active' : ''}`} style={{ background: item.border }} onClick={() => onColor(note.id, item.name)} title={`Use ${item.name} background`} aria-label={`Use ${item.name} background`} />)}
         </div>
+        <label className="sticky-image-add" title="Add image" aria-label="Add image">
+          <Icon name="upload" size={13} />
+          <input type="file" accept="image/*" multiple hidden onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ''; if (files.length > 0) addImages(files) }} />
+        </label>
         <span className="sticky-save-state">{saving ? 'Saving…' : 'Saved'}</span>
         <button type="button" className="sticky-action-btn sticky-delete-btn" onClick={() => onDelete(note.id)} title="Delete note" aria-label="Delete note"><Icon name="delete" size={14} /></button>
       </footer>
@@ -159,6 +195,11 @@ export default function NotesPage() {
     updateNote(id, { color }).catch(() => {})
   }, [])
 
+  const handleImages = useCallback((id: number, images: string[]) => {
+    setNotes((prev) => prev.map((note) => note.id === id ? { ...note, images } : note))
+    updateNote(id, { images }).catch(() => {})
+  }, [])
+
   const handlePin = useCallback((id: number) => {
     const note = notes.find((item) => item.id === id)
     if (!note) return
@@ -205,7 +246,7 @@ export default function NotesPage() {
 
       {loading ? <div className="dash-loading"><div className="loading-spinner" /><p>Loading notes…</p></div> : filtered.length === 0 ? <div className="dash-empty-state"><Icon name="edit" size={30} /><p>{search ? 'No notes match your search' : 'No notes yet'}</p>{!search && <button type="button" className="btn btn-primary" onClick={() => void handleNewNote()}>Create your first note</button>}</div> : <>
         {pinnedNotes.length > 0 ? <section className="notes-pinned-strip" aria-label="Pinned notes"><div className="notes-pinned-strip-head"><div><span className="etch">Pinned</span><p>Notes you want at the top of the workspace.</p></div><span className="notes-pinned-count">{pinnedNotes.length}</span></div><div className="notes-pinned-list">{pinnedNotes.map((note) => <PinnedNoteCard key={note.id} note={note} onUnpin={() => handlePin(note.id)} onOpen={() => { window.history.replaceState({}, '', `/notes?note=${note.id}`); document.querySelector(`[data-note-id="${note.id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }) }} />)}</div></section> : null}
-        {workspaceNotes.length > 0 ? <div className="notes-canvas" ref={canvasRef}>{workspaceNotes.map((note) => <StickyNote key={note.id} note={note} onMove={handleMove} onResize={handleResize} onEdit={handleEdit} onColor={handleColor} onPin={handlePin} onDelete={handleDelete} />)}</div> : null}
+        {workspaceNotes.length > 0 ? <div className="notes-canvas" ref={canvasRef}>{workspaceNotes.map((note) => <StickyNote key={note.id} note={note} onMove={handleMove} onResize={handleResize} onEdit={handleEdit} onColor={handleColor} onPin={handlePin} onImages={handleImages} onDelete={handleDelete} />)}</div> : null}
       </>}
     </Shell>
   )

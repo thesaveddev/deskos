@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import {
   listNotes, createNote, deleteNote, updateNote,
   listNoteCategories, createNoteCategory, deleteNoteCategory,
-  getColorStyle, NOTE_COLORS, type Note, type NoteCategory,
+  getColorStyle, NOTE_COLORS, readImageFile, readClipboardImages, type Note, type NoteCategory,
 } from '../lib/notes.js'
 import { Icon } from './Icons.js'
 
@@ -10,15 +10,6 @@ interface Props { open: boolean; onClose: () => void }
 type View = 'all' | 'note' | 'categories'
 
 type Draft = { body: string; color: string; category_id: string; images: string[] }
-
-function readImage(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result))
-    reader.onerror = () => reject(reader.error)
-    reader.readAsDataURL(file)
-  })
-}
 
 /** Read inline images (in DOM order) and the plain-text body out of the editor. */
 function extractEditor(root: HTMLElement): { body: string; images: string[] } {
@@ -173,9 +164,16 @@ export function NotesDropdown({ open, onClose }: Props) {
     }
   }
 
+  const handleEditorPaste = (event: React.ClipboardEvent) => {
+    const files = readClipboardImages(event.clipboardData)
+    if (files.length === 0) return
+    event.preventDefault()
+    void addImages(files)
+  }
+
   const addImages = (files: File[]) => {
     if (!selected || files.length === 0) return
-    Promise.all(files.map(readImage))
+    Promise.all(files.map(readImageFile))
       .then((sources) => {
         const root = editorRef.current
         if (root) {
@@ -279,7 +277,7 @@ export function NotesDropdown({ open, onClose }: Props) {
             </article>
           })}
         </div>
-      </> : view === 'categories' ? <div className="notes-category-view"><div className="notes-category-create"><input className="field-input" value={categoryName} onChange={(event) => setCategoryName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void addCategory() } }} placeholder="Category name" aria-label="Category name" /><div className="notes-color-picker">{NOTE_COLORS.map((color) => <button type="button" key={color.name} className={categoryColor === color.name ? 'active' : ''} style={{ background: color.border }} onClick={() => setCategoryColor(color.name)} aria-label={`Use ${color.name} category`} />)}</div><button type="button" className="btn btn-primary btn-sm" onClick={() => void addCategory()} disabled={!categoryName.trim() || creatingCategory}><Icon name="add" size={13} />Create</button></div>{categories.length === 0 ? <div className="notes-dropdown-empty">No categories yet.</div> : <div className="notes-category-list">{categories.map((category) => <div key={category.id} className="notes-category-row"><span className="notes-category-swatch" style={{ background: getColorStyle(category.color).border }} /><strong>{category.name}</strong><button type="button" className="notes-card-action notes-card-delete" onClick={() => void deleteNoteCategory(category.id).then(() => setCategories((items) => items.filter((item) => item.id !== category.id))).catch(() => setError('The category could not be deleted.'))} title="Delete category" aria-label={`Delete ${category.name}`}><Icon name="delete" size={13} /></button></div>)}</div>}</div> : <div className="notes-editor-view" style={{ background: getColorStyle(draft.color).bg, color: getColorStyle(draft.color).text }}><label className="field-label">Category<select className="field-input" value={draft.category_id} onChange={(event) => persist({ category_id: event.target.value })}><option value="">No category</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label className="field-label notes-editor-body-label">Note<div ref={editorRef} className="notes-editor-rich" contentEditable suppressContentEditableWarning role="textbox" aria-multiline="true" aria-label="Note content" data-placeholder="Write something…" onInput={handleEditorInput} onKeyDown={handleEditorKeyDown} /></label><div className="notes-editor-footer"><div className="notes-color-picker" aria-label="Note background"><span className="notes-footer-label">Color</span>{NOTE_COLORS.map((color) => <button type="button" key={color.name} className={draft.color === color.name ? 'active' : ''} style={{ background: color.border }} onClick={() => persist({ color: color.name })} aria-label={`Use ${color.name} note background`} />)}</div><label className="notes-image-upload"><Icon name="upload" size={14} />Image<input type="file" accept="image/*" multiple hidden onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ''; if (files.length > 0) void addImages(files) }} /></label><span className="notes-save-state">{saving ? 'Saving…' : 'Saved automatically'}</span><button type="button" className="notes-card-action notes-card-delete" onClick={() => selected && void removeNote(selected.id)} title="Delete note" aria-label="Delete note"><Icon name="delete" size={14} /></button></div></div>}
+      </> : view === 'categories' ? <div className="notes-category-view"><div className="notes-category-create"><input className="field-input" value={categoryName} onChange={(event) => setCategoryName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void addCategory() } }} placeholder="Category name" aria-label="Category name" /><div className="notes-color-picker">{NOTE_COLORS.map((color) => <button type="button" key={color.name} className={categoryColor === color.name ? 'active' : ''} style={{ background: color.border }} onClick={() => setCategoryColor(color.name)} aria-label={`Use ${color.name} category`} />)}</div><button type="button" className="btn btn-primary btn-sm" onClick={() => void addCategory()} disabled={!categoryName.trim() || creatingCategory}><Icon name="add" size={13} />Create</button></div>{categories.length === 0 ? <div className="notes-dropdown-empty">No categories yet.</div> : <div className="notes-category-list">{categories.map((category) => <div key={category.id} className="notes-category-row"><span className="notes-category-swatch" style={{ background: getColorStyle(category.color).border }} /><strong>{category.name}</strong><button type="button" className="notes-card-action notes-card-delete" onClick={() => void deleteNoteCategory(category.id).then(() => setCategories((items) => items.filter((item) => item.id !== category.id))).catch(() => setError('The category could not be deleted.'))} title="Delete category" aria-label={`Delete ${category.name}`}><Icon name="delete" size={13} /></button></div>)}</div>}</div> : <div className="notes-editor-view" style={{ background: getColorStyle(draft.color).bg, color: getColorStyle(draft.color).text }}><label className="field-label">Category<select className="field-input" value={draft.category_id} onChange={(event) => persist({ category_id: event.target.value })}><option value="">No category</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label className="field-label notes-editor-body-label">Note<div ref={editorRef} className="notes-editor-rich" contentEditable suppressContentEditableWarning role="textbox" aria-multiline="true" aria-label="Note content" data-placeholder="Write something…" onInput={handleEditorInput} onKeyDown={handleEditorKeyDown} onPaste={handleEditorPaste} /></label><div className="notes-editor-footer"><div className="notes-color-picker" aria-label="Note background"><span className="notes-footer-label">Color</span>{NOTE_COLORS.map((color) => <button type="button" key={color.name} className={draft.color === color.name ? 'active' : ''} style={{ background: color.border }} onClick={() => persist({ color: color.name })} aria-label={`Use ${color.name} note background`} />)}</div><label className="notes-image-upload"><Icon name="upload" size={14} />Image<input type="file" accept="image/*" multiple hidden onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ''; if (files.length > 0) void addImages(files) }} /></label><span className="notes-save-state">{saving ? 'Saving…' : 'Saved automatically'}</span><button type="button" className="notes-card-action notes-card-delete" onClick={() => selected && void removeNote(selected.id)} title="Delete note" aria-label="Delete note"><Icon name="delete" size={14} /></button></div></div>}
     </div>
   )
 }
