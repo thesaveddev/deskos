@@ -384,12 +384,12 @@ export async function buildApp(config: AppConfig): Promise<FastifyInstance> {
   await app.register(connectRoutes, { prefix: '/api' })
 
   // Serve the React frontend in production (SPA bundled alongside the API).
-  const webDist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'web', 'dist')
+  // dist/app.js (prod) or src/app.ts (dev) -> apps/web/dist
+  const webDist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'web', 'dist')
   await app.register(staticPlugin, {
     root: webDist,
     prefix: '/',
     wildcard: false,
-    decorateReply: false,
   })
   // SPA fallback: any non-API, non-file request returns index.html.
   app.setNotFoundHandler(async (request, reply) => {
