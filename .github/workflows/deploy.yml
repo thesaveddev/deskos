@@ -1,8 +1,11 @@
 name: Deploy to Production
 
 on:
-  # Deploy only after the E2E suite passes on master. A red E2E run blocks the
-  # release; manual dispatch is available for emergency/operator deploys.
+  # Deploy after the E2E suite passes on master. The deploy job then waits for
+  # the CI workflow (typecheck, web/api/relay builds, API tests, lint) to pass
+  # for the same commit before touching production, so a lint or test
+  # regression can no longer ship unnoticed. Manual dispatch is available for
+  # emergency/operator deploys.
   workflow_run:
     workflows: ["E2E"]
     types: [completed]
@@ -18,9 +21,33 @@ jobs:
     name: Deploy ReyDesk to VPS
     runs-on: ubuntu-latest
     environment: production
-    timeout-minutes: 15
+    timeout-minutes: 45
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.head_branch == 'master' && github.event.workflow_run.conclusion == 'success') }}
     steps:
+      - name: Wait for CI to pass
+        if: ${{ github.event_name == 'workflow_run' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          conclusion=""
+          for i in $(seq 1 90); do
+            conclusion=$(gh run list --workflow "CI" --branch master --limit 100 \
+              --json headSha,conclusion \
+              --jq "map(select(.headSha == \"$HEAD_SHA\")) | (.[0].conclusion // \"\")")
+            if [ -n "$conclusion" ]; then
+              break
+            fi
+            echo "Waiting for CI to complete for $HEAD_SHA (attempt $i)..."
+            sleep 20
+          done
+          if [ "$conclusion" != "success" ]; then
+            echo "CI did not pass for $HEAD_SHA (conclusion: ${conclusion:-none}). Refusing to deploy."
+            exit 1
+          fi
+          echo "CI passed for $HEAD_SHA — proceeding with deploy."
+
       - name: Checkout tested revision
         uses: actions/checkout@v4
         with:
