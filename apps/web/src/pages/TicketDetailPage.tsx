@@ -199,31 +199,26 @@ export default function TicketDetailPage() {
     return () => clearInterval(interval)
   }, [id])
 
+  // Poll presence (lock, viewers, and release requests) on a short cadence so
+  // a release request or approval reaches the other agent promptly without a
+  // full page reload.
   useEffect(() => {
     if (!id) return
-    const fetchViewers = async () => {
-      try {
-        const res = await getTicketViewers(id)
-        setViewers(res.viewers)
-      } catch { /* ignore */ }
-    }
-    void fetchViewers()
-    const interval = setInterval(fetchViewers, 10_000)
-    return () => clearInterval(interval)
-  }, [id])
-
-  // Refresh the lock banner independently of the ticket payload so a manager
-  // force-unlock or a five-minute expiry is reflected without a full reload.
-  useEffect(() => {
-    if (!id) return
-    const refreshLock = async () => {
+    const refreshPresence = async () => {
       try {
         const result = await getTicketLock(id)
         setTicketLock(result.lock)
         setLockIsMine(result.is_mine)
       } catch { /* ignore transient refresh failures */ }
+      try {
+        const res = await getTicketViewers(id)
+        setViewers(res.viewers)
+      } catch { /* ignore */ }
+      try {
+        setReleaseRequests((await listLockReleaseRequests(id)).requests)
+      } catch { /* ignore */ }
     }
-    const interval = setInterval(refreshLock, 10_000)
+    const interval = setInterval(refreshPresence, 3_000)
     return () => clearInterval(interval)
   }, [id])
 
@@ -282,8 +277,11 @@ export default function TicketDetailPage() {
   const blockedByAnotherViewer = assignedToMe && otherViewers.length > 0 && !lockIsMine && !canOverrideTicketLock
   const readOnlyForLock = Boolean((ticketLock && !lockIsMine && !canOverrideTicketLock) || blockedByAnotherViewer)
   const blockingName = ticketLock?.locked_by_name ?? ticketLock?.locked_by_email ?? otherViewers[0]?.name ?? otherViewers[0]?.email ?? 'Another agent'
-  // Pulse the padlock while another agent is waiting for me to release the lock.
+  // Pulse the padlock while another agent is waiting for me to release the
+  // lock, and while my own release request is still awaiting a response.
   const hasPendingReleaseRequest = releaseRequests.some((request) => request.status === 'pending' && request.locked_by === auth.user?.id)
+  const myPendingReleaseRequest = releaseRequests.some((request) => request.status === 'pending' && request.requested_by === auth.user?.id)
+  const lockIconPulsing = hasPendingReleaseRequest || myPendingReleaseRequest
 
   const sendReply = async () => {
     if (!draft.trim() || busy) return
@@ -708,14 +706,16 @@ export default function TicketDetailPage() {
         <div className="ticket-presence-status">
         <button
           type="button"
-          className={`ticket-status-icon ${ticketLock ? 'is-locked' : 'is-unlocked'}${hasPendingReleaseRequest ? ' has-release-request' : ''}`}
+          className={`ticket-status-icon ${ticketLock ? 'is-locked' : 'is-unlocked'}${lockIconPulsing ? ' has-release-request' : ''}`}
           onClick={() => { setShowLockModal(true); if (canOverrideTicketLock) void loadAllLocks() }}
           data-tooltip={hasPendingReleaseRequest
             ? 'Someone asked you to release this ticket · open to respond'
-            : ticketLock
-              ? `${lockIsMine ? 'Locked to' : 'Locked by'} ${ticketLock.locked_by_name || ticketLock.locked_by_email} · manage lock`
-              : 'Unlocked · manage lock'}
-          aria-label={hasPendingReleaseRequest ? 'Lock release requested. Open lock actions.' : ticketLock ? `Manage lock: ${lockIsMine ? 'locked to' : 'locked by'} ${ticketLock.locked_by_name || ticketLock.locked_by_email}` : 'Manage ticket lock'}
+            : myPendingReleaseRequest
+              ? 'You requested release · waiting for the agent'
+              : ticketLock
+                ? `${lockIsMine ? 'Locked to' : 'Locked by'} ${ticketLock.locked_by_name || ticketLock.locked_by_email} · manage lock`
+                : 'Unlocked · manage lock'}
+          aria-label={hasPendingReleaseRequest ? 'Lock release requested. Open lock actions.' : myPendingReleaseRequest ? 'You requested release. Open lock actions.' : ticketLock ? `Manage lock: ${lockIsMine ? 'locked to' : 'locked by'} ${ticketLock.locked_by_name || ticketLock.locked_by_email}` : 'Manage ticket lock'}
         >
           <Icon name={ticketLock ? 'lock' : 'unlock'} size={17} />
           <span className="sr-only">{ticketLock ? `${lockIsMine ? 'Locked to' : 'Locked by'} ${ticketLock.locked_by_name || ticketLock.locked_by_email}` : 'Unlocked'}</span>
@@ -732,7 +732,6 @@ export default function TicketDetailPage() {
           <span className="sr-only">{viewers.length > 0 ? `Viewing: ${viewers.map((viewer) => viewer.name || viewer.email).join(', ')}` : 'Not being viewed'}</span>
         </span>
         </div>
-        {readOnlyForLock ? <div className="ticket-readonly-notice"><Icon name="lock" size={16} /><div><strong>Read-only view</strong><span>{blockingName} is viewing or working on this ticket. Use the lock icon to request release.</span></div></div> : null}
         <div className="ticket-endpoint-inline">
           <span className="etch">Endpoint</span>
           {ticketDevice ? (
@@ -1048,6 +1047,26 @@ export default function TicketDetailPage() {
       </Modal>
 
       <div className="composer ticket-composer-fixed">
+        {readOnlyForLock ? (
+          <div className="ticket-composer-readonly">
+            <Icon name="lock" size={16} />
+            <div className="ticket-composer-readonly-text">
+              <strong>Read-only view</strong>
+              <span>{blockingName} is viewing or working on this ticket. Use the lock icon to request release.</span>
+            </div>
+            {!lockIsMine ? (
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => void handleRequestRelease()}
+                disabled={releaseBusy || releaseRequests.some((request) => request.status === 'pending' && request.requested_by === auth.user?.id)}
+              >
+                <Icon name="send" size={14} />
+                {releaseRequests.some((request) => request.status === 'pending' && request.requested_by === auth.user?.id) ? 'Release requested' : releaseBusy ? 'Requesting…' : 'Request release'}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         <div className="composer-tabs">
           <button
             className={`composer-tab${composerMode === 'public' ? ' active' : ''}`}

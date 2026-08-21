@@ -17,4 +17,9 @@
 .ticket-readonly-notice > div { display: grid; gap: 2px; min-width: 0; }
 .ticket-readonly-notice strong { color: var(--text-1); font-size: 12px; }
 .ticket-readonly-notice span { overflow: hidden; color: var(--text-2); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.ticket-composer-readonly { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line-1); background: rgba(232, 163, 61, 0.06); color: var(--warn); }
+.ticket-composer-readonly-text { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.ticket-composer-readonly-text strong { color: var(--text-1); font-size: 12px; }
+.ticket-composer-readonly-text span { overflow: hidden; color: var(--text-2); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.ticket-composer-readonly .btn { flex-shrink: 0; }
 @media (max-width: 640px) { .ticket-lock-admin-row { align-items: flex-start; flex-wrap: wrap; } .ticket-status-hint { display: none; } .ticket-readonly-notice { width: 100%; flex-basis: 100%; } }
