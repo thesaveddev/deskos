@@ -50,7 +50,6 @@ export default function SessionsPage() {
   const [showCodePanel, setShowCodePanel] = useState(false)
   const [codeReason, setCodeReason] = useState('')
   const [codeExpiresInMin, setCodeExpiresInMin] = useState(30)
-  const [codeLength, setCodeLength] = useState<10 | 11 | 12>(10)
   const [emailMode, setEmailMode] = useState<'code' | 'email_link'>('email_link')
   const [allowCodeControl, setAllowCodeControl] = useState(true)
   const [allowCodeClipboard, setAllowCodeClipboard] = useState(false)
@@ -80,7 +79,6 @@ export default function SessionsPage() {
     setGeneratedCode(null)
     setEmailRecipient('')
     setEmailNotice(null)
-    if (next) void loadCodes()
   }
 
   const revokeCode = async (record: AdhocSessionRecord) => {
@@ -116,7 +114,7 @@ export default function SessionsPage() {
         ],
         reason: codeReason.trim() || undefined,
         expiresInMin: codeExpiresInMin,
-        codeLength,
+        codeLength: 12,
       })
       setGeneratedCode(result)
       void loadCodes()
@@ -172,15 +170,15 @@ export default function SessionsPage() {
     void load()
   }, [load])
 
-  // While the support-code panel is open, keep the recent-codes list fresh so
-  // a claim flips to its "Open live session" affordance without a manual refresh.
+  // Keep the recent-codes list fresh so a claim flips to its "Open live
+  // session" affordance without a manual refresh.
   useEffect(() => {
-    if (!showCodePanel) return
+    void loadCodes()
     const timer = window.setInterval(() => {
       void loadCodes()
-    }, 3000)
+    }, 5000)
     return () => window.clearInterval(timer)
-  }, [showCodePanel, loadCodes])
+  }, [loadCodes])
 
   const stop = async (session: RemoteSession) => {
     if (endingId) return
@@ -227,94 +225,74 @@ export default function SessionsPage() {
       </nav>
 
       {showCodePanel ? (
-        <Modal open={showCodePanel} onClose={() => { if (!codeBusy && !emailBusy) setShowCodePanel(false) }} title="Generate a support code" width={760}>
-          <div className="session-request-panel">
-          <div className="detail-card-head"><h2>Generate a support code</h2><span className="muted mono">ad-hoc device — no enrollment needed</span></div>
-          <form className="support-code-form" onSubmit={generateCode}>
-            <Field label="Reason" hint="Shown to the person you're helping and recorded in the audit trail.">
-              <input className="field-input" value={codeReason} onChange={(event) => setCodeReason(event.target.value)} placeholder="Why do you need access?" />
-            </Field>
-            <Field label="Expires in (minutes)" hint="The code and link stop working after this long.">
-              <input className="field-input" type="number" min={1} max={1440} value={codeExpiresInMin} onChange={(event) => setCodeExpiresInMin(Math.max(1, Math.min(1440, Number(event.target.value) || 30)))} />
-            </Field>
-            <Field label="Code strength" hint="New support codes use 10–12 digits. Longer codes are harder to guess over the phone.">
-              <select className="field-input" value={codeLength} onChange={(event) => setCodeLength(Number(event.target.value) as 10 | 11 | 12)}>
-                <option value={10}>10 digits</option>
-                <option value={11}>11 digits</option>
-                <option value={12}>12 digits</option>
-              </select>
-            </Field>
-            <label className="checkbox-field session-permission-check">
-              <input type="checkbox" checked={allowCodeControl} onChange={(event) => setAllowCodeControl(event.target.checked)} disabled={!canRemoteControl} />
-              <span className="field-label">Allow keyboard and mouse input</span>
-            </label>
-            <label className="checkbox-field session-permission-check">
-              <input type="checkbox" checked={allowCodeClipboard} onChange={(event) => setAllowCodeClipboard(event.target.checked)} disabled={!canRemoteControl} />
-              <span className="field-label">Allow clipboard synchronization</span>
-            </label>
-            <label className="checkbox-field session-permission-check">
-              <input type="checkbox" checked={allowCodeTerminal} onChange={(event) => setAllowCodeTerminal(event.target.checked)} disabled={!canRemoteControl || !canRemoteElevated} />
-              <span className="field-label">Allow elevated terminal (audited)</span>
-            </label>
-            <label className="checkbox-field session-permission-check">
-              <input type="checkbox" checked={allowCodeFileTransfer} onChange={(event) => setAllowCodeFileTransfer(event.target.checked)} disabled={!canRemoteControl} />
-              <span className="field-label">Allow file transfer</span>
-            </label>
-            <label className="checkbox-field session-permission-check">
-              <input type="checkbox" checked={allowCodeSystemManage} onChange={(event) => setAllowCodeSystemManage(event.target.checked)} disabled={!canRemoteControl || !canRemoteElevated} />
-              <span className="field-label">Allow process/service management (elevated)</span>
-            </label>
-            <button className="btn btn-primary btn-sm" type="submit" disabled={codeBusy}><Icon name="key" size={14} />{codeBusy ? 'Generating…' : 'Generate code'}</button>
-          </form>
+        <Modal open={showCodePanel} onClose={() => { if (!codeBusy && !emailBusy) setShowCodePanel(false) }} title="Generate a support code" width={620}>
+          <div className="support-code-panel">
+            <p className="support-code-intro">Create a single-use 12-digit code or secure link for attended support. No enrollment or preinstalled software is required.</p>
+            <form className="support-code-form" onSubmit={generateCode}>
+              <Field label="Reason" hint="Shown to the person you're helping and recorded in the audit trail.">
+                <input className="field-input" value={codeReason} onChange={(event) => setCodeReason(event.target.value)} placeholder="e.g. Troubleshooting Outlook sign-in" />
+              </Field>
+              <Field label="Expires in">
+                <select className="field-input" value={codeExpiresInMin} onChange={(event) => setCodeExpiresInMin(Number(event.target.value))}>
+                  <option value={15}>15 minutes</option>
+                  <option value={30}>30 minutes</option>
+                  <option value={60}>1 hour</option>
+                  <option value={120}>2 hours</option>
+                  <option value={240}>4 hours</option>
+                  <option value={1440}>24 hours</option>
+                </select>
+              </Field>
 
-          {generatedCode ? (
-            <div className="support-code-result">
-              <div className="support-code-digits">{generatedCode.code}</div>
-              <div className="mono muted">{generatedCode.connectUrl}</div>
-              <div className="support-code-actions">
-                <button className="btn btn-ghost btn-sm" onClick={() => void copyConnectLink()}><Icon name="copy" size={14} />{copied ? 'Copied' : 'Copy link'}</button>
-                <span className="muted mono">expires {formatWhen(generatedCode.expiresAt)}</span>
+              <div className="support-permissions">
+                <div className="support-permissions-head">
+                  <h3>Access permissions</h3>
+                  <span className="muted">The endpoint user must consent to each capability before it activates.</span>
+                </div>
+                <label className="support-permission-row">
+                  <input type="checkbox" checked={allowCodeControl} onChange={(event) => setAllowCodeControl(event.target.checked)} disabled={!canRemoteControl} />
+                  <span className="support-permission-copy"><strong>Keyboard and mouse input</strong><small>Control the pointer and type on the endpoint.</small></span>
+                </label>
+                <label className="support-permission-row">
+                  <input type="checkbox" checked={allowCodeClipboard} onChange={(event) => setAllowCodeClipboard(event.target.checked)} disabled={!canRemoteControl} />
+                  <span className="support-permission-copy"><strong>Clipboard synchronization</strong><small>Share clipboard contents between technician and endpoint.</small></span>
+                </label>
+                <label className="support-permission-row">
+                  <input type="checkbox" checked={allowCodeTerminal} onChange={(event) => setAllowCodeTerminal(event.target.checked)} disabled={!canRemoteControl || !canRemoteElevated} />
+                  <span className="support-permission-copy"><strong>Elevated terminal</strong><small>Open an audited terminal with elevated privileges.</small></span>
+                </label>
+                <label className="support-permission-row">
+                  <input type="checkbox" checked={allowCodeFileTransfer} onChange={(event) => setAllowCodeFileTransfer(event.target.checked)} disabled={!canRemoteControl} />
+                  <span className="support-permission-copy"><strong>File transfer</strong><small>Send and receive files during the session.</small></span>
+                </label>
+                <label className="support-permission-row">
+                  <input type="checkbox" checked={allowCodeSystemManage} onChange={(event) => setAllowCodeSystemManage(event.target.checked)} disabled={!canRemoteControl || !canRemoteElevated} />
+                  <span className="support-permission-copy"><strong>Process & service management</strong><small>Start, stop, and inspect processes and services (elevated).</small></span>
+                </label>
               </div>
-              <p className="muted">The new {generatedCode.codeLength}-digit code is single-use and consent is still required. For the strongest workflow, email the secure link and have the user paste that complete link into the helper.</p>
-              <div className="support-code-email">
-                <div><strong>Email these instructions</strong><span className="muted">Choose a one-time secure link for stronger protection, or send the numeric code for a simpler phone-assisted workflow.</span></div>
-                <div className="support-code-email-row"><input className="field-input" type="email" placeholder="user@example.com" value={emailRecipient} onChange={(event) => setEmailRecipient(event.target.value)} /><select className="field-input" value={emailMode} onChange={(event) => setEmailMode(event.target.value as 'code' | 'email_link')} aria-label="Email support method"><option value="email_link">Secure link + fingerprint</option><option value="code">Numeric code</option></select><button className="btn btn-ghost btn-sm" type="button" onClick={() => void emailCode()} disabled={emailBusy || !emailRecipient.trim()}><Icon name="mail" size={14} />{emailBusy ? 'Sending…' : 'Email user'}</button></div>
-                {emailNotice ? <span className="muted">{emailNotice}</span> : null}
-              </div>
-            </div>
-          ) : null}
 
-          <div className="adhoc-list">
-            <h3>Recent support codes</h3>
-            {adhocSessions === null ? <span className="etch">Loading…</span> : null}
-            {adhocSessions && adhocSessions.length === 0 ? <span className="muted">No support codes yet.</span> : null}
-            {adhocSessions && adhocSessions.length > 0 ? (
-              <div className="adhoc-list-rows">
-                {adhocSessions.map((record) => (
-                  <div className="adhoc-row" key={record.id}>
-                    <div className="adhoc-row-main">
-                      <span className={`status-pill adhoc-state-${record.state}`}>{record.state}</span>
-                      {record.remote_session_state ? <span className={`status-pill session-state-${record.remote_session_state}`}>{stateLabel(record.remote_session_state)}</span> : null}
-                      <span className="muted">
-                        {record.reason || 'No reason'} · created {formatWhen(record.created_at)}
-                        {record.device_name ? <> · {record.device_name}</> : null}
-                      </span>
-                    </div>
-                    <div className="adhoc-row-actions">
-                      {record.remote_session_id ? (
-                        <Link to={`/sessions/${record.remote_session_id}`} className="btn btn-primary btn-sm"><Icon name="monitor" size={14} />Open live session</Link>
-                      ) : null}
-                      {record.state === 'open' ? (
-                        <button className="btn btn-ghost btn-sm" onClick={() => void revokeCode(record)} disabled={revokingId === record.id}>
-                          <Icon name="close" size={14} />{revokingId === record.id ? 'Revoking…' : 'Revoke'}
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-                ))}
+              <div className="support-code-form-actions">
+                <button className="btn btn-primary" type="submit" disabled={codeBusy}><Icon name="key" size={15} />{codeBusy ? 'Generating…' : 'Generate code'}</button>
+              </div>
+            </form>
+
+            {generatedCode ? (
+              <div className="support-code-result">
+                <div className="support-code-result-head">
+                  <span className="etch">12-digit support code</span>
+                  <span className="muted mono">expires {formatWhen(generatedCode.expiresAt)}</span>
+                </div>
+                <div className="support-code-digits">{generatedCode.code}</div>
+                <div className="mono muted support-code-url">{generatedCode.connectUrl}</div>
+                <div className="support-code-actions">
+                  <button className="btn btn-ghost btn-sm" onClick={() => void copyConnectLink()}><Icon name="copy" size={14} />{copied ? 'Copied' : 'Copy secure link'}</button>
+                </div>
+                <div className="support-code-email">
+                  <div><strong>Email these instructions</strong><span className="muted">Send the secure link (recommended) or the numeric code to the person you're helping.</span></div>
+                  <div className="support-code-email-row"><input className="field-input" type="email" placeholder="user@example.com" value={emailRecipient} onChange={(event) => setEmailRecipient(event.target.value)} /><select className="field-input" value={emailMode} onChange={(event) => setEmailMode(event.target.value as 'code' | 'email_link')} aria-label="Email support method"><option value="email_link">Secure link + fingerprint</option><option value="code">Numeric code</option></select><button className="btn btn-ghost btn-sm" type="button" onClick={() => void emailCode()} disabled={emailBusy || !emailRecipient.trim()}><Icon name="mail" size={14} />{emailBusy ? 'Sending…' : 'Email user'}</button></div>
+                  {emailNotice ? <span className="muted">{emailNotice}</span> : null}
+                </div>
               </div>
             ) : null}
-          </div>
           </div>
         </Modal>
       ) : null}
@@ -363,6 +341,38 @@ export default function SessionsPage() {
           onPageSizeChange={pagination.changeSize}
         />
       )}
+
+      <div className="adhoc-list adhoc-list-page">
+        <h3>Recent support codes</h3>
+        {adhocSessions === null ? <span className="etch">Loading…</span> : null}
+        {adhocSessions && adhocSessions.length === 0 ? <span className="muted">No support codes yet.</span> : null}
+        {adhocSessions && adhocSessions.length > 0 ? (
+          <div className="adhoc-list-rows">
+            {adhocSessions.map((record) => (
+              <div className="adhoc-row" key={record.id}>
+                <div className="adhoc-row-main">
+                  <span className={`status-pill adhoc-state-${record.state}`}>{record.state}</span>
+                  {record.remote_session_state ? <span className={`status-pill session-state-${record.remote_session_state}`}>{stateLabel(record.remote_session_state)}</span> : null}
+                  <span className="muted">
+                    {record.reason || 'No reason'} · created {formatWhen(record.created_at)}
+                    {record.device_name ? <> · {record.device_name}</> : null}
+                  </span>
+                </div>
+                <div className="adhoc-row-actions">
+                  {record.remote_session_id ? (
+                    <Link to={`/sessions/${record.remote_session_id}`} className="btn btn-primary btn-sm"><Icon name="monitor" size={14} />Open live session</Link>
+                  ) : null}
+                  {record.state === 'open' ? (
+                    <button className="btn btn-ghost btn-sm" onClick={() => void revokeCode(record)} disabled={revokingId === record.id}>
+                      <Icon name="close" size={14} />{revokingId === record.id ? 'Revoking…' : 'Revoke'}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
     </Shell>
   )
 }
