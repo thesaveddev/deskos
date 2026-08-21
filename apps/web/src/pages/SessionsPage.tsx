@@ -43,6 +43,7 @@ export default function SessionsPage() {
   const [loading, setLoading] = useState(true)
   const pagination = useOffsetPagination(20)
   const [state, setState] = useState<'' | RemoteSessionState>('')
+  const [view, setView] = useState<'sessions' | 'codes'>('sessions')
   const [error, setError] = useState<string | null>(null)
   const [endingId, setEndingId] = useState<string | null>(null)
   const canRemoteControl = useAuth((state) => state.memberships.some((membership) => membership.permissions.includes('remote.control')))
@@ -210,19 +211,28 @@ export default function SessionsPage() {
         </div>
         <div className="page-actions">
           <button className="btn btn-primary" onClick={toggleCodePanel}><Icon name="key" size={15} />Generate support code</button>
-          <select className="field-input session-filter" value={state} onChange={(event) => setState(event.target.value as '' | RemoteSessionState)} aria-label="Filter sessions">
-            {STATE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </select>
+          {view === 'sessions' ? (
+            <select className="field-input session-filter" value={state} onChange={(event) => setState(event.target.value as '' | RemoteSessionState)} aria-label="Filter sessions">
+              {STATE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          ) : null}
         </div>
       </div>
 
       {error ? <Alert kind="error">{error}</Alert> : null}
 
-      <nav className="workspace-tabs session-workspace-tabs" aria-label="Session views">
-        {sessionTabs.map((tab) => <button key={tab.label} type="button" className={`workspace-tab${state === tab.value ? ' active' : ''}`} onClick={() => { setState(tab.value as '' | RemoteSessionState); pagination.goToPage(0) }}>{tab.label}{tab.count !== undefined ? <span>{tab.count}</span> : null}</button>)}
+      <nav className="workspace-tabs session-workspace-tabs" aria-label="Session workspace">
+        <button type="button" className={`workspace-tab${view === 'sessions' ? ' active' : ''}`} onClick={() => setView('sessions')}>Sessions{view === 'sessions' && total > 0 ? <span>{total}</span> : null}</button>
+        <button type="button" className={`workspace-tab${view === 'codes' ? ' active' : ''}`} onClick={() => setView('codes')}>Support codes{adhocSessions ? <span>{adhocSessions.length}</span> : null}</button>
         <span className="workspace-tab-spacer" />
-        <span className="workspace-context">{loading ? 'Refreshing…' : `${sessions.length} shown`}</span>
+        <span className="workspace-context">{view === 'sessions' ? (loading ? 'Refreshing…' : `${sessions.length} shown`) : (adhocSessions === null ? 'Loading…' : `${adhocSessions.length} codes`)}</span>
       </nav>
+
+      {view === 'sessions' ? (
+        <nav className="workspace-tabs session-workspace-tabs" aria-label="Session state">
+          {sessionTabs.map((tab) => <button key={tab.label} type="button" className={`workspace-tab${state === tab.value ? ' active' : ''}`} onClick={() => { setState(tab.value as '' | RemoteSessionState); pagination.goToPage(0) }}>{tab.label}{tab.count !== undefined ? <span>{tab.count}</span> : null}</button>)}
+        </nav>
+      ) : null}
 
       {showCodePanel ? (
         <Modal open={showCodePanel} onClose={() => { if (!codeBusy && !emailBusy) setShowCodePanel(false) }} title="Generate a support code" width={620}>
@@ -296,83 +306,97 @@ export default function SessionsPage() {
           </div>
         </Modal>
       ) : null}
-      {sessions === null ? <span className="etch">Loading sessions…</span> : null}
-      {sessions && sessions.length === 0 ? (
-        <div className="empty-state">
-          <p>No remote sessions match this view.</p>
-          <Link to="/devices" className="btn btn-primary">Choose a device</Link>
-        </div>
-      ) : null}
-      {sessions && sessions.length > 0 ? (
-        <div className="session-list">
-          {sessions.map((session) => (
-            <div className="session-card" key={session.id}>
-              <div className="session-card-main">
-                <div className="session-card-title">
-                  <span className={`status-pill session-state-${session.state}`}>{stateLabel(session.state)}</span>
-                  <span className="mono muted">{typeLabel(session.type)}</span>
-                </div>
-                <Link to={`/devices/${session.device_id}`} className="session-device-link">{session.device_name ?? 'Device'}{session.hostname ? ` · ${session.hostname}` : ''}</Link>
-                <div className="session-card-meta mono">
-                  requested {formatWhen(session.created_at)} · {session.reason || 'No reason recorded'}
-                  {session.ticket_number ? <> · <Link to={`/tickets/${session.ticket_id}`}>ticket #{session.ticket_number}</Link></> : null}
-                </div>
-              </div>
-              <div className="session-card-actions">
-                <Link to={`/sessions/${session.id}`} className="btn btn-ghost btn-sm"><Icon name="monitor" size={14} />Open console</Link>
-                {session.state !== 'ended' && session.state !== 'denied' && session.state !== 'expired' ? (
-                  <button className="btn btn-ghost btn-sm" onClick={() => void stop(session)} disabled={endingId === session.id}>
-                    <Icon name="stop" size={14} />{endingId === session.id ? 'Ending…' : 'End session'}
-                  </button>
-                ) : null}
-              </div>
+      {view === 'sessions' ? (
+        <>
+          {sessions === null ? <span className="etch">Loading sessions…</span> : null}
+          {sessions && sessions.length === 0 ? (
+            <div className="empty-state">
+              <p>No remote sessions match this view.</p>
+              <Link to="/devices" className="btn btn-primary">Choose a device</Link>
             </div>
-          ))}
-        </div>
-      ) : null}
-
-      {sessions && sessions.length > 0 && (
-        <Pagination
-          page={pagination.page}
-          pageSize={pagination.pageSize}
-          totalItems={total}
-          loading={loading}
-          onPageChange={pagination.goToPage}
-          onPageSizeChange={pagination.changeSize}
-        />
-      )}
-
-      <div className="adhoc-list adhoc-list-page">
-        <h3>Recent support codes</h3>
-        {adhocSessions === null ? <span className="etch">Loading…</span> : null}
-        {adhocSessions && adhocSessions.length === 0 ? <span className="muted">No support codes yet.</span> : null}
-        {adhocSessions && adhocSessions.length > 0 ? (
-          <div className="adhoc-list-rows">
-            {adhocSessions.map((record) => (
-              <div className="adhoc-row" key={record.id}>
-                <div className="adhoc-row-main">
-                  <span className={`status-pill adhoc-state-${record.state}`}>{record.state}</span>
-                  {record.remote_session_state ? <span className={`status-pill session-state-${record.remote_session_state}`}>{stateLabel(record.remote_session_state)}</span> : null}
-                  <span className="muted">
-                    {record.reason || 'No reason'} · created {formatWhen(record.created_at)}
-                    {record.device_name ? <> · {record.device_name}</> : null}
-                  </span>
+          ) : null}
+          {sessions && sessions.length > 0 ? (
+            <div className="session-list">
+              {sessions.map((session) => (
+                <div className="session-card" key={session.id}>
+                  <div className="session-card-main">
+                    <div className="session-card-title">
+                      <span className={`status-pill session-state-${session.state}`}>{stateLabel(session.state)}</span>
+                      <span className="mono muted">{typeLabel(session.type)}</span>
+                    </div>
+                    <Link to={`/devices/${session.device_id}`} className="session-device-link">{session.device_name ?? 'Device'}{session.hostname ? ` · ${session.hostname}` : ''}</Link>
+                    <div className="session-card-meta mono">
+                      requested {formatWhen(session.created_at)} · {session.reason || 'No reason recorded'}
+                      {session.ticket_number ? <> · <Link to={`/tickets/${session.ticket_id}`}>ticket #{session.ticket_number}</Link></> : null}
+                    </div>
+                  </div>
+                  <div className="session-card-actions">
+                    <Link to={`/sessions/${session.id}`} className="btn btn-ghost btn-sm"><Icon name="monitor" size={14} />Open console</Link>
+                    {session.state !== 'ended' && session.state !== 'denied' && session.state !== 'expired' ? (
+                      <button className="btn btn-ghost btn-sm" onClick={() => void stop(session)} disabled={endingId === session.id}>
+                        <Icon name="stop" size={14} />{endingId === session.id ? 'Ending…' : 'End session'}
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
-                <div className="adhoc-row-actions">
-                  {record.remote_session_id ? (
-                    <Link to={`/sessions/${record.remote_session_id}`} className="btn btn-primary btn-sm"><Icon name="monitor" size={14} />Open live session</Link>
-                  ) : null}
-                  {record.state === 'open' ? (
-                    <button className="btn btn-ghost btn-sm" onClick={() => void revokeCode(record)} disabled={revokingId === record.id}>
-                      <Icon name="close" size={14} />{revokingId === record.id ? 'Revoking…' : 'Revoke'}
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
+          ) : null}
+
+          {sessions && sessions.length > 0 && (
+            <Pagination
+              page={pagination.page}
+              pageSize={pagination.pageSize}
+              totalItems={total}
+              loading={loading}
+              onPageChange={pagination.goToPage}
+              onPageSizeChange={pagination.changeSize}
+            />
+          )}
+        </>
+      ) : (
+        <div className="adhoc-list adhoc-list-page">
+          <div className="adhoc-list-head">
+            <div><h3>Support codes</h3><p className="muted">One-time codes and secure links for attended support. Revoke any code before it is used.</p></div>
+            <button className="btn btn-ghost btn-sm" onClick={() => void loadCodes()}><Icon name="refresh" size={14} />Refresh</button>
           </div>
-        ) : null}
-      </div>
+          {adhocSessions === null ? <span className="etch">Loading support codes…</span> : null}
+          {adhocSessions && adhocSessions.length === 0 ? (
+            <div className="empty-state">
+              <Icon name="key" size={24} />
+              <strong>No support codes yet</strong>
+              <span>Generate a code to share with someone who needs help.</span>
+              <button className="btn btn-primary btn-sm" onClick={toggleCodePanel}><Icon name="key" size={14} />Generate support code</button>
+            </div>
+          ) : null}
+          {adhocSessions && adhocSessions.length > 0 ? (
+            <div className="adhoc-list-rows">
+              {adhocSessions.map((record) => (
+                <div className="adhoc-row" key={record.id}>
+                  <div className="adhoc-row-main">
+                    <span className={`status-pill adhoc-state-${record.state}`}>{record.state}</span>
+                    {record.remote_session_state ? <span className={`status-pill session-state-${record.remote_session_state}`}>{stateLabel(record.remote_session_state)}</span> : null}
+                    <span className="muted">
+                      {record.reason || 'No reason'} · created {formatWhen(record.created_at)}
+                      {record.device_name ? <> · {record.device_name}</> : null}
+                    </span>
+                  </div>
+                  <div className="adhoc-row-actions">
+                    {record.remote_session_id ? (
+                      <Link to={`/sessions/${record.remote_session_id}`} className="btn btn-primary btn-sm"><Icon name="monitor" size={14} />Open live session</Link>
+                    ) : null}
+                    {record.state === 'open' ? (
+                      <button className="btn btn-ghost btn-sm" onClick={() => void revokeCode(record)} disabled={revokingId === record.id}>
+                        <Icon name="close" size={14} />{revokingId === record.id ? 'Revoking…' : 'Revoke'}
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      )}
     </Shell>
   )
 }
