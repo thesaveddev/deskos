@@ -64,7 +64,7 @@ export function useIdleTimeout(
   useEffect(() => {
     if (isLocked) return
 
-    const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart']
+    const events = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart', 'scroll']
     events.forEach((e) => document.addEventListener(e, handleActivity, { passive: true }))
     resetTimer()
 

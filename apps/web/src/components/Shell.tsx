@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { CommandPalette } from './CommandPalette.js'
 import { MobileShell } from './MobileShell.js'
@@ -243,6 +243,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const [sessionKey, setSessionKey] = useState<string | null>(null)
   const [sessionKeyExpires, setSessionKeyExpires] = useState<string | null>(null)
   const [sessionKeyBusy, setSessionKeyBusy] = useState(false)
+  const remoteWrapRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const refresh = () => setSessionDock(readSessionDock())
@@ -253,6 +254,18 @@ export function Shell({ children }: { children: ReactNode }) {
       window.removeEventListener('storage', refresh)
     }
   }, [])
+
+  // Close the remote session key flyout when the user clicks outside it.
+  useEffect(() => {
+    if (!showSessionKey) return
+    const onDown = (event: MouseEvent) => {
+      if (remoteWrapRef.current && !remoteWrapRef.current.contains(event.target as Node)) {
+        setShowSessionKey(false)
+      }
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [showSessionKey])
 
   // Global Ctrl+L shortcut to lock screen
   useEffect(() => {
@@ -364,7 +377,7 @@ export function Shell({ children }: { children: ReactNode }) {
           </div>
 
           {/* Remote Session button + key dropdown */}
-          <div className="topbar-remote-wrap">
+          <div className="topbar-remote-wrap" ref={remoteWrapRef}>
             <button
               className="btn btn-remote-session"
               onClick={() => {

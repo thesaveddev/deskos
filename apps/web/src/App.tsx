@@ -3,7 +3,7 @@ import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { LockScreen } from './components/LockScreen.js'
 import { registerServiceWorker } from './lib/push.js'
 import { useIdleTimeout } from './lib/idle.js'
-import { clearLockedUser, onLockRequest, onLockStateChange, readPersistedLocked, setPersistedLocked } from './lib/lock.js'
+import { clearLockedUser, onLockRequest, onLockStateChange, readPersistedLocked, setPersistedLocked, signalManualLock, signalManualUnlock } from './lib/lock.js'
 // Route-level code splitting: every page is a lazy chunk so the initial bundle
 // carries only the shell, auth, and the small route primitives. Pages load on
 // demand as the user navigates.
@@ -102,17 +102,18 @@ function IdleLockWrapper({ children }: { children: ReactNode }) {
   const [locked, setLocked] = useState<boolean>(() => readPersistedLocked())
   const [lockedUser, setLockedUser] = useState<typeof currentUser>(null)
 
-  const doLock = useCallback((user: typeof currentUser) => {
+  const doLock = useCallback((user: typeof currentUser, manual: boolean) => {
     // Keep a stable snapshot for the lock screen; a later re-hydration must not
     // replace the signed-in identity with a generic fallback.
     if (user) setLockedUser(user)
     setLocked(true)
     setPersistedLocked(true)
+    if (manual) signalManualLock()
   }, [])
 
   const { resetTimer } = useIdleTimeout(
     useCallback(() => {
-      if (authStatus === 'authed' && currentUser) doLock(currentUser)
+      if (authStatus === 'authed' && currentUser) doLock(currentUser, false)
     }, [authStatus, currentUser, doLock]),
   )
 
@@ -127,7 +128,7 @@ function IdleLockWrapper({ children }: { children: ReactNode }) {
   // Manual lock requests (topbar button / Ctrl+L).
   useEffect(() => {
     return onLockRequest(() => {
-      if (authStatus === 'authed' && currentUser) doLock(currentUser)
+      if (authStatus === 'authed' && currentUser) doLock(currentUser, true)
     })
   }, [authStatus, currentUser, doLock])
 
@@ -159,6 +160,7 @@ function IdleLockWrapper({ children }: { children: ReactNode }) {
     setLocked(false)
     setLockedUser(null)
     setPersistedLocked(false)
+    signalManualUnlock()
     resetTimer()
   }, [resetTimer])
 
@@ -166,6 +168,7 @@ function IdleLockWrapper({ children }: { children: ReactNode }) {
     setLocked(false)
     setLockedUser(null)
     setPersistedLocked(false)
+    signalManualUnlock()
     resetTimer()
     clearLockedUser()
     await logout()

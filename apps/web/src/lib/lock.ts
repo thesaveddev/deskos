@@ -1,5 +1,6 @@
 const LOCKED_USER_KEY = 'deskos.lockedUser'
 const LOCK_STATE_KEY = 'deskos.locked'
+const LOCK_SIGNAL_KEY = 'deskos.lockSignal'
 
 /** Dispatch a custom event to instantly lock the current authenticated screen. */
 export function lockScreen() {
@@ -44,13 +45,26 @@ export function readPersistedLocked(): boolean {
 }
 
 /**
- * Subscribe to lock/unlock changes made in other tabs. The `storage` event only
- * fires in tabs other than the one that wrote the key, which is exactly the
- * cross-tab propagation we need.
+ * Broadcast a MANUAL lock to already-open tabs. Idle timeouts only persist the
+ * flag (so brand-new tabs honour it) and deliberately do NOT broadcast, so an
+ * idle tab can't yank an actively-used tab into the lock screen.
+ */
+export function signalManualLock() {
+  try { localStorage.setItem(LOCK_SIGNAL_KEY, String(Date.now())) } catch { /* storage may be unavailable */ }
+}
+
+export function signalManualUnlock() {
+  try { localStorage.removeItem(LOCK_SIGNAL_KEY) } catch { /* storage may be unavailable */ }
+}
+
+/**
+ * Subscribe to MANUAL lock/unlock changes made in other tabs. The `storage`
+ * event only fires in tabs other than the one that wrote the key.
  */
 export function onLockStateChange(handler: (locked: boolean) => void): () => void {
   const fn = (event: StorageEvent) => {
-    if (event.key === LOCK_STATE_KEY || event.key === null) handler(readPersistedLocked())
+    if (event.key !== LOCK_SIGNAL_KEY) return
+    handler(event.newValue !== null)
   }
   window.addEventListener('storage', fn)
   return () => window.removeEventListener('storage', fn)
