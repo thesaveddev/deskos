@@ -8,14 +8,14 @@ import { useAuth } from '../lib/auth.js'
 import {
   addTicketLink, assignTicket, getTicket, listTicketLinks, removeTicketLink, replyTicket, setTicketStatus,
   downloadAttachment, listAttachments, updateTicket, uploadAttachment,
-  escalateTicket, getTicketEscalations, forwardTicket, listTeams, listTeamMembers,
+  escalateTicket, getTicketEscalations, getTicketEscalationPaths, forwardTicket, listTeams, listTeamMembers,
   getTicketLock, lockTicket, unlockTicket, heartbeatLock, forceUnlockTicket,
   listLockReleaseRequests, requestTicketLockRelease, resolveLockReleaseRequest,
   listActiveTicketLocks,
   startViewingTicket, stopViewingTicket, heartbeatViewing, getTicketViewers,
   slaSummary, STATUS_LABELS, formatWhen, fetchAttachmentBlob, searchLinkTargets,
   type Attachment, type Thread, type Ticket, type TicketDevice, type TicketLink, type LinkSearchResult,
-  type Escalation, type Team, type TicketLockInfo, type LockReleaseRequest, type LockedTicketSummary,
+  type Escalation, type EscalationPath, type Team, type TicketLockInfo, type LockReleaseRequest, type LockedTicketSummary,
 } from '../lib/tickets.js'
 import { listCannedResponses, type CannedResponse } from '../lib/canned.js'
 import '../styles/ticket-lock.css'
@@ -94,8 +94,11 @@ export default function TicketDetailPage() {
   const [escalations, setEscalations] = useState<Escalation[]>([])
   const [teams, setTeams] = useState<Team[]>([])
   const [escTeam, setEscTeam] = useState('')
+  const [escAssignee, setEscAssignee] = useState('')
   const [escReason, setEscReason] = useState('')
   const [escBusy, setEscBusy] = useState(false)
+  const [escPaths, setEscPaths] = useState<EscalationPath[]>([])
+  const [escPathsLoaded, setEscPathsLoaded] = useState(false)
   const [fwdTeam, setFwdTeam] = useState('')
   const [fwdNote, setFwdNote] = useState('')
   const [fwdBusy, setFwdBusy] = useState(false)
@@ -323,13 +326,33 @@ export default function TicketDetailPage() {
     }
   }
 
+  const openEscalate = () => {
+    const next = !showEscalate
+    setShowEscalate(next)
+    setShowForward(false)
+    if (next && !escPathsLoaded) {
+      getTicketEscalationPaths(ticket.id)
+        .then((result) => setEscPaths(result.paths))
+        .catch(() => setEscPaths([]))
+        .finally(() => setEscPathsLoaded(true))
+    }
+  }
+
+  const chooseEscalationPath = (path: EscalationPath) => {
+    setEscTeam(path.target_team_id)
+    setEscAssignee(path.auto_assign ? (path.target_assignee_id ?? '') : '')
+    setEscReason(path.description || `Escalate via ${path.name}`)
+  }
+
   const handleEscalate = async () => {
     if (!ticket || !escReason.trim()) return
     setEscBusy(true)
     try {
-      await escalateTicket(ticket.id, { to_team_id: escTeam || undefined, reason: escReason })
+      await escalateTicket(ticket.id, { to_team_id: escTeam || undefined, to_assignee_id: escAssignee || undefined, reason: escReason })
       setEscReason('')
       setEscTeam('')
+      setEscAssignee('')
+      setEscPaths([])
       setShowEscalate(false)
       await load()
       const r = await getTicketEscalations(ticket.id)
@@ -638,7 +661,7 @@ export default function TicketDetailPage() {
               <option key={s} value={s}>{STATUS_LABELS[s]}</option>
             ))}
           </select>
-          <button className="btn btn-ghost btn-sm" disabled={readOnlyForLock} onClick={() => { setShowEscalate(!showEscalate); setShowForward(false) }}>
+          <button className="btn btn-ghost btn-sm" disabled={readOnlyForLock} onClick={openEscalate}>
             <Icon name="activity" size={14} />Escalate
           </button>
           <button className="btn btn-ghost btn-sm" disabled={readOnlyForLock} onClick={() => { setShowForward(!showForward); setShowEscalate(false) }}>
@@ -651,6 +674,17 @@ export default function TicketDetailPage() {
           <div className="ticket-escalate-form">
             <h4 className="ticket-escalate-title">Escalate ticket</h4>
             <p className="ticket-escalate-hint">Raise to a higher-level team with a reason. This bumps the escalation level and records a permanent entry in the escalation history.</p>
+            {escPaths.length > 0 ? (
+              <div className="ticket-escalation-paths">
+                <span className="etch">Recommended routes</span>
+                {escPaths.map((path) => (
+                  <button type="button" key={path.id} className={`ticket-escalation-path${escTeam === path.target_team_id ? ' active' : ''}`} onClick={() => chooseEscalationPath(path)}>
+                    <span className="ticket-escalation-path-name">{path.name}</span>
+                    <span className="ticket-escalation-path-target">→ {path.target_team_name || 'team'}</span>
+                  </button>
+                ))}
+              </div>
+            ) : escPathsLoaded ? <div className="muted">No escalation routes match this ticket. Choose a team below.</div> : null}
             <select className="field-input select-sm" value={escTeam} onChange={(e) => setEscTeam(e.target.value)}>
               <option value="">Keep current team</option>
               {teams.filter((t) => t.accepts_tickets !== false).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
