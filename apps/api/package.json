@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "dev:db": "tsx scripts/dev-db.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node -e \"const fs=require('fs');const p='dist/db/migrations';fs.mkdirSync(p,{recursive:true});fs.cpSync('src/db/migrations',p,{recursive:true})\"",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src test",
