@@ -1,0 +1,116 @@
+# ReyDesk production stack.
+# Deploy:  docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+# The API container serves both the REST API and the built React frontend.
+# The relay container runs the WebSocket signalling/relay service.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: reydesk
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: reydesk
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U reydesk -d reydesk']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: reydesk-api:latest
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 4000
+      DATABASE_URL: postgresql://reydesk:${DB_PASSWORD}@postgres:5432/reydesk
+      REDIS_URL: redis://redis:6379
+      REYDESK_JWT_SECRET: ${JWT_SECRET}
+      REYDESK_EMAIL_KEY: ${EMAIL_KEY}
+      REYDESK_RELAY_SECRET: ${RELAY_SECRET}
+      REYDESK_PUBLIC_URL: https://reydesk.com
+      REYDESK_WEB_ORIGINS: https://reydesk.com,https://www.reydesk.com
+      REYDESK_RELAY_URL: wss://relay.reydesk.com/ws
+      REYDESK_AUTO_MIGRATE: '1'
+      REYDESK_BCRYPT_ROUNDS: '12'
+      # SMTP (outbound email)
+      REYDESK_SMTP_HOST: ${SMTP_HOST:-safari.mxrouting.net}
+      REYDESK_SMTP_PORT: ${SMTP_PORT:-465}
+      REYDESK_SMTP_USER: ${SMTP_USER:-notifications@reydesk.com}
+      REYDESK_SMTP_PASS: ${SMTP_PASS}
+      REYDESK_SMTP_FROM: ${SMTP_FROM:-ReyDesk <notifications@reydesk.com>}
+      REYDESK_SMTP_TLS: 'true'
+      # Web Push (VAPID)
+      REYDESK_VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
+      REYDESK_VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
+      REYDESK_VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@reydesk.com}
+      # AI (optional — managed provider key)
+      REYDESK_AI_ENABLED: ${AI_ENABLED:-false}
+      REYDESK_AI_BASE_URL: ${AI_BASE_URL:-https://api.openai.com/v1}
+      REYDESK_AI_API_KEY: ${AI_API_KEY:-}
+      REYDESK_AI_MODEL: ${AI_MODEL:-gpt-4o-mini}
+      # Remote support ICE (TURN optional)
+      REYDESK_ICE_STUN_URLS: ${ICE_STUN_URLS:-stun:stun.l.google.com:19302}
+      REYDESK_ICE_TURN_URLS: ${ICE_TURN_URLS:-}
+      REYDESK_ICE_TURN_SECRET: ${ICE_TURN_SECRET:-}
+      REYDESK_ICE_TURN_REALM: ${ICE_TURN_REALM:-reydesk}
+    ports:
+      - '127.0.0.1:4000:4000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:4000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  relay:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: reydesk-relay:latest
+    restart: unless-stopped
+    working_dir: /app/apps/relay
+    command: ['node', 'dist/index.js']
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      RELAY_PORT: 4100
+      REDIS_URL: redis://redis:6379
+      REYDESK_RELAY_SECRET: ${RELAY_SECRET}
+      RELAY_ALLOWED_ORIGINS: https://reydesk.com,https://www.reydesk.com
+    ports:
+      - '127.0.0.1:4100:4100'
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:4100/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+volumes:
+  pgdata:
+  redisdata:
