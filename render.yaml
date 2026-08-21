@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: deskos-api
+    name: reydesk-api
     runtime: docker
     dockerfilePath: Dockerfile
     envVars:
@@ -12,28 +12,28 @@ services:
           property: connectionString
       - key: REDIS_URL
         fromService:
-          name: deskos-redis
+          name: reydesk-redis
           type: redis
           property: connectionString
-      - key: DESKOS_JWT_SECRET
+      - key: REYDESK_JWT_SECRET
         generateValue: true
-      - key: DESKOS_EMAIL_KEY
+      - key: REYDESK_EMAIL_KEY
         generateValue: true
-      - key: DESKOS_RELAY_SECRET
+      - key: REYDESK_RELAY_SECRET
         generateValue: true
-      - key: DESKOS_AUTO_MIGRATE
+      - key: REYDESK_AUTO_MIGRATE
         value: "1"
-      - key: DESKOS_PUBLIC_URL
-        value: ""  # Set to your Render URL after first deploy, e.g. https://deskos-api.onrender.com
-      - key: DESKOS_RELAY_URL
-        value: ""  # Set to your relay WebSocket URL
+      - key: REYDESK_PUBLIC_URL
+        value: ""  # Set to the ReyDesk API URL after first deploy, e.g. https://reydesk-api.onrender.com
+      - key: REYDESK_RELAY_URL
+        value: ""  # Set to the ReyDesk relay WebSocket URL
       - key: PORT
         value: "4000"
     healthCheckPath: /healthz
     autoDeploy: true
 
   - type: redis
-    name: deskos-redis
+    name: reydesk-redis
     ipAllowList: []  # Only accessible from other Render services
 
 databases:

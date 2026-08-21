@@ -55,6 +55,10 @@ async function currentBrowserSubscription(): Promise<PushSubscription | null> {
  * VAPID key, and register the subscription with the API.
  */
 export async function enablePush(): Promise<{ ok: boolean; error?: string }> {
+  const localDevelopmentHost = ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname)
+  if (!window.isSecureContext && !localDevelopmentHost) {
+    return { ok: false, error: 'Browser push requires HTTPS. Open ReyDesk through its secure public URL (localhost is allowed for development).' }
+  }
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
     return { ok: false, error: 'Push is not supported by this browser.' }
   }
@@ -69,7 +73,10 @@ export async function enablePush(): Promise<{ ok: boolean; error?: string }> {
     const { publicKey } = await getVapidPublicKey()
     const registration = await registerServiceWorker()
     if (!registration) return { ok: false, error: 'Could not register the service worker.' }
-    const subscription = await registration.pushManager.subscribe({
+    // Reuse a browser subscription when it already exists. Calling subscribe()
+    // again can fail with InvalidStateError even though the browser is already
+    // correctly subscribed; re-saving it also repairs a missing server row.
+    const subscription = await registration.pushManager.getSubscription() ?? await registration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: base64UrlToUint8Array(publicKey),
     })

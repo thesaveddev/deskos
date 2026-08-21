@@ -1,7 +1,7 @@
 import { API_SCOPES } from '../oauth/scopes.js'
 
 /**
- * Build the OpenAPI 3.1 document describing DeskOS's public, integrator-facing
+ * Build the OpenAPI 3.1 document describing ReyDesk's public, integrator-facing
  * API surface: OAuth2 token/authorize endpoints and the protected resources
  * third-party clients can call. The spec is intentionally curated (not a full
  * reflection of every internal route) so it only promises a stable contract.
@@ -15,12 +15,12 @@ export function buildOpenApiSpec(baseUrl: string): Record<string, unknown> {
   return {
     openapi: '3.1.0',
     info: {
-      title: 'DeskOS Public API',
+      title: 'ReyDesk Public API',
       version: '0.0.1',
       description:
-        'The integrator-facing API for DeskOS. Authenticate with OAuth2 (client credentials for machine-to-machine, or authorization code + PKCE for user-delegated access) and call tenant-scoped resources with the issued bearer token.',
+        'The integrator-facing API for ReyDesk. Authenticate with OAuth2 (client credentials for machine-to-machine, or authorization code + PKCE for user-delegated access) and call tenant-scoped resources with the issued bearer token.',
     },
-    servers: [{ url: baseUrl.replace(/\/+$/, ''), description: 'DeskOS API' }],
+    servers: [{ url: baseUrl.replace(/\/+$/, ''), description: 'ReyDesk API' }],
     security: [{ bearerAuth: [] }],
     components: {
       securitySchemes: {
@@ -28,7 +28,7 @@ export function buildOpenApiSpec(baseUrl: string): Record<string, unknown> {
           type: 'http',
           scheme: 'bearer',
           bearerFormat: 'JWT',
-          description: 'A DeskOS OAuth2 access token (or user access token).',
+          description: 'A ReyDesk OAuth2 access token (or user access token).',
         },
         oauthClientCredentials: {
           type: 'oauth2',
@@ -115,7 +115,7 @@ export function buildOpenApiSpec(baseUrl: string): Record<string, unknown> {
         },
       },
     },
-    // DeskOS extension: the canonical scope catalog, rendered by the developer portal.
+    // ReyDesk extension: the canonical scope catalog, rendered by the developer portal.
     'x-deskos-scopes': API_SCOPES,
   }
 }

@@ -9,7 +9,7 @@ Lightweight system-service agent for Windows 10+/Server 2016+, macOS 12+, Linux 
 | Identity | Key generation, enrolment (one-time code / deployment token), device certificate lifecycle (auto-rotation), tenant binding, Windows machine-scope DPAPI protection for the device credential |
 | Presence | Persistent WS to broker w/ reconnect+backoff; heartbeat 30 s; state reporting (online/offline/booting/restarting) |
 | Inventory | HW (manufacturer, model, serial, CPU, RAM, disks, GPU, NICs, BIOS, TPM, battery), OS (edition/build/patch level), installed apps + versions, drivers, security posture (AV on/off, firewall, encryption/BitLocker/FileVault, Secure Boot) — collected on schedule (daily) + on change |
-| Telemetry | Rolling metrics (CPU, RAM, disk usage, net) every 60 s; alert conditions evaluated locally (offline handled by broker; local rules for disk/CPU/service-down) |
+| Telemetry | Rolling metrics every 60 s including CPU, RAM, disk usage/free space, API round-trip latency, battery level/health when available, uptime, process count, and opt-in service states; the control plane persists telemetry before evaluating device-type-aware rules, schedules, suppressions, escalations, and anomaly baselines. |
 | Screen | Capture (Desktop Duplication / ScreenCaptureKit / PipeWire), encode (HW H.264 + VP8 fallback), multi-display enumeration, cursor compositing |
 | Input | Apply keyboard/mouse/scroll in normalised coords; CAD sequence injection; respect lock screen policy |
 | Terminal | PTY management: `pwsh`/`powershell`, `cmd`, `/bin/sh` per OS; elevated sessions per policy; per-tab audit stream |

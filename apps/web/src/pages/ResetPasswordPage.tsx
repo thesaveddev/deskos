@@ -18,7 +18,7 @@ export default function ResetPasswordPage() {
       <div className="auth-screen">
         <div className="auth-panel">
           <div className="brand-row">
-            <Link to="/" className="brand" style={{ textDecoration: 'none' }}>DeskOS</Link>
+            <Link to="/" className="brand" style={{ textDecoration: 'none' }}>ReyDesk</Link>
           </div>
           <h1 className="auth-title">Invalid reset link</h1>
           <p className="auth-sub">This password reset link is invalid or missing a token.</p>
@@ -63,7 +63,7 @@ export default function ResetPasswordPage() {
     <div className="auth-screen">
       <div className="auth-panel">
         <div className="brand-row">
-          <Link to="/" className="brand" style={{ textDecoration: 'none' }}>DeskOS</Link>
+          <Link to="/" className="brand" style={{ textDecoration: 'none' }}>ReyDesk</Link>
         </div>
 
         {submitted ? (

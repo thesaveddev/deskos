@@ -77,6 +77,73 @@ describe('tenant settings', () => {
     expect(empty.statusCode).toBe(400)
   })
 
+  it('reads merged workspace defaults and persists nested operational settings', async () => {
+    const initial = await app.inject({
+      method: 'GET',
+      url: '/api/v1/tenant/settings',
+      headers: authHeaders(ownerA),
+    })
+    expect(initial.statusCode).toBe(200)
+    expect(initial.json().settings.remote_support.require_consent).toBe(true)
+    expect(initial.json().settings.endpoints.heartbeat_interval_seconds).toBe(30)
+
+    const updated = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/tenant/settings',
+      headers: authHeaders(ownerA),
+      payload: {
+        remote_support: { default_expiry_minutes: 45, allow_clipboard: false },
+        endpoints: { offline_after_minutes: 20 },
+      },
+    })
+    expect(updated.statusCode).toBe(200)
+    expect(updated.json().settings.remote_support.default_expiry_minutes).toBe(45)
+    expect(updated.json().settings.remote_support.allow_clipboard).toBe(false)
+    expect(updated.json().settings.remote_support.require_consent).toBe(true)
+    expect(updated.json().settings.endpoints.offline_after_minutes).toBe(20)
+  })
+
+  it('reports MFA enrollment coverage for each organization policy', async () => {
+    const optional = await app.inject({ method: 'GET', url: '/api/v1/tenant/mfa-policy', headers: authHeaders(ownerA) })
+    expect(optional.statusCode).toBe(200)
+    expect(optional.json()).toMatchObject({ mfa_policy: 'optional', users_total: 1, users_with_mfa: 0, users_needing_setup: 0 })
+
+    const required = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/tenant/mfa-policy',
+      headers: authHeaders(ownerA),
+      payload: { mfa_policy: 'required' },
+    })
+    expect(required.statusCode).toBe(200)
+    expect(required.json()).toMatchObject({ mfa_policy: 'required', users_total: 1, users_with_mfa: 0, users_needing_setup: 1 })
+
+    await seedActiveMember(app, ownerA.tenantId!, 'analyst')
+    await seedActiveMember(app, ownerA.tenantId!, 'admin')
+    const adminOnly = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/tenant/mfa-policy',
+      headers: authHeaders(ownerA),
+      payload: { mfa_policy: 'admin_only' },
+    })
+    expect(adminOnly.statusCode).toBe(200)
+    expect(adminOnly.json()).toMatchObject({ users_total: 3, users_with_mfa: 0, users_needing_setup: 2 })
+
+    const readBack = await app.inject({ method: 'GET', url: '/api/v1/tenant/mfa-policy', headers: authHeaders(ownerA) })
+    expect(readBack.statusCode).toBe(200)
+    expect(readBack.json()).toMatchObject({ mfa_policy: 'admin_only', users_total: 3, users_needing_setup: 2 })
+  })
+
+  it('requires settings.manage for workspace setting updates', async () => {
+    const analyst = await seedActiveMember(app, ownerA.tenantId!, 'analyst')
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/tenant/settings',
+      headers: authHeaders(analyst),
+      payload: { portal: { enabled: false } },
+    })
+    expect(res.statusCode).toBe(403)
+  })
+
   it('requires tenant.manage permission', async () => {
     const analyst = await seedActiveMember(app, ownerA.tenantId!, 'analyst')
     const res = await app.inject({

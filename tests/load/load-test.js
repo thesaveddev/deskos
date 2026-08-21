@@ -1,5 +1,5 @@
 /**
- * DeskOS Load Test — k6
+ * ReyDesk Load Test — k6
  *
  * Run: k6 run tests/load/load-test.js
  *

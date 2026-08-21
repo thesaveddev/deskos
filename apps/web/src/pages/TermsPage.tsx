@@ -3,8 +3,8 @@ import LandingLayout from '../components/LandingLayout'
 export default function TermsPage() {
   return (
     <LandingLayout
-      title="Terms of Service — DeskOS"
-      description="DeskOS Terms of Service — the rules governing your use of the DeskOS IT support platform."
+      title="Terms of Service — ReyDesk"
+      description="ReyDesk Terms of Service — the rules governing your use of the ReyDesk IT support platform."
     >
       <section className="landing-section legal-page">
         <div className="legal-content">
@@ -13,12 +13,12 @@ export default function TermsPage() {
 
           <h2>1. Acceptance of terms</h2>
           <p>
-            By accessing or using DeskOS ("Service"), you agree to these Terms of Service ("Terms"). If you are using the Service on behalf of an organisation, you represent that you have authority to bind that organisation to these Terms.
+            By accessing or using ReyDesk ("Service"), you agree to these Terms of Service ("Terms"). If you are using the Service on behalf of an organisation, you represent that you have authority to bind that organisation to these Terms.
           </p>
 
           <h2>2. Description of service</h2>
           <p>
-            DeskOS is an IT support platform that provides remote desktop control, endpoint monitoring and management, IT service management (ticketing), and related tools. The Service is provided "as is" and may be modified, updated, or discontinued at our discretion.
+            ReyDesk is an IT support platform that provides remote desktop control, endpoint monitoring and management, IT service management (ticketing), and related tools. The Service is provided "as is" and may be modified, updated, or discontinued at our discretion.
           </p>
 
           <h2>3. Account registration</h2>
@@ -70,12 +70,12 @@ export default function TermsPage() {
 
           <h2>10. Limitation of liability</h2>
           <p>
-            To the maximum extent permitted by law, DeskOS and Clean IT Ltd shall not be liable for any indirect, incidental, special, consequential, or punitive damages, or any loss of profits or revenues, whether incurred directly or indirectly. Our total liability shall not exceed the fees you paid in the twelve months preceding the claim.
+            To the maximum extent permitted by law, ReyDesk and Clean IT Ltd shall not be liable for any indirect, incidental, special, consequential, or punitive damages, or any loss of profits or revenues, whether incurred directly or indirectly. Our total liability shall not exceed the fees you paid in the twelve months preceding the claim.
           </p>
 
           <h2>11. Indemnification</h2>
           <p>
-            You agree to indemnify and hold harmless DeskOS and Clean IT Ltd from any claims, losses, or damages arising from your use of the Service or violation of these Terms.
+            You agree to indemnify and hold harmless ReyDesk and Clean IT Ltd from any claims, losses, or damages arising from your use of the Service or violation of these Terms.
           </p>
 
           <h2>12. Termination</h2>
@@ -96,7 +96,7 @@ export default function TermsPage() {
           <h2>15. Contact</h2>
           <p>
             Clean IT Ltd<br />
-            <a href="mailto:legal@deskos.com">legal@deskos.com</a>
+            <a href="mailto:legal@reydesk.com">legal@reydesk.com</a>
           </p>
         </div>
       </section>

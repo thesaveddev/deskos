@@ -66,6 +66,64 @@ export function createEmailRoutes(worker: EmailWorker | null) {
     )
 
     app.get(
+      '/email/outbound/status',
+      { preHandler: [authenticate, requireTenant, requirePermission('settings.manage')] },
+      async () => ({
+        enabled: app.mailer.enabled,
+        host: app.config.smtp.host || null,
+        port: app.config.smtp.port,
+        tls: app.config.smtp.tls,
+        fromConfigured: Boolean(app.config.smtp.from),
+        smtp: app.mailer.status,
+        queue: app.emailQueue.getStats(),
+      }),
+    )
+
+    app.post(
+      '/email/outbound/test',
+      { preHandler: [authenticate, requireTenant, requirePermission('settings.manage')] },
+      async () => {
+        const result = await app.mailer.verifyConnection()
+        return { ...result, smtp: app.mailer.status }
+      },
+    )
+
+    app.get(
+      '/email/outbound/jobs/:jobId',
+      { preHandler: [authenticate, requireTenant, requirePermission('settings.manage')] },
+      async (request, reply) => {
+        const { jobId } = request.params as { jobId: string }
+        const job = app.emailQueue.getJob(jobId)
+        if (!job) return reply.code(404).send({ error: { code: 'not_found', message: 'Email job not found' } })
+        return {
+          job: {
+            id: job.id,
+            to: job.to,
+            subject: job.subject,
+            status: job.status,
+            retries: job.retries,
+            maxRetries: job.maxRetries,
+            createdAt: job.createdAt,
+            lastAttemptAt: job.lastAttemptAt ?? null,
+            lastError: job.lastError ?? null,
+          },
+        }
+      },
+    )
+
+    app.post(
+      '/email/outbound/jobs/:jobId/retry',
+      { preHandler: [authenticate, requireTenant, requirePermission('settings.manage')] },
+      async (request, reply) => {
+        const { jobId } = request.params as { jobId: string }
+        if (!app.emailQueue.retryJob(jobId)) {
+          return reply.code(404).send({ error: { code: 'not_found', message: 'Dead email job not found' } })
+        }
+        return { ok: true, jobId }
+      },
+    )
+
+    app.get(
       '/email/channels',
       { preHandler: [authenticate, requireTenant, requirePermission('settings.manage')] },
       async (request) => {

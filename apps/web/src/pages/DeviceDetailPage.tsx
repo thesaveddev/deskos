@@ -1,19 +1,26 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { Alert, Field } from '../components/ui.js'
+import { Alert, Field, Modal, useConfirm } from '../components/ui.js'
 import {
+  createDeviceAssignment,
   deleteDevice,
   getDevice,
   listDeviceGroups,
+  returnDeviceAssignment,
   updateDevice,
   type Device,
   type DeviceAlert,
+  type DeviceAssignment,
   type DeviceGroup,
   type DeviceMetric,
+  type DeviceType,
 } from '../lib/devices.js'
 import { formatWhen, STATUS_LABELS } from '../lib/tickets.js'
 import { useAuth } from '../lib/auth.js'
+import { api } from '../lib/api.js'
+import { MfaQrCode } from '../components/MfaQrCode.js'
 import { createSession, type RemoteSessionType } from '../lib/sessions.js'
+import { getDeviceDex, type DeviceDex } from '../lib/dex.js'
 import { Shell } from '../components/Shell.js'
 
 function statusLabel(status: Device['status']): string {
@@ -43,10 +50,19 @@ function alertStatus(alert: DeviceAlert): string {
   return alert.resolved_at ? 'Resolved' : alert.severity
 }
 
+function formatUptime(seconds?: number | null): string {
+  if (seconds == null) return '—'
+  const days = Math.floor(seconds / 86400)
+  const hours = Math.floor((seconds % 86400) / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  return `${days ? `${days}d ` : ''}${hours}h ${minutes}m`
+}
+
 export default function DeviceDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const canManageDevice = useAuth((state) => state.memberships.some((membership) => membership.permissions.includes('device.manage')))
+  const confirm = useConfirm()
   const canRemote = useAuth((state) => state.memberships.some((membership) => membership.permissions.some((permission) => permission.startsWith('remote.'))))
   const canRemoteControl = useAuth((state) => state.memberships.some((membership) => membership.permissions.includes('remote.control')))
   const canRemoteElevated = useAuth((state) => state.memberships.some((membership) => membership.permissions.includes('remote.elevated')))
@@ -54,9 +70,11 @@ export default function DeviceDetailPage() {
   const [metrics, setMetrics] = useState<DeviceMetric[]>([])
   const [alerts, setAlerts] = useState<DeviceAlert[]>([])
   const [tickets, setTickets] = useState<Array<{ id: string; number: number; subject: string; status: string; priority: string; created_at: string }>>([])
+  const [dex, setDex] = useState<DeviceDex | null>(null)
   const [groups, setGroups] = useState<DeviceGroup[]>([])
   const [name, setName] = useState('')
   const [groupId, setGroupId] = useState('')
+  const [deviceType, setDeviceType] = useState<DeviceType>('workstation')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -70,6 +88,21 @@ export default function DeviceDetailPage() {
   const [allowSystemManage, setAllowSystemManage] = useState(false)
   const [sessionBusy, setSessionBusy] = useState(false)
   const [deleteBusy, setDeleteBusy] = useState(false)
+  const [assignment, setAssignment] = useState<DeviceAssignment | null>(null)
+  const [assignmentHistory, setAssignmentHistory] = useState<DeviceAssignment[]>([])
+  const [assetIdentity, setAssetIdentity] = useState<{ id: string; tag: string; name: string; type: string; status: string; qr_payload?: string | null; barcode_value?: string | null; warranty_until?: string | null } | null>(null)
+  const [assignmentOpen, setAssignmentOpen] = useState(false)
+  const [assignmentStatus, setAssignmentStatus] = useState<'assigned' | 'shared' | 'temporary'>('assigned')
+  const [assignmentUserId, setAssignmentUserId] = useState('')
+  const [assignmentDepartment, setAssignmentDepartment] = useState('')
+  const [assignmentTeamId, setAssignmentTeamId] = useState('')
+  const [assignmentLocation, setAssignmentLocation] = useState('')
+  const [assignmentReason, setAssignmentReason] = useState('')
+  const [assignmentNotes, setAssignmentNotes] = useState('')
+  const [expectedReturnAt, setExpectedReturnAt] = useState('')
+  const [assignmentMembers, setAssignmentMembers] = useState<Array<{ id: string; name: string; email: string }>>([])
+  const [assignmentTeams, setAssignmentTeams] = useState<Array<{ id: string; name: string }>>([])
+  const [assignmentBusy, setAssignmentBusy] = useState(false)
 
   useEffect(() => {
     setAllowControlInput(sessionType !== 'inspection' && canRemoteControl)
@@ -83,9 +116,20 @@ export default function DeviceDetailPage() {
       setDevice(response.device)
       setName(response.device.name)
       setGroupId(response.device.group_id ?? '')
+      setDeviceType(response.device.device_type ?? 'workstation')
       setMetrics(response.metrics)
       setAlerts(response.alerts)
       setTickets(response.tickets)
+      setAssignment(response.assignment ?? null)
+      setAssignmentHistory(response.assignments ?? [])
+      setAssetIdentity(response.asset ?? null)
+      try {
+        setDex(await getDeviceDex(id))
+      } catch {
+        // DEX is an optional management capability; do not hide the device
+        // page when the current role cannot read its score.
+        setDex(null)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load device')
     }
@@ -133,8 +177,78 @@ export default function DeviceDetailPage() {
     }
   }
 
+  const openAssignment = async () => {
+    if (!device || !canManageDevice) return
+    setAssignmentStatus(assignment?.assignment_status === 'temporary' ? 'temporary' : assignment?.assignment_status === 'shared' ? 'shared' : 'assigned')
+    setAssignmentUserId(assignment?.user_id ?? '')
+    setAssignmentDepartment(assignment?.department ?? '')
+    setAssignmentTeamId(assignment?.team_id ?? '')
+    setAssignmentLocation(assignment?.location ?? '')
+    setAssignmentReason('')
+    setAssignmentNotes('')
+    setExpectedReturnAt(assignment?.expected_return_at ? new Date(assignment.expected_return_at).toISOString().slice(0, 16) : '')
+    setError(null)
+    setAssignmentOpen(true)
+    try {
+      const [memberResult, teamResult] = await Promise.all([
+        api<{ members: Array<{ user_id: string; name: string | null; email: string }> }>('/members?status=active'),
+        api<{ teams: Array<{ id: string; name: string }> }>('/teams'),
+      ])
+      setAssignmentMembers(memberResult.members.map((member) => ({ id: member.user_id, name: member.name || member.email, email: member.email })))
+      setAssignmentTeams(teamResult.teams)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load assignment options')
+    }
+  }
+
+  const saveAssignment = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!device || assignmentBusy) return
+    if (assignmentStatus !== 'shared' && !assignmentUserId) return
+    setAssignmentBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      const result = await createDeviceAssignment(device.id, {
+        userId: assignmentStatus === 'shared' ? null : assignmentUserId,
+        assignmentStatus,
+        department: assignmentDepartment.trim(),
+        teamId: assignmentTeamId || null,
+        location: assignmentLocation.trim(),
+        expectedReturnAt: expectedReturnAt ? new Date(expectedReturnAt).toISOString() : null,
+        reason: assignmentReason.trim(),
+        notes: assignmentNotes.trim(),
+      })
+      setAssignment(result.assignment)
+      setAssignmentHistory((history) => [result.assignment, ...history])
+      setAssignmentOpen(false)
+      setNotice('Device assignment updated. The previous assignment is now in history.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update device assignment')
+    } finally {
+      setAssignmentBusy(false)
+    }
+  }
+
+  const returnAssignment = async () => {
+    if (!device || !assignment || assignmentBusy) return
+    if (!await confirm(`Mark ${device.name} as returned and remove its current staff assignment?`, { title: 'Return device', confirmLabel: 'Mark returned' })) return
+    setAssignmentBusy(true)
+    setError(null)
+    try {
+      const result = await returnDeviceAssignment(device.id, assignment.id)
+      setAssignment(null)
+      setAssignmentHistory((history) => history.map((item) => item.id === result.assignment.id ? result.assignment : item))
+      setNotice('Device marked as returned and is now unassigned.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not return device')
+    } finally {
+      setAssignmentBusy(false)
+    }
+  }
+
   const removeDevice = async () => {
-    if (!device || deleteBusy || !window.confirm(`Remove “${device.name}” from DeskOS? This revokes its agent credential, ends its remote sessions, and cannot be undone.`)) return
+    if (!device || deleteBusy || !await confirm(`Remove “${device.name}” from ReyDesk? This revokes its agent credential, ends its remote sessions, and cannot be undone.`, { title: 'Remove device', confirmLabel: 'Remove device', destructive: true })) return
     setDeleteBusy(true)
     setError(null)
     try {
@@ -154,8 +268,8 @@ export default function DeviceDetailPage() {
     setError(null)
     setNotice(null)
     try {
-      const response = await updateDevice(device.id, { name: name.trim(), groupId: groupId || null })
-      setDevice((current) => current ? { ...current, ...response.device, group_name: groups.find((group) => group.id === groupId)?.name ?? null } : current)
+      const response = await updateDevice(device.id, { name: name.trim(), groupId: groupId || null, deviceType })
+      setDevice((current) => current ? { ...current, ...response.device, device_type: deviceType, group_name: groups.find((group) => group.id === groupId)?.name ?? null } : current)
       setNotice('Device details saved.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save device details')
@@ -281,6 +395,7 @@ export default function DeviceDetailPage() {
 
       <div className="device-detail-grid">
         <div className="device-detail-main">
+          {dex ? <section className="detail-card"><div className="detail-card-head"><div><h2>Digital employee experience</h2><span className="muted mono">health, posture, and availability</span></div><strong className={`device-dex-score ${dex.score && dex.score.score >= 80 ? 'metric-ok' : dex.score && dex.score.score < 60 ? 'metric-crit' : 'metric-warn'}`}>{dex.score?.score ?? '—'}</strong></div>{dex.score ? <><div className="rmm-dex-components">{Object.entries(dex.score.components).map(([name, value]) => <div key={name}><span>{name}</span><strong>{value}</strong></div>)}</div>{dex.history.length > 1 ? <div className="dex-history" aria-label="DEX score history">{dex.history.map((point) => <span key={point.id} title={`${point.score} · ${new Date(point.computed_at).toLocaleString()}`} style={{ height: `${Math.max(8, point.score)}%` }} />)}</div> : <div className="detail-empty">History will appear after more telemetry samples.</div>}</> : <div className="detail-empty">No DEX score has been computed for this endpoint yet.</div>}</section> : null}
           <section className="detail-card">
             <div className="detail-card-head"><h2>Health</h2><span className="muted mono">latest telemetry</span></div>
             {latestMetric ? (
@@ -288,6 +403,7 @@ export default function DeviceDetailPage() {
                 <MetricBar label="CPU" value={latestMetric.cpu_pct} kind="cpu" />
                 <MetricBar label="Memory" value={latestMetric.mem_pct} kind="memory" />
                 <MetricBar label="Disk" value={latestMetric.disk_pct} kind="disk" />
+                <div className="health-facts"><span>Network <strong>{latestMetric.network_latency_ms == null ? '—' : `${latestMetric.network_latency_ms.toFixed(0)} ms`}{latestMetric.network_packet_loss_pct == null ? '' : ` · ${latestMetric.network_packet_loss_pct.toFixed(1)}% loss`}</strong></span><span>Processes <strong>{latestMetric.process_count ?? '—'}</strong></span><span>Battery <strong>{latestMetric.battery_pct == null ? '—' : `${latestMetric.battery_pct.toFixed(0)}%`}</strong></span><span>Battery health <strong>{latestMetric.battery_health_pct == null ? '—' : `${latestMetric.battery_health_pct.toFixed(0)}%`}</strong></span><span>Uptime <strong>{formatUptime(latestMetric.uptime_seconds ?? device.uptime_seconds)}</strong></span></div>
               </div>
             ) : (
               <div className="detail-empty">No telemetry has been reported by this device yet.</div>
@@ -337,15 +453,26 @@ export default function DeviceDetailPage() {
         </div>
 
         <aside className="device-detail-side">
+          <section className="detail-card assignment-card">
+            <div className="detail-card-head"><div><h2>Assignment</h2><span className="muted mono">IT ownership record</span></div>{canManageDevice ? <button className="btn btn-ghost btn-xs" onClick={() => void openAssignment()}>{assignment ? 'Transfer' : 'Assign'}</button> : null}</div>
+            {assignment ? <><div className="assignment-current"><strong>{assignment.assignment_status === 'shared' ? 'Shared device' : assignment.user_name || assignment.user_email || 'Assigned staff member'}</strong><span className="muted">{assignment.assignment_status} · since {formatWhen(assignment.assigned_at)}</span>{assignment.department ? <span className="muted">{assignment.department}{assignment.team_name ? ` · ${assignment.team_name}` : ''}</span> : null}{assignment.location ? <span className="muted">{assignment.location}</span> : null}</div>{canManageDevice ? <button className="btn btn-ghost btn-sm btn-block" onClick={() => void returnAssignment()} disabled={assignmentBusy}>Mark returned</button> : null}</> : <div className="detail-empty">Unassigned. Assign a primary user, shared pool, or temporary owner.</div>}
+            {assignmentHistory.length > 0 ? <details className="assignment-history"><summary>Assignment history ({assignmentHistory.length})</summary><div>{assignmentHistory.map((item) => <div key={item.id} className="assignment-history-row"><strong>{item.assignment_status === 'shared' ? 'Shared device' : item.user_name || item.user_email || 'Unassigned'}</strong><span>{formatWhen(item.assigned_at)}{item.returned_at ? ` → ${formatWhen(item.returned_at)}` : ' · current'}</span></div>)}</div></details> : null}
+          </section>
           <section className="detail-card">
             <div className="detail-card-head"><h2>Inventory</h2></div>
             <dl className="inventory-list">
               <div><dt>Hostname</dt><dd>{device.hostname || '—'}</dd></div>
+              <div><dt>Device type</dt><dd>{(device.device_type ?? 'workstation').replace('_', ' ')}</dd></div>
               <div><dt>Operating system</dt><dd>{device.os || '—'} {device.os_version}</dd></div>
               <div><dt>Architecture</dt><dd>{device.arch || '—'}</dd></div>
               <div><dt>IP address</dt><dd className="mono">{device.ip_address || '—'}</dd></div>
               <div><dt>Agent version</dt><dd className="mono">{device.agent_version || '—'}</dd></div>
+              <div><dt>Power / battery</dt><dd>{device.power_source || '—'}{device.battery_pct == null ? '' : ` · ${Number(device.battery_pct).toFixed(0)}%`}{device.battery_health_pct == null ? '' : ` · health ${Number(device.battery_health_pct).toFixed(0)}%`}</dd></div>
+              <div><dt>Uptime</dt><dd>{formatUptime(device.uptime_seconds)}</dd></div>
+              <div><dt>Inventory updated</dt><dd>{device.last_inventory_at ? formatWhen(device.last_inventory_at) : '—'}</dd></div>
+              <div><dt>Asset tag</dt><dd className="mono">{assetIdentity?.tag || 'Not tagged'}</dd></div>
             </dl>
+            {assetIdentity?.qr_payload ? <div className="asset-qr-mini"><MfaQrCode value={assetIdentity.qr_payload} /></div> : null}
           </section>
 
           <section className="detail-card">
@@ -353,6 +480,11 @@ export default function DeviceDetailPage() {
             <form onSubmit={saveMetadata}>
               <Field label="Display name">
                 <input className="field-input" value={name} onChange={(event) => setName(event.target.value)} required />
+              </Field>
+              <Field label="Device type">
+                <select className="field-input" value={deviceType} onChange={(event) => setDeviceType(event.target.value as DeviceType)}>
+                  <option value="laptop">Laptop</option><option value="workstation">Workstation</option><option value="server">Server</option><option value="network_device">Network device</option><option value="mobile">Mobile</option><option value="other">Other</option>
+                </select>
               </Field>
               <Field label="Group">
                 <select className="field-input" value={groupId} onChange={(event) => setGroupId(event.target.value)}>
@@ -365,6 +497,17 @@ export default function DeviceDetailPage() {
           </section>
         </aside>
       </div>
+
+      <Modal open={assignmentOpen} onClose={() => { if (!assignmentBusy) setAssignmentOpen(false) }} title={assignment ? 'Transfer device' : 'Assign device'} width={620} footer={<><button type="button" className="btn btn-ghost" onClick={() => setAssignmentOpen(false)} disabled={assignmentBusy}>Cancel</button><button type="submit" form="assignment-form" className="btn btn-primary" disabled={assignmentBusy || (assignmentStatus !== 'shared' && !assignmentUserId)}>{assignmentBusy ? 'Saving…' : assignment ? 'Save transfer' : 'Assign device'}</button></>}>
+        <form id="assignment-form" onSubmit={(event) => void saveAssignment(event)}>
+          <p className="modal-description">Keep the assignment record aligned with the physical device. Transfers close the previous record and preserve it in the history.</p>
+          <div className="form-row"><Field label="Assignment type"><select className="field-input" value={assignmentStatus} onChange={(event) => { const value = event.target.value as 'assigned' | 'shared' | 'temporary'; setAssignmentStatus(value); if (value === 'shared') setAssignmentUserId('') }}><option value="assigned">Primary user</option><option value="temporary">Temporary replacement</option><option value="shared">Shared pool / kiosk</option></select></Field><Field label="Staff member"><select className="field-input" value={assignmentUserId} onChange={(event) => setAssignmentUserId(event.target.value)} disabled={assignmentStatus === 'shared'}><option value="">{assignmentStatus === 'shared' ? 'Shared device' : 'Select staff member'}</option>{assignmentMembers.map((member) => <option key={member.id} value={member.id}>{member.name} · {member.email}</option>)}</select></Field></div>
+          <div className="form-row"><Field label="Department"><input className="field-input" value={assignmentDepartment} onChange={(event) => setAssignmentDepartment(event.target.value)} placeholder="Finance" /></Field><Field label="Team"><select className="field-input" value={assignmentTeamId} onChange={(event) => setAssignmentTeamId(event.target.value)}><option value="">No team</option>{assignmentTeams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></Field></div>
+          <div className="form-row"><Field label="Location"><input className="field-input" value={assignmentLocation} onChange={(event) => setAssignmentLocation(event.target.value)} placeholder="Lagos office" /></Field><Field label="Expected return" hint="Optional"><input className="field-input" type="datetime-local" value={expectedReturnAt} onChange={(event) => setExpectedReturnAt(event.target.value)} /></Field></div>
+          <Field label="Reason"><input className="field-input" value={assignmentReason} onChange={(event) => setAssignmentReason(event.target.value)} placeholder="New starter, loaner, transfer…" /></Field>
+          <Field label="Notes"><textarea className="field-input" rows={3} value={assignmentNotes} onChange={(event) => setAssignmentNotes(event.target.value)} placeholder="Condition, accessories, or return instructions…" /></Field>
+        </form>
+      </Modal>
     </Shell>
   )
 }

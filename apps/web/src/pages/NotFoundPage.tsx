@@ -33,7 +33,7 @@ export default function NotFoundPage() {
   }
 
   return (
-    <LandingLayout title="Page Not Found — DeskOS" description="The DeskOS page you requested could not be found.">
+    <LandingLayout title="Page Not Found — ReyDesk" description="The ReyDesk page you requested could not be found.">
       <NotFoundContent authenticated={false} />
     </LandingLayout>
   )

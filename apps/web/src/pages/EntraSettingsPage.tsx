@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Alert, Field } from '../components/ui.js'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { Alert, Field, Modal, useConfirm } from '../components/ui.js'
 import { PasswordField } from '../components/PasswordField.js'
+import { Icon } from '../components/Icons.js'
 import {
   createEntraConnection,
   deleteEntraConnection,
@@ -27,34 +28,86 @@ const EMPTY_FORM: EntraConnectionInput = {
   enabled: true,
 }
 
+type DirectoryTab = 'connections' | 'contacts' | 'sync' | 'actions' | 'setup'
+
+const TABS: Array<{ id: DirectoryTab; label: string; description: string; icon: 'settings' | 'user' | 'refresh' | 'wrench' | 'file' }> = [
+  { id: 'connections', label: 'Connections', description: 'Identity providers', icon: 'settings' },
+  { id: 'contacts', label: 'Directory contacts', description: 'Synced requesters', icon: 'user' },
+  { id: 'sync', label: 'Sync history', description: 'Import activity', icon: 'refresh' },
+  { id: 'actions', label: 'Account actions', description: 'Administrative changes', icon: 'wrench' },
+  { id: 'setup', label: 'Setup guide', description: 'Permissions and next steps', icon: 'file' },
+]
+
 export default function EntraSettingsPage() {
+  const confirm = useConfirm()
+  const [tab, setTab] = useState<DirectoryTab>('connections')
   const [connections, setConnections] = useState<EntraConnection[]>([])
   const [runs, setRuns] = useState<SyncRun[]>([])
   const [actions, setActions] = useState<EntraAction[]>([])
   const [contacts, setContacts] = useState<Contact[]>([])
   const [form, setForm] = useState<EntraConnectionInput>(EMPTY_FORM)
   const [editing, setEditing] = useState<EntraConnection | null>(null)
+  const [editorOpen, setEditorOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
-  const refresh = useCallback(() => {
-    void listEntraConnections().then((r) => setConnections(r.connections)).catch(() => undefined)
-    void listSyncRuns().then((r) => setRuns(r.runs)).catch(() => undefined)
-    void listEntraActions().then((r) => setActions(r.actions)).catch(() => undefined)
-    void listContacts().then((r) => setContacts(r.contacts)).catch(() => undefined)
+  const refresh = useCallback(async () => {
+    try {
+      const [connectionResponse, runResponse, actionResponse, contactResponse] = await Promise.all([
+        listEntraConnections(),
+        listSyncRuns(),
+        listEntraActions(),
+        listContacts(),
+      ])
+      setConnections(connectionResponse.connections)
+      setRuns(runResponse.runs)
+      setActions(actionResponse.actions)
+      setContacts(contactResponse.contacts)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not load directory settings')
+    }
   }, [])
 
   useEffect(() => {
-    refresh()
+    void refresh()
   }, [refresh])
 
   function setField<K extends keyof EntraConnectionInput>(key: K, value: EntraConnectionInput[K]) {
-    setForm((f) => ({ ...f, [key]: value }))
+    setForm((current) => ({ ...current, [key]: value }))
   }
 
-  async function handleSave(e: React.FormEvent) {
-    e.preventDefault()
+  function openCreate() {
+    setEditing(null)
+    setForm(EMPTY_FORM)
+    setError(null)
+    setNotice(null)
+    setEditorOpen(true)
+  }
+
+  function openEdit(connection: EntraConnection) {
+    setEditing(connection)
+    setForm({
+      name: connection.name,
+      azureTenantId: connection.azureTenantId,
+      clientId: connection.clientId,
+      clientSecret: '',
+      enabled: connection.enabled,
+    })
+    setError(null)
+    setNotice(null)
+    setEditorOpen(true)
+  }
+
+  function closeEditor() {
+    if (busy) return
+    setEditorOpen(false)
+    setEditing(null)
+    setForm(EMPTY_FORM)
+  }
+
+  async function handleSave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
     setBusy(true)
     setError(null)
     setNotice(null)
@@ -68,9 +121,10 @@ export default function EntraSettingsPage() {
         await createEntraConnection(form)
         setNotice('Connection added.')
       }
-      setForm(EMPTY_FORM)
+      setEditorOpen(false)
       setEditing(null)
-      refresh()
+      setForm(EMPTY_FORM)
+      await refresh()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Save failed')
     } finally {
@@ -83,8 +137,8 @@ export default function EntraSettingsPage() {
     setError(null)
     setNotice(null)
     try {
-      const r = await testEntraConnection(id)
-      setNotice(`Connection "${name}" is healthy (${r.users ?? 0} users visible).`)
+      const result = await testEntraConnection(id)
+      setNotice(`Connection “${name}” is healthy (${result.users ?? 0} users visible).`)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Test failed')
     } finally {
@@ -97,9 +151,10 @@ export default function EntraSettingsPage() {
     setError(null)
     setNotice(null)
     try {
-      const r = await syncEntraDirectory(id)
-      setNotice(`Sync of "${name}" complete: ${r.created} created, ${r.updated} updated.`)
-      refresh()
+      const result = await syncEntraDirectory(id)
+      setNotice(`Sync of “${name}” complete: ${result.created} created, ${result.updated} updated.`)
+      await refresh()
+      setTab('sync')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Sync failed')
     } finally {
@@ -107,14 +162,37 @@ export default function EntraSettingsPage() {
     }
   }
 
-  async function handleDelete(id: string) {
+  async function handleAction(connection: EntraConnection) {
+    const upn = window.prompt(`User principal name for ${connection.name} (e.g. user@domain.com):`)
+    if (!upn) return
+    const requireMfa = await confirm('Choose whether to require MFA for this directory user.', { title: 'Directory user action', confirmLabel: 'Require MFA', cancelLabel: 'Reset password' })
+    const body = requireMfa
+      ? { action: 'requireMfa' as const, upn }
+      : { action: 'resetPassword' as const, upn, newPassword: window.prompt('New temporary password:') ?? undefined }
     setBusy(true)
     setError(null)
     setNotice(null)
     try {
-      await deleteEntraConnection(id)
+      const result = await runEntraAction(connection.id, body)
+      setNotice(`${body.action} on ${upn}: ${result.status} — ${result.detail}`)
+      await refresh()
+      setTab('actions')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Action failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleDelete(connection: EntraConnection) {
+    if (!await confirm(`Remove the “${connection.name}” directory connection?`, { title: 'Remove directory connection', confirmLabel: 'Remove connection', destructive: true })) return
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      await deleteEntraConnection(connection.id)
       setNotice('Connection removed.')
-      refresh()
+      await refresh()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Delete failed')
     } finally {
@@ -122,136 +200,140 @@ export default function EntraSettingsPage() {
     }
   }
 
+  const enabledConnections = connections.filter((connection) => connection.enabled).length
+  const lastRun = runs[0]
+
   return (
-    <div className="form-panel">
-      <h2 className="channel-form-title">Microsoft 365 / Entra ID</h2>
-      <p className="muted" style={{ marginBottom: 16 }}>
-        Connect an Entra ID app registration (client credentials) to sync your directory into contacts and run gated
-        account actions. Client secrets are encrypted at rest and never returned by the API.
-      </p>
+    <div className="directory-page">
+      <div className="directory-hero">
+        <div className="directory-hero-copy">
+          <span className="settings-eyebrow">Identity and access</span>
+          <h2 className="channel-form-title">Active Directory & Entra ID</h2>
+          <p className="directory-hero-description">
+            Connect Microsoft Entra ID to sync requesters, test directory access, and perform controlled account actions.
+            Secrets are encrypted at rest and never returned by the API.
+          </p>
+        </div>
+        <div className="directory-hero-icon"><Icon name="shield" size={28} /></div>
+      </div>
+
       {error ? <Alert kind="error">{error}</Alert> : null}
       {notice ? <Alert kind="info">{notice}</Alert> : null}
 
-      <form onSubmit={handleSave} className="channel-form">
-        <Field label="Display name">
-          <input className="field-input" value={form.name} onChange={(e) => setField('name', e.target.value)} required />
-        </Field>
-        <Field label="Azure tenant ID" hint="Directory (tenant) ID from the app registration">
-          <input className="field-input" value={form.azureTenantId} onChange={(e) => setField('azureTenantId', e.target.value)} required />
-        </Field>
-        <Field label="Client ID">
-          <input className="field-input" value={form.clientId} onChange={(e) => setField('clientId', e.target.value)} required />
-        </Field>
-        <PasswordField label="Client secret" hint={editing ? 'Leave blank to keep the existing secret' : undefined} className="field-input" value={form.clientSecret} onChange={(e) => setField('clientSecret', e.target.value)} required={!editing} />
-        <label className="field checkbox-field">
-          <input type="checkbox" checked={form.enabled} onChange={(e) => setField('enabled', e.target.checked)} />
-          Enabled
-        </label>
-        <div className="form-actions">
-          <button type="submit" className="btn btn-primary" disabled={busy}>
-            {busy ? 'Saving…' : editing ? 'Save changes' : 'Add connection'}
+      <div className="directory-stat-grid" aria-label="Directory summary">
+        <div className="directory-stat"><span>Connections</span><strong>{connections.length}</strong><small>{enabledConnections} enabled</small></div>
+        <div className="directory-stat"><span>Synced contacts</span><strong>{contacts.length}</strong><small>Available as requesters</small></div>
+        <div className="directory-stat"><span>Sync runs</span><strong>{runs.length}</strong><small>{lastRun ? `Last run ${lastRun.status}` : 'No sync yet'}</small></div>
+        <div className="directory-stat"><span>Account actions</span><strong>{actions.length}</strong><small>Audited requests</small></div>
+      </div>
+
+      <div className="directory-tabs" role="tablist" aria-label="Directory settings sections">
+        {TABS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === item.id}
+            className={`directory-tab${tab === item.id ? ' active' : ''}`}
+            onClick={() => setTab(item.id)}
+          >
+            <Icon name={item.icon} size={16} />
+            <span><strong>{item.label}</strong><small>{item.description}</small></span>
           </button>
-          {editing ? (
-            <button type="button" className="btn" disabled={busy} onClick={() => { setEditing(null); setForm(EMPTY_FORM) }}>
-              Cancel
-            </button>
-          ) : null}
-        </div>
-      </form>
-
-      <h3 className="channel-title" style={{ marginTop: 24 }}>Connections</h3>
-      <div className="channel-list">
-        {connections.length === 0 ? <div className="empty-state">No connections yet.</div> : null}
-        {connections.map((c) => (
-          <div key={c.id} className="channel-card">
-            <div className="channel-main">
-              <div className="channel-title">
-                <span className="channel-name">{c.name}</span>
-                <span className={`status-pill ${c.enabled ? 'status-open' : 'status-resolved'}`}>
-                  {c.enabled ? 'enabled' : 'disabled'}
-                </span>
-              </div>
-              <div className="channel-meta muted">tenant {c.azureTenantId} · {c.clientId} · secret {c.clientSecretMasked}</div>
-            </div>
-            <div className="channel-actions">
-              <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => handleTest(c.id, c.name)}>Test</button>
-              <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => handleSync(c.id, c.name)}>Sync</button>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                disabled={busy}
-                onClick={async () => {
-                  const upn = window.prompt(`User principal name for ${c.name} (e.g. user@domain.com):`)
-                  if (!upn) return
-                  const action = window.confirm('OK = require MFA, Cancel = reset password')
-                  setBusy(true)
-                  try {
-                    const body = action
-                      ? { action: 'requireMfa' as const, upn }
-                      : { action: 'resetPassword' as const, upn, newPassword: window.prompt('New temporary password:') ?? undefined }
-                    const r = await runEntraAction(c.id, body)
-                    setNotice(`${body.action} on ${upn}: ${r.status} — ${r.detail}`)
-                    refresh()
-                  } catch (e) {
-                    setError(e instanceof Error ? e.message : 'Action failed')
-                  } finally {
-                    setBusy(false)
-                  }
-                }}
-              >
-                Action
-              </button>
-              <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => { setEditing(c); setForm({ name: c.name, azureTenantId: c.azureTenantId, clientId: c.clientId, clientSecret: '', enabled: c.enabled }) }}>
-                Edit
-              </button>
-              <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => handleDelete(c.id)}>Remove</button>
-            </div>
-          </div>
         ))}
       </div>
 
-      <h3 className="channel-title" style={{ marginTop: 24 }}>Directory contacts ({contacts.length})</h3>
-      <p className="muted">Contacts are populated by directory sync and are shared with the customer portal as requesters.</p>
-      <div className="channel-list">
-        {contacts.slice(0, 10).map((c) => (
-          <div key={c.id} className="channel-card">
-            <div className="channel-main">
-              <div className="channel-title"><span className="channel-name">{c.name}</span></div>
-              <div className="channel-meta muted">{c.email} · {c.department ?? '—'} · {c.account_status}</div>
-            </div>
+      {tab === 'connections' && (
+        <section className="directory-section" role="tabpanel">
+          <div className="directory-section-head">
+            <div><h3>Directory connections</h3><p>Manage the identity providers that ReyDesk can read from.</p></div>
+            <button type="button" className="btn btn-primary" onClick={openCreate}><Icon name="add" size={15} />Add connection</button>
           </div>
-        ))}
-        {contacts.length === 0 ? <div className="empty-state">No contacts synced yet.</div> : null}
-      </div>
+          <div className="directory-connection-list">
+            {connections.map((connection) => (
+              <article key={connection.id} className="directory-connection-card">
+                <div className="directory-connection-main">
+                  <div className="directory-connection-title">
+                    <span className="directory-provider-icon"><Icon name="user" size={17} /></span>
+                    <div><h4>{connection.name}</h4><span className={`status-pill ${connection.enabled ? 'status-open' : 'status-resolved'}`}>{connection.enabled ? 'Enabled' : 'Disabled'}</span></div>
+                  </div>
+                  <p className="directory-connection-meta">Tenant {connection.azureTenantId} · Client {connection.clientId} · Secret {connection.clientSecretMasked}</p>
+                </div>
+                <div className="directory-connection-actions">
+                  <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void handleTest(connection.id, connection.name)}><Icon name="check" size={14} />Test</button>
+                  <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void handleSync(connection.id, connection.name)}><Icon name="refresh" size={14} />Sync</button>
+                  <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void handleAction(connection)}><Icon name="wrench" size={14} />Action</button>
+                  <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => openEdit(connection)}><Icon name="edit" size={14} />Edit</button>
+                  <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void handleDelete(connection)}><Icon name="delete" size={14} />Remove</button>
+                </div>
+              </article>
+            ))}
+            {connections.length === 0 ? <div className="directory-empty"><Icon name="settings" size={24} /><strong>No directory connections yet</strong><span>Add an Entra ID app registration to begin syncing users.</span><button type="button" className="btn btn-primary btn-sm" onClick={openCreate}><Icon name="add" size={14} />Add first connection</button></div> : null}
+          </div>
+        </section>
+      )}
 
-      <h3 className="channel-title" style={{ marginTop: 24 }}>Recent sync runs</h3>
-      <div className="channel-list">
-        {runs.slice(0, 5).map((r) => (
-          <div key={r.id} className="channel-card">
-            <div className="channel-main">
-              <div className="channel-title"><span className="channel-name">{r.status}</span></div>
-              <div className="channel-meta muted">
-                {r.connection_name ?? 'deleted connection'} · fetched {r.fetched} · created {r.created} · updated {r.updated}
-                {r.error ? ` · error: ${r.error}` : ''}
-              </div>
-            </div>
+      {tab === 'contacts' && (
+        <section className="directory-section" role="tabpanel">
+          <div className="directory-section-head"><div><h3>Directory contacts</h3><p>People imported from Entra ID and available as ticket requesters.</p></div><span className="directory-section-count">{contacts.length} contacts</span></div>
+          <div className="directory-table-wrap">
+            <table className="directory-table"><thead><tr><th>Name</th><th>Email</th><th>Department</th><th>Account status</th></tr></thead><tbody>
+              {contacts.map((contact) => <tr key={contact.id}><td><strong>{contact.name}</strong></td><td className="mono">{contact.email}</td><td>{contact.department ?? '—'}</td><td><span className="status-pill status-open">{contact.account_status}</span></td></tr>)}
+              {contacts.length === 0 ? <tr><td colSpan={4} className="directory-table-empty">No contacts synced yet. Run a directory sync from the Connections tab.</td></tr> : null}
+            </tbody></table>
           </div>
-        ))}
-        {runs.length === 0 ? <div className="empty-state">No sync runs yet.</div> : null}
-      </div>
+        </section>
+      )}
 
-      <h3 className="channel-title" style={{ marginTop: 24 }}>Recent account actions</h3>
-      <div className="channel-list">
-        {actions.slice(0, 5).map((a) => (
-          <div key={a.id} className="channel-card">
-            <div className="channel-main">
-              <div className="channel-title"><span className="channel-name">{a.action}</span></div>
-              <div className="channel-meta muted">{a.target_upn} · {a.status} · {a.detail ?? ''}</div>
-            </div>
+      {tab === 'sync' && (
+        <section className="directory-section" role="tabpanel">
+          <div className="directory-section-head"><div><h3>Sync history</h3><p>Review imports, changes, and errors across your directory connections.</p></div><button type="button" className="btn btn-ghost btn-sm" onClick={() => void refresh()}><Icon name="refresh" size={14} />Refresh</button></div>
+          <div className="directory-table-wrap"><table className="directory-table"><thead><tr><th>Connection</th><th>Status</th><th>Fetched</th><th>Created</th><th>Updated</th><th>Started</th><th>Details</th></tr></thead><tbody>
+            {runs.map((run) => <tr key={run.id}><td>{run.connection_name ?? 'Deleted connection'}</td><td><span className={`status-pill ${run.status === 'ok' ? 'status-open' : run.status === 'error' ? 'status-closed' : 'status-new'}`}>{run.status}</span></td><td>{run.fetched}</td><td>{run.created}</td><td>{run.updated}</td><td className="mono">{new Date(run.started_at).toLocaleString()}</td><td>{run.error ?? '—'}</td></tr>)}
+            {runs.length === 0 ? <tr><td colSpan={7} className="directory-table-empty">No sync runs yet.</td></tr> : null}
+          </tbody></table></div>
+        </section>
+      )}
+
+      {tab === 'actions' && (
+        <section className="directory-section" role="tabpanel">
+          <div className="directory-section-head"><div><h3>Account actions</h3><p>Audited actions requested against directory accounts, including MFA requirements and password resets.</p></div></div>
+          <div className="directory-table-wrap"><table className="directory-table"><thead><tr><th>Action</th><th>Target</th><th>Status</th><th>Requested by</th><th>Requested</th><th>Details</th></tr></thead><tbody>
+            {actions.map((action) => <tr key={action.id}><td><strong>{action.action}</strong></td><td className="mono">{action.target_upn}</td><td><span className={`status-pill ${action.status === 'ok' ? 'status-open' : action.status === 'error' ? 'status-closed' : 'status-new'}`}>{action.status}</span></td><td>{action.actor_name ?? '—'}</td><td className="mono">{new Date(action.created_at).toLocaleString()}</td><td>{action.detail ?? '—'}</td></tr>)}
+            {actions.length === 0 ? <tr><td colSpan={6} className="directory-table-empty">No account actions have been requested.</td></tr> : null}
+          </tbody></table></div>
+        </section>
+      )}
+
+      {tab === 'setup' && (
+        <section className="directory-section" role="tabpanel">
+          <div className="directory-section-head"><div><h3>Setup guide</h3><p>Use a least-privilege app registration and keep administrative actions deliberately scoped.</p></div></div>
+          <div className="directory-guide-grid">
+            <article className="directory-guide-card"><span className="directory-guide-number">01</span><h4>Create an app registration</h4><p>In Microsoft Entra admin center, create a single-tenant application and copy its Directory (tenant) ID and Application (client) ID.</p></article>
+            <article className="directory-guide-card"><span className="directory-guide-number">02</span><h4>Grant Graph permissions</h4><p>Grant only the permissions your workflow needs. Read-only directory sync is separate from account actions such as password reset or MFA enforcement.</p></article>
+            <article className="directory-guide-card"><span className="directory-guide-number">03</span><h4>Create a client secret</h4><p>Store the secret securely, enter it once in the connection form, and rotate it regularly. ReyDesk never displays the raw secret after saving.</p></article>
+            <article className="directory-guide-card"><span className="directory-guide-number">04</span><h4>Test before syncing</h4><p>Use Test to validate credentials and Graph access. Run Sync only after the connection reports healthy.</p></article>
           </div>
-        ))}
-        {actions.length === 0 ? <div className="empty-state">No account actions yet.</div> : null}
-      </div>
+          <div className="directory-warning"><Icon name="alert" size={17} /><span><strong>Security reminder:</strong> Directory actions are powerful. Restrict access to this settings page to trusted administrators and review the Account actions tab regularly.</span></div>
+        </section>
+      )}
+
+      <Modal
+        open={editorOpen}
+        onClose={closeEditor}
+        title={editing ? 'Edit directory connection' : 'Add Entra ID connection'}
+        width={620}
+        footer={<><button type="button" className="btn btn-ghost" onClick={closeEditor} disabled={busy}>Cancel</button><button type="submit" form="entra-connection-form" className="btn btn-primary" disabled={busy}><Icon name="save" size={14} />{busy ? 'Saving…' : editing ? 'Save changes' : 'Add connection'}</button></>}
+      >
+        <form id="entra-connection-form" onSubmit={(event) => void handleSave(event)} className="directory-form">
+          <p className="directory-form-intro">Use an Entra ID app registration with client-credentials authentication. All fields are required for a new connection.</p>
+          <Field label="Display name"><input className="field-input" value={form.name} onChange={(event) => setField('name', event.target.value)} placeholder="Corporate Microsoft 365" required /></Field>
+          <Field label="Azure tenant ID" hint="Directory (tenant) ID from the app registration"><input className="field-input" value={form.azureTenantId} onChange={(event) => setField('azureTenantId', event.target.value)} required /></Field>
+          <Field label="Client ID"><input className="field-input" value={form.clientId} onChange={(event) => setField('clientId', event.target.value)} required /></Field>
+          <PasswordField label="Client secret" hint={editing ? 'Leave blank to keep the existing secret' : 'The secret is encrypted and will not be shown again'} className="field-input" value={form.clientSecret} onChange={(event) => setField('clientSecret', event.target.value)} required={!editing} />
+          <label className="field checkbox-field"><input type="checkbox" checked={form.enabled} onChange={(event) => setField('enabled', event.target.checked)} />Enabled</label>
+        </form>
+      </Modal>
     </div>
   )
 }

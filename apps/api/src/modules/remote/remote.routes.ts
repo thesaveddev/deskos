@@ -23,8 +23,8 @@ const createSchema = z.object({
   type: z.enum(sessionTypes).default('attended'),
   permissions: z.array(z.enum(sessionPermissions)).min(1).max(10),
   reason: z.string().trim().max(500).optional(),
-  recordingMode: z.enum(['off', 'metadata', 'video']).default('metadata'),
-  recordingRetentionDays: z.number().int().min(1).max(3650).default(30),
+  recordingMode: z.enum(['off', 'metadata', 'video']).optional(),
+  recordingRetentionDays: z.number().int().min(1).max(3650).optional(),
 })
 
 const consentSchema = z.object({
@@ -201,6 +201,10 @@ export async function remoteRoutes(app: FastifyInstance): Promise<void> {
   app.post('/sessions', { preHandler: userGuards }, async (request, reply) => {
     const ctx = request.tenantCtx!
     const body = createSchema.parse(request.body)
+    const tenantRow = (await app.db.query('SELECT settings FROM tenants WHERE id = $1', [ctx.tenantId])).rows[0]
+    const remoteDefaults = (tenantRow?.settings?.remote_support ?? {}) as Record<string, unknown>
+    const recordingMode = (body.recordingMode ?? remoteDefaults.default_recording_mode ?? 'metadata') as 'off' | 'metadata' | 'video'
+    const recordingRetentionDays = Number(body.recordingRetentionDays ?? remoteDefaults.recording_retention_days ?? 30)
     const elevationOverride = body.permissions.includes('elevation')
       ? await hasActiveGrant(app.db, ctx.tenantId, request.user!.id, 'remote.elevated', body.deviceId)
       : false
@@ -221,7 +225,7 @@ export async function remoteRoutes(app: FastifyInstance): Promise<void> {
              (tenant_id, device_id, ticket_id, type, state, permissions, reason, requested_by, recording_mode, recording_retention_days)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
            RETURNING *`,
-          [ctx.tenantId, body.deviceId, body.ticketId ?? null, body.type, state, body.permissions, body.reason ?? '', request.user!.id, body.recordingMode, body.recordingRetentionDays],
+          [ctx.tenantId, body.deviceId, body.ticketId ?? null, body.type, state, body.permissions, body.reason ?? '', request.user!.id, recordingMode, recordingRetentionDays],
         )
       ).rows[0]
       await client.query(
@@ -358,6 +362,15 @@ export async function remoteRoutes(app: FastifyInstance): Promise<void> {
       if (wasLive) app.metrics.sessionTerminated()
       await addSessionEvent(client, ctx.tenantId, id, 'session.ended', 'user', request.user!.id)
       await appendTicketTimeline(client, ctx.tenantId, id, 'session.ended', 'Remote session ended.', 'user', request.user!.id)
+      await client.query(
+        `UPDATE devices
+            SET agent_token_hash = CASE WHEN adhoc THEN NULL ELSE agent_token_hash END,
+                agent_token_expires_at = CASE WHEN adhoc THEN now() ELSE agent_token_expires_at END,
+                updated_at = now()
+          WHERE id = $1 AND tenant_id = $2`,
+        [session.device_id, ctx.tenantId],
+      )
+      await client.query("UPDATE adhoc_sessions SET state = 'ended', updated_at = now() WHERE remote_session_id = $1 AND state = 'claimed'", [id])
       return { session: updated }
     })
   })
@@ -575,6 +588,15 @@ export async function remoteRoutes(app: FastifyInstance): Promise<void> {
         app.metrics.sessionTerminated()
         await addSessionEvent(client, ctx.tenantId, id, 'session.consent_denied', 'agent', ctx.deviceId)
         await appendTicketTimeline(client, ctx.tenantId, id, 'session.consent_denied', 'Remote session consent was declined.', 'agent', ctx.deviceId)
+        await client.query(
+          `UPDATE devices
+              SET agent_token_hash = CASE WHEN adhoc THEN NULL ELSE agent_token_hash END,
+                  agent_token_expires_at = CASE WHEN adhoc THEN now() ELSE agent_token_expires_at END,
+                  updated_at = now()
+            WHERE id = $1 AND tenant_id = $2`,
+          [ctx.deviceId, ctx.tenantId],
+        )
+        await client.query("UPDATE adhoc_sessions SET state = 'ended', updated_at = now() WHERE remote_session_id = $1 AND state = 'claimed'", [id])
         return reply.send({ session: denied })
       }
       // The endpoint may consent to screen sharing while refusing elevated
@@ -646,6 +668,15 @@ export async function remoteRoutes(app: FastifyInstance): Promise<void> {
       if (wasLive) app.metrics.sessionTerminated()
       await addSessionEvent(client, ctx.tenantId, id, 'session.agent_ended', 'agent', ctx.deviceId)
       await appendTicketTimeline(client, ctx.tenantId, id, 'session.ended', 'Remote session ended by the endpoint.', 'agent', ctx.deviceId)
+      await client.query(
+        `UPDATE devices
+            SET agent_token_hash = CASE WHEN adhoc THEN NULL ELSE agent_token_hash END,
+                agent_token_expires_at = CASE WHEN adhoc THEN now() ELSE agent_token_expires_at END,
+                updated_at = now()
+          WHERE id = $1 AND tenant_id = $2`,
+        [ctx.deviceId, ctx.tenantId],
+      )
+      await client.query("UPDATE adhoc_sessions SET state = 'ended', updated_at = now() WHERE remote_session_id = $1 AND state = 'claimed'", [id])
       return reply.send({ session: updated })
     })
   })
@@ -770,6 +801,15 @@ export async function remoteRoutes(app: FastifyInstance): Promise<void> {
         await appendTicketTimeline(client, ctx.tenantId, id, 'session.active', 'Remote session connected.', 'agent', ctx.deviceId)
       } else if (body.state === 'ended') {
         await appendTicketTimeline(client, ctx.tenantId, id, 'session.ended', 'Remote session ended.', 'agent', ctx.deviceId)
+        await client.query(
+          `UPDATE devices
+              SET agent_token_hash = CASE WHEN adhoc THEN NULL ELSE agent_token_hash END,
+                  agent_token_expires_at = CASE WHEN adhoc THEN now() ELSE agent_token_expires_at END,
+                  updated_at = now()
+            WHERE id = $1 AND tenant_id = $2`,
+          [ctx.deviceId, ctx.tenantId],
+        )
+        await client.query("UPDATE adhoc_sessions SET state = 'ended', updated_at = now() WHERE remote_session_id = $1 AND state = 'claimed'", [id])
       }
       return { session: updated }
     })

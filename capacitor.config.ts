@@ -2,7 +2,7 @@ import { CapacitorConfig } from '@capacitor/cli'
 
 const config: CapacitorConfig = {
   appId: 'com.deskos.app',
-  appName: 'DeskOS',
+  appName: 'ReyDesk',
   webDir: 'apps/web/dist',
   server: {
     androidScheme: 'https',
@@ -27,7 +27,7 @@ const config: CapacitorConfig = {
   },
   ios: {
     contentInset: 'automatic',
-    scheme: 'DeskOS',
+    scheme: 'ReyDesk',
   },
 }
 

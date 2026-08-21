@@ -5,6 +5,7 @@ import type { OrgRole } from './core/permissions.js'
 import type { MetricsRegistry } from './core/metrics.js'
 import type { OtelTraceExporter } from './core/otel.js'
 import type { EmailWorker } from './modules/email/email.worker.js'
+import type { EmailQueue } from './modules/email/email.queue.js'
 import type { Mailer } from './modules/email/mailer.js'
 
 export interface AuthUser {
@@ -39,6 +40,7 @@ declare module 'fastify' {
     config: AppConfig
     db: DbPool
     emailWorker: EmailWorker | null
+    emailQueue: EmailQueue
     mailer: Mailer
     metrics: MetricsRegistry
     otel: OtelTraceExporter

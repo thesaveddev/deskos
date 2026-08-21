@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { FastifyInstance } from 'fastify'
 import { authHeaders, createTestApp, seedActiveMember, signupOwner } from './helpers.js'
 import { withTenant } from '../src/db/pool.js'
-import { monitoringConditionMatches } from '../src/modules/monitoring/monitoring.js'
+import { checkAllMonitoringPolicies, monitoringConditionMatches } from '../src/modules/monitoring/monitoring.js'
 
 describe('endpoint monitoring rules', () => {
   let app: FastifyInstance
@@ -74,6 +74,114 @@ describe('endpoint monitoring rules', () => {
     expect(created.statusCode).toBe(201)
     ruleId = created.json().rule.id
     expect(created.json().rule.action.ticketPriority).toBe('p2')
+  })
+
+  it('supports battery, latency, uptime, and process-count rules', async () => {
+    const definitions = [
+      { name: 'Battery low', metric: 'battery_pct', condition: { op: 'lte', value: 20 } },
+      { name: 'Latency high', metric: 'network_latency_ms', condition: { op: 'gte', value: 200 } },
+      { name: 'Uptime high', metric: 'uptime_seconds', condition: { op: 'gte', value: 2_592_000 } },
+      { name: 'Too many processes', metric: 'process_count', condition: { op: 'gte', value: 300 } },
+    ] as const
+    for (const definition of definitions) {
+      const created = await app.inject({
+        method: 'POST',
+        url: '/api/v1/monitoring/rules',
+        headers: authHeaders(owner),
+        payload: { ...definition, action: { severity: 'warning', createTicket: false } },
+      })
+      expect(created.statusCode).toBe(201)
+    }
+
+    const metrics = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/metrics',
+      headers: { authorization: `Bearer ${deviceToken}` },
+      payload: { cpuPct: 15, memPct: 30, diskPct: 50, batteryPct: 12, networkLatencyMs: 240, uptimeSeconds: 3_000_000, processCount: 410 },
+    })
+    expect(metrics.statusCode).toBe(200)
+    const openExtended = await withTenant(app.db, owner.tenantId!, (client) =>
+      client.query(`SELECT count(*)::int AS count FROM device_alerts WHERE device_id = $1 AND kind = 'monitoring' AND resolved_at IS NULL AND ticket_id IS NULL`, [deviceId]).then((result) => result.rows[0].count),
+    )
+    expect(openExtended).toBe(4)
+
+    const recovered = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/metrics',
+      headers: { authorization: `Bearer ${deviceToken}` },
+      payload: { cpuPct: 15, memPct: 30, diskPct: 50, batteryPct: 80, networkLatencyMs: 40, uptimeSeconds: 100, processCount: 120 },
+    })
+    expect(recovered.statusCode).toBe(200)
+    const resolvedExtended = await withTenant(app.db, owner.tenantId!, (client) =>
+      client.query(`SELECT count(*)::int AS count FROM device_alerts WHERE device_id = $1 AND kind = 'monitoring' AND resolved_at IS NOT NULL AND ticket_id IS NULL`, [deviceId]).then((result) => result.rows[0].count),
+    )
+    expect(resolvedExtended).toBe(4)
+  })
+
+  it('supports service-state, device-type, suppression, and routed rules', async () => {
+    const now = new Date()
+    const suppressed = await app.inject({
+      method: 'POST', url: '/api/v1/monitoring/rules', headers: authHeaders(owner),
+      payload: {
+        name: 'Suppressed service', metric: 'service_state', deviceType: 'workstation',
+        condition: { op: 'eq', value: 'stopped', serviceName: 'Spooler' },
+        maintenanceWindows: [{ start: new Date(now.getTime() - 60_000).toISOString(), end: new Date(now.getTime() + 60_000).toISOString() }],
+        action: { severity: 'critical', createTicket: false },
+      },
+    })
+    expect(suppressed.statusCode).toBe(201)
+    const serverOnly = await app.inject({
+      method: 'POST', url: '/api/v1/monitoring/rules', headers: authHeaders(owner),
+      payload: { name: 'Server battery', metric: 'battery_pct', deviceType: 'server', condition: { op: 'lte', value: 10 }, action: { createTicket: false } },
+    })
+    expect(serverOnly.statusCode).toBe(201)
+    const metrics = await app.inject({
+      method: 'POST', url: '/api/v1/agent/metrics', headers: { authorization: `Bearer ${deviceToken}` },
+      payload: { cpuPct: 10, memPct: 20, diskPct: 20, batteryPct: 5, serviceStates: { Spooler: 'stopped' } },
+    })
+    expect(metrics.statusCode).toBe(200)
+    const alerts = await withTenant(app.db, owner.tenantId!, (client) => client.query(`SELECT kind, message FROM device_alerts WHERE device_id = $1 AND resolved_at IS NULL`, [deviceId]).then((r) => r.rows))
+    expect(alerts.some((alert) => alert.message.includes('Suppressed service'))).toBe(false)
+    expect(alerts.some((alert) => alert.message.includes('Server battery'))).toBe(false)
+
+    const routed = await app.inject({
+      method: 'POST', url: '/api/v1/monitoring/rules', headers: authHeaders(owner),
+      payload: { name: 'Process route', metric: 'process_count', condition: { op: 'gte', value: 300 }, action: { createTicket: false, routing: { roles: ['owner'] }, escalation: { levels: [{ afterMinutes: 5, severity: 'critical' }] } } },
+    })
+    expect(routed.statusCode).toBe(201)
+  })
+
+  it('evaluates heartbeat rules, exposes fleet overview, and supports alert lifecycle actions', async () => {
+    const created = await app.inject({
+      method: 'POST', url: '/api/v1/monitoring/rules', headers: authHeaders(owner),
+      payload: { name: 'Heartbeat stale', metric: 'heartbeat_age_seconds', condition: { op: 'gte', value: 60 }, action: { createTicket: false } },
+    })
+    expect(created.statusCode).toBe(201)
+    await withTenant(app.db, owner.tenantId!, (client) => client.query(`UPDATE devices SET last_seen_at = now() - interval '5 minutes' WHERE id = $1`, [deviceId]))
+    const evaluated = await checkAllMonitoringPolicies(app.db)
+    expect(evaluated.heartbeatRules).toBeGreaterThanOrEqual(1)
+    const open = await withTenant(app.db, owner.tenantId!, (client) => client.query(`SELECT id FROM device_alerts WHERE device_id = $1 AND rule_id = $2 AND resolved_at IS NULL`, [deviceId, created.json().rule.id]).then((r) => r.rows[0]))
+    expect(open).toBeTruthy()
+    const snoozed = await app.inject({ method: 'POST', url: `/api/v1/device-alerts/${open.id}/snooze`, headers: authHeaders(owner), payload: { minutes: 60 } })
+    expect(snoozed.statusCode).toBe(200)
+    const ack = await app.inject({ method: 'POST', url: `/api/v1/device-alerts/${open.id}/acknowledge`, headers: authHeaders(owner), payload: {} })
+    expect(ack.statusCode).toBe(200)
+    const overview = await app.inject({ method: 'GET', url: '/api/v1/monitoring/overview', headers: authHeaders(owner) })
+    expect(overview.statusCode).toBe(200)
+    expect(overview.json().devices.length).toBeGreaterThan(0)
+    const availability = await app.inject({ method: 'GET', url: '/api/v1/monitoring/availability', headers: authHeaders(owner) })
+    expect(availability.statusCode).toBe(200)
+    expect(availability.json().devices.length).toBeGreaterThan(0)
+  })
+
+  it('rejects thresholds outside a metric\'s supported range', async () => {
+    const invalid = await app.inject({
+      method: 'POST',
+      url: '/api/v1/monitoring/rules',
+      headers: authHeaders(owner),
+      payload: { name: 'Invalid battery', metric: 'battery_pct', condition: { op: 'gte', value: 101 }, action: {} },
+    })
+    expect(invalid.statusCode).toBe(400)
   })
 
   it('raises once, creates a linked ticket, and clears when telemetry recovers', async () => {

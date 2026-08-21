@@ -2,7 +2,7 @@
 
 ## 1. Design stance
 
-DeskOS is an **operations console**, not a marketing site. Reference discipline: Linear (calm density), Raycast (keyboard speed), Stripe (component precision), modern GitHub (information hierarchy). Anti-goals: card-everything layouts, gradient/glass decoration, oversized type, badge soup, empty whitespace as "premium" signal.
+ReyDesk is an **operations console**, not a marketing site. Reference discipline: Linear (calm density), Raycast (keyboard speed), Stripe (component precision), modern GitHub (information hierarchy). Anti-goals: card-everything layouts, gradient/glass decoration, oversized type, badge soup, empty whitespace as "premium" signal.
 
 **Rules:**
 1. Density is a feature — technicians scan 50+ rows; earn every vertical pixel.

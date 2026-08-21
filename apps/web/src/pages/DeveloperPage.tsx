@@ -23,7 +23,7 @@ export default function DeveloperPage() {
     <Shell>
       <PageHeader
         title="Developer API"
-        subtitle="Integrate with DeskOS over OAuth2. Machine-to-machine uses client credentials; user-delegated access uses authorization code + PKCE. Register clients under Settings → Public API."
+        subtitle="Integrate with ReyDesk over OAuth2. Machine-to-machine uses client credentials; user-delegated access uses authorization code + PKCE. Register clients under Settings → Public API."
         actions={<a className="btn btn-primary btn-sm" href={overview?.specUrl ?? '#'} target="_blank" rel="noreferrer">Open OpenAPI 3.1 spec</a>}
       />
 

@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { FastifyInstance } from 'fastify'
+import { notifyInTxn } from '../src/core/notify.js'
 import { authHeaders, createTestApp, seedActiveMember, signupOwner } from './helpers.js'
 
 describe('outbound email (SMTP reply-by-email)', () => {
@@ -70,6 +71,10 @@ describe('outbound email (SMTP reply-by-email)', () => {
     expect(m.subject).toMatch(/^Re:/)
     expect(m.text).toContain('We are looking into this.')
     expect(m.text).toContain(`Ticket #${number}`)
+    expect(m.html).toBeTruthy()
+    expect(m.html!).toContain('ReyDesk')
+    expect(m.html!).toContain('Open ticket')
+    expect(m.html!).toContain('#e8a33d')
   })
 
   it('internal note sends no email', async () => {
@@ -105,6 +110,60 @@ describe('outbound email (SMTP reply-by-email)', () => {
     expect(m.subject).toMatch(/^Resolved:/)
     expect(m.subject).toContain(`[${number}]`)
     expect(m.text).toContain('resolved')
+    expect(m.html).toBeTruthy()
+    expect(m.html!).toContain('Your ticket has been resolved')
+  })
+
+  it('sends preference-enabled notifications through the same branded template', async () => {
+    const preference = await app.inject({ method: 'PUT', url: '/api/v1/notification-preferences/ticket.replied', headers: authHeaders(requester), payload: { channels: ['email'] } })
+    expect(preference.statusCode).toBe(200)
+    const before = mail().length
+    await notifyInTxn(app.db, owner.tenantId!, { userId: requester.userId, kind: 'ticket.replied', body: 'A technician replied to your request.' })
+    for (let attempt = 0; attempt < 50 && mail().length === before; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+    expect(mail().length).toBeGreaterThanOrEqual(before + 1)
+    const message = mail().at(-1)!
+    expect(message.subject).toContain('Ticket update')
+    expect(message.html).toContain('A technician replied to your request.')
+    expect(message.html).toContain('ReyDesk')
+  })
+
+  it('sends membership invitations through the same branded queue', async () => {
+    const before = mail().length
+    const invitedEmail = 'invited-user@example.test'
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/members/invite',
+      headers: authHeaders(owner),
+      payload: { email: invitedEmail, name: 'Invited User', orgRole: 'analyst' },
+    })
+    expect(response.statusCode).toBe(200)
+    for (let attempt = 0; attempt < 50 && mail().length === before; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+    expect(mail().length).toBe(before + 1)
+    expect(mail().at(-1)?.to).toBe(invitedEmail)
+    expect(mail().at(-1)?.subject).toContain('invited to join')
+    expect(mail().at(-1)?.text).toContain('/accept-invitation?token=')
+    expect(mail().at(-1)?.html).toContain('Accept invitation')
+    expect(mail().at(-1)?.html).toContain('ReyDesk')
+    const token = mail().at(-1)?.text.match(/accept-invitation\?token=([a-f0-9]{64})/)?.[1]
+    expect(token).toMatch(/^[a-f0-9]{64}$/)
+
+    const accepted = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/invitations/accept',
+      payload: { token, password: 'invited-user-password-123' },
+    })
+    expect(accepted.statusCode).toBe(200)
+
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      payload: { email: invitedEmail, password: 'invited-user-password-123' },
+    })
+    expect(login.statusCode).toBe(200)
   })
 
   it('requester also gets an in-app notification on public reply', async () => {

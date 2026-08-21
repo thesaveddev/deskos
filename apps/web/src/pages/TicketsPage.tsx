@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Shell } from '../components/Shell.js'
+import { Modal } from '../components/ui.js'
 import { Pagination, useOffsetPagination } from '../components/Pagination.js'
 import { listTickets, ticketCounts, slaSummary, STATUS_LABELS, formatWhen, bulkUpdateTickets, listTeams, listActiveTicketLocks, forceUnlockTicket, type Ticket, type Team, type LockedTicketSummary } from '../lib/tickets.js'
 import { useAuth } from '../lib/auth.js'
 import { Icon } from '../components/Icons.js'
+import '../styles/ticket-lock.css'
 
 type QuickFilter = 'all' | 'open' | 'mine' | 'escalated'
 
@@ -50,7 +52,7 @@ export default function TicketsPage() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [lockedTickets, setLockedTickets] = useState<LockedTicketSummary[]>([])
-  const [showLockedTickets, setShowLockedTickets] = useState(false)
+  const [showLockModal, setShowLockModal] = useState(false)
   const [lockListLoading, setLockListLoading] = useState(false)
   const [lockListError, setLockListError] = useState<string | null>(null)
   const canManageLocks = auth.memberships.some((membership) => membership.permissions.includes('settings.manage'))
@@ -237,26 +239,22 @@ export default function TicketsPage() {
       </div>
 
       {canManageLocks ? (
-        <section className="ticket-lock-admin-panel">
-          <button type="button" className="ticket-lock-admin-toggle" onClick={() => { setShowLockedTickets((open) => !open); if (!showLockedTickets) void loadLockedTickets() }} aria-expanded={showLockedTickets}>
-            <span className="ticket-lock-admin-toggle-main"><Icon name="lock" size={15} /><strong>Locked tickets</strong><span className="tab-count">{lockedTickets.length}</span></span>
-            <span className="muted">{showLockedTickets ? 'Hide list' : 'Review and release locks'}</span>
+        <>
+          <button type="button" className="ticket-lock-admin-icon" onClick={() => { setShowLockModal(true); void loadLockedTickets() }} data-tooltip="Manage ticket locks" aria-label={`Manage ticket locks${lockedTickets.length ? ` (${lockedTickets.length})` : ''}`}>
+            <Icon name="lock" size={15} /><span className="tab-count">{lockedTickets.length}</span>
           </button>
-          {showLockedTickets ? (
-            <div className="ticket-lock-admin-list">
-              {lockListError ? <div className="alert alert-error">{lockListError}</div> : null}
-              {lockListLoading ? <span className="muted">Loading active locks…</span> : lockedTickets.length === 0 ? <span className="muted">No tickets are currently locked.</span> : lockedTickets.map((lock) => (
-                <div className="ticket-lock-admin-row" key={lock.id}>
-                  <button type="button" className="ticket-lock-admin-ticket" onClick={() => navigate(`/tickets/${lock.ticket_id}`)}>
-                    <span className="mono">#{lock.ticket_number}</span><strong>{lock.ticket_subject}</strong>
-                  </button>
-                  <span className="muted">Locked by {lock.locked_by_name ?? lock.locked_by_email ?? 'agent'} · expires {formatWhen(lock.expires_at)}</span>
-                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => void releaseLock(lock.ticket_id)}><Icon name="unlock" size={14} />Release</button>
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </section>
+          <Modal open={showLockModal} onClose={() => setShowLockModal(false)} title="Manage ticket locks" width={720}>
+            <p className="modal-intro">Review active ticket locks and release one when an agent is unavailable. Releasing a lock does not change assignment.</p>
+            {lockListError ? <div className="alert alert-error">{lockListError}</div> : null}
+            {lockListLoading ? <span className="muted">Loading active locks…</span> : lockedTickets.length === 0 ? <div className="empty-state"><Icon name="unlock" size={20} /><p>No tickets are currently locked.</p></div> : <div className="ticket-lock-admin-list">{lockedTickets.map((lock) => (
+              <div className="ticket-lock-admin-row" key={lock.id}>
+                <button type="button" className="ticket-lock-admin-ticket" onClick={() => { setShowLockModal(false); navigate(`/tickets/${lock.ticket_id}`) }}><span className="mono">#{lock.ticket_number}</span><strong>{lock.ticket_subject}</strong></button>
+                <span className="muted">Locked by {lock.locked_by_name ?? lock.locked_by_email ?? 'agent'} · expires {formatWhen(lock.expires_at)}</span>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => void releaseLock(lock.ticket_id)} disabled={lockListLoading}><Icon name="unlock" size={14} />Release</button>
+              </div>
+            ))}</div>}
+          </Modal>
+        </>
       ) : null}
 
       {/* Quick filter tabs */}

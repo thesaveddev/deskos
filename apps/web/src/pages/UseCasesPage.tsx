@@ -34,7 +34,7 @@ const USE_CASES = [
     title: 'Education & healthcare',
     subtitle: 'Consent-first support with full audit trails.',
     description:
-      'In regulated environments, every remote session needs a paper trail. DeskOS enforces consent at the protocol level, records every action in a hash-chained audit log, and supports silent deployment via Group Policy.',
+      'In regulated environments, every remote session needs a paper trail. ReyDesk enforces consent at the protocol level, records every action in a hash-chained audit log, and supports silent deployment via Group Policy.',
     features: [
       'Consent enforced at protocol level',
       'Hash-chained audit trails',
@@ -76,7 +76,7 @@ const USE_CASES = [
     title: 'Security-conscious orgs',
     subtitle: 'Zero-standing-privilege architecture.',
     description:
-      'JIT privileged access, MFA + passkeys, row-level tenant isolation, and session recording. DeskOS is designed for organizations that need to prove compliance.',
+      'JIT privileged access, MFA + passkeys, row-level tenant isolation, and session recording. ReyDesk is designed for organizations that need to prove compliance.',
     features: [
       'Just-in-time privileged access',
       'MFA + WebAuthn passkeys',
@@ -90,11 +90,11 @@ const USE_CASES = [
 const useCasesJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'WebPage',
-  name: 'DeskOS Use Cases',
-  description: 'See how MSPs, internal IT teams, education, healthcare, SaaS companies, and security-conscious organizations use DeskOS.',
+  name: 'ReyDesk Use Cases',
+  description: 'See how MSPs, internal IT teams, education, healthcare, SaaS companies, and security-conscious organizations use ReyDesk.',
   about: {
     '@type': 'SoftwareApplication',
-    name: 'DeskOS',
+    name: 'ReyDesk',
     applicationCategory: 'BusinessApplication',
   },
 }
@@ -102,17 +102,17 @@ const useCasesJsonLd = {
 export default function UseCasesPage() {
   return (
     <LandingLayout
-      title="Use Cases — DeskOS | Who Uses DeskOS"
-      description="See how MSPs, internal IT teams, education, healthcare, SaaS companies, and security-conscious organizations use DeskOS for remote support and IT management."
+      title="Use Cases — ReyDesk | Who Uses ReyDesk"
+      description="See how MSPs, internal IT teams, education, healthcare, SaaS companies, and security-conscious organizations use ReyDesk for remote support and IT management."
       structuredData={useCasesJsonLd}
     >
       {/* hero */}
       <section className="landing-hero">
         <div className="landing-hero-inner">
           <span className="landing-kicker">Use Cases</span>
-          <h1 className="landing-title">Who uses DeskOS?</h1>
+          <h1 className="landing-title">Who uses ReyDesk?</h1>
           <p className="landing-sub">
-            From a 3-person MSP managing customer tenants to a 500-device enterprise fleet — DeskOS scales with you.
+            From a 3-person MSP managing customer tenants to a 500-device enterprise fleet — ReyDesk scales with you.
           </p>
           <div className="landing-cta">
             <Link className="btn btn-primary" to="/signup">Start for free</Link>

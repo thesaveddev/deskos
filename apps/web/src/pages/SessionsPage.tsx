@@ -2,10 +2,12 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { Shell } from '../components/Shell.js'
 import { Pagination, useOffsetPagination } from '../components/Pagination.js'
-import { Alert, Field } from '../components/ui.js'
+import { Alert, Field, Modal } from '../components/ui.js'
+import { Icon } from '../components/Icons.js'
 import { useAuth } from '../lib/auth.js'
 import {
   createAdhocSession,
+  emailAdhocSession,
   endSession,
   listAdhocSessions,
   listSessions,
@@ -48,6 +50,8 @@ export default function SessionsPage() {
   const [showCodePanel, setShowCodePanel] = useState(false)
   const [codeReason, setCodeReason] = useState('')
   const [codeExpiresInMin, setCodeExpiresInMin] = useState(30)
+  const [codeLength, setCodeLength] = useState<10 | 11 | 12>(10)
+  const [emailMode, setEmailMode] = useState<'code' | 'email_link'>('email_link')
   const [allowCodeControl, setAllowCodeControl] = useState(true)
   const [allowCodeClipboard, setAllowCodeClipboard] = useState(false)
   const [allowCodeTerminal, setAllowCodeTerminal] = useState(false)
@@ -56,6 +60,9 @@ export default function SessionsPage() {
   const [codeBusy, setCodeBusy] = useState(false)
   const [generatedCode, setGeneratedCode] = useState<AdhocSession | null>(null)
   const [copied, setCopied] = useState(false)
+  const [emailRecipient, setEmailRecipient] = useState('')
+  const [emailBusy, setEmailBusy] = useState(false)
+  const [emailNotice, setEmailNotice] = useState<string | null>(null)
   const [adhocSessions, setAdhocSessions] = useState<AdhocSessionRecord[] | null>(null)
   const [revokingId, setRevokingId] = useState<string | null>(null)
 
@@ -71,6 +78,8 @@ export default function SessionsPage() {
     const next = !showCodePanel
     setShowCodePanel(next)
     setGeneratedCode(null)
+    setEmailRecipient('')
+    setEmailNotice(null)
     if (next) void loadCodes()
   }
 
@@ -107,6 +116,7 @@ export default function SessionsPage() {
         ],
         reason: codeReason.trim() || undefined,
         expiresInMin: codeExpiresInMin,
+        codeLength,
       })
       setGeneratedCode(result)
       void loadCodes()
@@ -114,6 +124,22 @@ export default function SessionsPage() {
       setError(err instanceof Error ? err.message : 'Could not generate support code')
     } finally {
       setCodeBusy(false)
+    }
+  }
+
+  const emailCode = async () => {
+    if (!generatedCode || !emailRecipient.trim() || emailBusy) return
+    setEmailBusy(true)
+    setEmailNotice(null)
+    try {
+      await emailAdhocSession(generatedCode.id, generatedCode.code, emailRecipient.trim(), emailMode)
+      setEmailNotice(emailMode === 'email_link'
+        ? `A one-time secure link was queued for ${emailRecipient.trim()}.`
+        : `Support code instructions were queued for ${emailRecipient.trim()}.`)
+    } catch (err) {
+      setEmailNotice(err instanceof Error ? err.message : 'Could not email support instructions')
+    } finally {
+      setEmailBusy(false)
     }
   }
 
@@ -140,7 +166,7 @@ export default function SessionsPage() {
       setError(err instanceof Error ? err.message : 'Failed to load sessions')
     }
     setLoading(false)
-  }, [state, pagination.page, pagination.pageSize])
+  }, [state, pagination.offset, pagination.pageSize])
 
   useEffect(() => {
     void load()
@@ -178,7 +204,7 @@ export default function SessionsPage() {
           <p className="page-subtitle">Consent-gated endpoint connections and session state.</p>
         </div>
         <div className="page-actions">
-          <button className="btn btn-primary" onClick={toggleCodePanel}>{showCodePanel ? 'Close' : 'Generate support code'}</button>
+          <button className="btn btn-primary" onClick={toggleCodePanel}><Icon name="key" size={15} />Generate support code</button>
           <select className="field-input session-filter" value={state} onChange={(event) => setState(event.target.value as '' | RemoteSessionState)} aria-label="Filter sessions">
             {STATE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
@@ -188,7 +214,8 @@ export default function SessionsPage() {
       {error ? <Alert kind="error">{error}</Alert> : null}
 
       {showCodePanel ? (
-        <section className="session-request-panel">
+        <Modal open={showCodePanel} onClose={() => { if (!codeBusy && !emailBusy) setShowCodePanel(false) }} title="Generate a support code" width={760}>
+          <div className="session-request-panel">
           <div className="detail-card-head"><h2>Generate a support code</h2><span className="muted mono">ad-hoc device — no enrollment needed</span></div>
           <form className="support-code-form" onSubmit={generateCode}>
             <Field label="Reason" hint="Shown to the person you're helping and recorded in the audit trail.">
@@ -196,6 +223,13 @@ export default function SessionsPage() {
             </Field>
             <Field label="Expires in (minutes)" hint="The code and link stop working after this long.">
               <input className="field-input" type="number" min={1} max={1440} value={codeExpiresInMin} onChange={(event) => setCodeExpiresInMin(Math.max(1, Math.min(1440, Number(event.target.value) || 30)))} />
+            </Field>
+            <Field label="Code strength" hint="New support codes use 10–12 digits. Longer codes are harder to guess over the phone.">
+              <select className="field-input" value={codeLength} onChange={(event) => setCodeLength(Number(event.target.value) as 10 | 11 | 12)}>
+                <option value={10}>10 digits</option>
+                <option value={11}>11 digits</option>
+                <option value={12}>12 digits</option>
+              </select>
             </Field>
             <label className="checkbox-field session-permission-check">
               <input type="checkbox" checked={allowCodeControl} onChange={(event) => setAllowCodeControl(event.target.checked)} disabled={!canRemoteControl} />
@@ -217,7 +251,7 @@ export default function SessionsPage() {
               <input type="checkbox" checked={allowCodeSystemManage} onChange={(event) => setAllowCodeSystemManage(event.target.checked)} disabled={!canRemoteControl || !canRemoteElevated} />
               <span className="field-label">Allow process/service management (elevated)</span>
             </label>
-            <button className="btn btn-primary btn-sm" type="submit" disabled={codeBusy}>{codeBusy ? 'Generating…' : 'Generate code'}</button>
+            <button className="btn btn-primary btn-sm" type="submit" disabled={codeBusy}><Icon name="key" size={14} />{codeBusy ? 'Generating…' : 'Generate code'}</button>
           </form>
 
           {generatedCode ? (
@@ -225,10 +259,15 @@ export default function SessionsPage() {
               <div className="support-code-digits">{generatedCode.code}</div>
               <div className="mono muted">{generatedCode.connectUrl}</div>
               <div className="support-code-actions">
-                <button className="btn btn-ghost btn-sm" onClick={() => void copyConnectLink()}>{copied ? 'Copied' : 'Copy link'}</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => void copyConnectLink()}><Icon name="copy" size={14} />{copied ? 'Copied' : 'Copy link'}</button>
                 <span className="muted mono">expires {formatWhen(generatedCode.expiresAt)}</span>
               </div>
-              <p className="muted">Tell the person to open the link (or enter the code at your support URL) and approve the access request. No installation or login is required on their side.</p>
+              <p className="muted">The new {generatedCode.codeLength}-digit code is single-use and consent is still required. For the strongest workflow, email the secure link and have the user paste that complete link into the helper.</p>
+              <div className="support-code-email">
+                <div><strong>Email these instructions</strong><span className="muted">Choose a one-time secure link for stronger protection, or send the numeric code for a simpler phone-assisted workflow.</span></div>
+                <div className="support-code-email-row"><input className="field-input" type="email" placeholder="user@example.com" value={emailRecipient} onChange={(event) => setEmailRecipient(event.target.value)} /><select className="field-input" value={emailMode} onChange={(event) => setEmailMode(event.target.value as 'code' | 'email_link')} aria-label="Email support method"><option value="email_link">Secure link + fingerprint</option><option value="code">Numeric code</option></select><button className="btn btn-ghost btn-sm" type="button" onClick={() => void emailCode()} disabled={emailBusy || !emailRecipient.trim()}><Icon name="mail" size={14} />{emailBusy ? 'Sending…' : 'Email user'}</button></div>
+                {emailNotice ? <span className="muted">{emailNotice}</span> : null}
+              </div>
             </div>
           ) : null}
 
@@ -250,11 +289,11 @@ export default function SessionsPage() {
                     </div>
                     <div className="adhoc-row-actions">
                       {record.remote_session_id ? (
-                        <Link to={`/sessions/${record.remote_session_id}`} className="btn btn-primary btn-sm">Open live session</Link>
+                        <Link to={`/sessions/${record.remote_session_id}`} className="btn btn-primary btn-sm"><Icon name="monitor" size={14} />Open live session</Link>
                       ) : null}
                       {record.state === 'open' ? (
                         <button className="btn btn-ghost btn-sm" onClick={() => void revokeCode(record)} disabled={revokingId === record.id}>
-                          {revokingId === record.id ? 'Revoking…' : 'Revoke'}
+                          <Icon name="close" size={14} />{revokingId === record.id ? 'Revoking…' : 'Revoke'}
                         </button>
                       ) : null}
                     </div>
@@ -263,7 +302,8 @@ export default function SessionsPage() {
               </div>
             ) : null}
           </div>
-        </section>
+          </div>
+        </Modal>
       ) : null}
       {sessions === null ? <span className="etch">Loading sessions…</span> : null}
       {sessions && sessions.length === 0 ? (
@@ -288,10 +328,10 @@ export default function SessionsPage() {
                 </div>
               </div>
               <div className="session-card-actions">
-                <Link to={`/sessions/${session.id}`} className="btn btn-ghost btn-sm">Open console</Link>
+                <Link to={`/sessions/${session.id}`} className="btn btn-ghost btn-sm"><Icon name="monitor" size={14} />Open console</Link>
                 {session.state !== 'ended' && session.state !== 'denied' && session.state !== 'expired' ? (
                   <button className="btn btn-ghost btn-sm" onClick={() => void stop(session)} disabled={endingId === session.id}>
-                    {endingId === session.id ? 'Ending…' : 'End session'}
+                    <Icon name="stop" size={14} />{endingId === session.id ? 'Ending…' : 'End session'}
                   </button>
                 ) : null}
               </div>

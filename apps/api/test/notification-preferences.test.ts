@@ -96,6 +96,34 @@ describe('notification preferences', () => {
     expect(delivered).toBe(false)
   })
 
+  it('lists notifications and marks selected rows read', async () => {
+    await notifyInTxn(app.db, owner.tenantId!, {
+      userId: owner.userId,
+      kind: 'membership.invited',
+      body: 'A new notification for the bell.',
+      subjectType: 'ticket',
+      subjectId: 'notification-test',
+    })
+    const list = await app.inject({ method: 'GET', url: '/api/v1/notifications', headers: authHeaders(owner) })
+    expect(list.statusCode).toBe(200)
+    const item = list.json().notifications.find((notification: { body: string }) => notification.body === 'A new notification for the bell.')
+    expect(item).toBeTruthy()
+    expect(item.read_at).toBeNull()
+
+    const read = await app.inject({
+      method: 'POST',
+      url: '/api/v1/notifications/read',
+      headers: authHeaders(owner),
+      payload: { ids: [item.id] },
+    })
+    expect(read.statusCode).toBe(200)
+    expect(read.json().updated).toBe(1)
+
+    const after = await app.inject({ method: 'GET', url: '/api/v1/notifications', headers: authHeaders(owner) })
+    const updated = after.json().notifications.find((notification: { id: string }) => notification.id === item.id)
+    expect(updated.read_at).not.toBeNull()
+  })
+
   it('delete resets a kind to defaults', async () => {
     await app.inject({
       method: 'DELETE',

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Alert, Field, Modal } from '../components/ui.js'
+import { Alert, Field, Modal, useConfirm } from '../components/ui.js'
+import { Icon } from '../components/Icons.js'
 import {
   createCannedResponse, deleteCannedResponse, listCannedResponses, updateCannedResponse,
   type CannedResponse,
@@ -21,6 +22,7 @@ export default function CannedResponsesPage() {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
+  const confirm = useConfirm()
 
   const load = useCallback(async () => {
     try {
@@ -65,7 +67,7 @@ export default function CannedResponsesPage() {
   }
 
   async function remove(item: CannedResponse) {
-    if (!confirm(`Delete template "${item.name}"?`)) return
+    if (!await confirm(`Delete template “${item.name}”?`, { title: 'Delete canned response', confirmLabel: 'Delete', destructive: true })) return
     setError(null)
     try {
       await deleteCannedResponse(item.id)
@@ -99,7 +101,7 @@ export default function CannedResponsesPage() {
             Reusable reply templates technicians can insert from the ticket composer.
           </p>
         </div>
-        <button className="btn btn-primary btn-sm" onClick={openNew}>+ New template</button>
+        <button className="btn btn-primary btn-sm" onClick={openNew}><Icon name="add" size={14} />New template</button>
       </div>
 
       {error ? <Alert kind="error">{error}</Alert> : null}
@@ -143,10 +145,10 @@ export default function CannedResponsesPage() {
           </Field>
           <div className="form-actions">
             <button type="button" className="btn btn-ghost" onClick={() => { setShowForm(false); setEditing(null); setForm(EMPTY_FORM) }} disabled={busy}>
-              Cancel
+              <Icon name="close" size={14} />Cancel
             </button>
             <button type="submit" className="btn btn-primary" disabled={busy}>
-              {busy ? 'Saving…' : editing ? 'Save changes' : 'Create template'}
+              <Icon name="save" size={14} />{busy ? 'Saving…' : editing ? 'Save changes' : 'Create template'}
             </button>
           </div>
         </form>
@@ -167,8 +169,8 @@ export default function CannedResponsesPage() {
                 <p className="muted" style={{ marginTop: 6 }}>{item.body.slice(0, 140)}{item.body.length > 140 ? '…' : ''}</p>
               </div>
               <div className="channel-actions">
-                <button className="btn btn-ghost btn-sm" onClick={() => openEdit(item)}>Edit</button>
-                <button className="btn btn-ghost btn-sm" onClick={() => void remove(item)}>Delete</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => openEdit(item)}><Icon name="edit" size={14} />Edit</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => void remove(item)}><Icon name="delete" size={14} />Delete</button>
               </div>
             </li>
           ))}

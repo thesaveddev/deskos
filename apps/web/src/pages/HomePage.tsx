@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { Shell } from '../components/Shell.js'
+import { QuickTicketModal } from '../components/QuickTicketModal.js'
 import { useAuth } from '../lib/auth.js'
 import { ticketCounts, listTickets, type Ticket } from '../lib/tickets.js'
 import { getTicketReport, formatMinutes, type TicketReport } from '../lib/reports.js'
@@ -264,7 +265,7 @@ function AnalystDashboard({ myTickets, report, devices, sessions }: {
 
 /* ── End User dashboard ────────────────────────────────────────── */
 
-function EndUserDashboard({ myTickets }: { myTickets: Ticket[] }) {
+function EndUserDashboard({ myTickets, onNewTicket }: { myTickets: Ticket[]; onNewTicket: () => void }) {
   return (
     <>
       <div className="dash-kpi-row">
@@ -283,7 +284,7 @@ function EndUserDashboard({ myTickets }: { myTickets: Ticket[] }) {
         <div className="dash-card">
           <div className="dash-card-header">
             <h3 className="dash-card-title">Your recent tickets</h3>
-            <Link to="/tickets/new" className="btn btn-primary btn-sm">New ticket</Link>
+            <button type="button" className="btn btn-primary btn-sm" onClick={onNewTicket}>New ticket</button>
           </div>
           {myTickets.length > 0 ? (
             <div className="dash-ticket-list">
@@ -298,7 +299,7 @@ function EndUserDashboard({ myTickets }: { myTickets: Ticket[] }) {
           ) : (
             <div className="dash-empty-state">
               <p>No tickets yet</p>
-              <Link to="/tickets/new" className="btn btn-primary">Submit a request</Link>
+              <button type="button" className="btn btn-primary" onClick={onNewTicket}>Submit a request</button>
             </div>
           )}
         </div>
@@ -321,7 +322,7 @@ function EndUserDashboard({ myTickets }: { myTickets: Ticket[] }) {
             </Link>
             <Link to="/support" className="dash-quick-link">
               <span className="dash-quick-icon">💬</span>
-              <span>DeskOS support</span>
+              <span>ReyDesk support</span>
             </Link>
           </div>
         </div>
@@ -342,6 +343,7 @@ export default function HomePage() {
   const [incidents, setIncidents] = useState<MajorIncident[]>([])
   const [approvals, setApprovals] = useState<Approval[]>([])
   const [loading, setLoading] = useState(true)
+  const [quickTicketOpen, setQuickTicketOpen] = useState(false)
 
   const myRole = useMemo(() => {
     return auth.memberships.find((m) => m.tenant.id === auth.activeTenantId)?.orgRole || 'end_user'
@@ -429,8 +431,9 @@ export default function HomePage() {
           sessions={sessions}
         />
       ) : (
-        <EndUserDashboard myTickets={myTickets} />
+        <EndUserDashboard myTickets={myTickets} onNewTicket={() => setQuickTicketOpen(true)} />
       )}
+      <QuickTicketModal open={quickTicketOpen} onClose={() => setQuickTicketOpen(false)} />
     </Shell>
   )
 }

@@ -45,6 +45,8 @@ export interface EmailDispatchInput {
   userId: string
   kind: string
   body: string
+  subjectType?: string
+  subjectId?: string
 }
 
 export interface RealtimeNotification {
@@ -121,7 +123,10 @@ export async function notify(
 
   // Invitations must reach people who have not signed in yet. Other
   // notifications remain in-app by default until the user opts into email.
-  let channels: readonly NotificationChannel[] = input.kind === 'membership.invited' ? ['in_app', 'email'] : ['in_app']
+  // Invitation mail is dispatched by the membership workflow with a
+  // single-use join URL. Keep the notification row in-app only here so a
+  // preference cannot cause a duplicate, link-less invitation email.
+  let channels: readonly NotificationChannel[] = ['in_app']
   if (pref.rows[0]) {
     if (!pref.rows[0].enabled) return false
     const stored = pref.rows[0].channels
@@ -129,6 +134,8 @@ export async function notify(
     channels = stored.filter((c): c is NotificationChannel => NOTIFICATION_CHANNELS.includes(c as NotificationChannel))
     if (channels.length === 0) return false
   }
+  if (input.kind === 'membership.invited') channels = channels.filter((channel) => channel !== 'email')
+  if (channels.length === 0) return false
 
   const inserted = await client.query<{
     id: string
@@ -169,7 +176,14 @@ export async function notify(
 
   // Push mirrors in-app delivery: whenever a row is written for in-app (or an
   // explicit push preference), a subscription check + send happens out-of-band.
-  const dispatchInput = { tenantId, userId: input.userId, kind: input.kind, body: input.body }
+  const dispatchInput = {
+    tenantId,
+    userId: input.userId,
+    kind: input.kind,
+    body: input.body,
+    ...(input.subjectType ? { subjectType: input.subjectType } : {}),
+    ...(input.subjectId ? { subjectId: input.subjectId } : {}),
+  }
   if ((channels.includes('in_app') || channels.includes('push')) && pushDispatcher) {
     const dispatcher = pushDispatcher
     void dispatcher(dispatchInput).catch(() => {

@@ -150,6 +150,60 @@ describe('knowledge base', () => {
     expect(feedback.json().feedback.helpful).toBe(true)
   })
 
+  it('supports relevance search, pagination, and KB overview metrics', async () => {
+    const search = await app.inject({ method: 'GET', url: '/api/v1/kb/articles?q=password&page=1&pageSize=5&sort=helpful', headers: authHeaders(manager) })
+    expect(search.statusCode).toBe(200)
+    expect(search.json().pagination).toMatchObject({ page: 1, pageSize: 5, total: 1, totalPages: 1 })
+    expect(search.json().articles[0].summary).toBeDefined()
+
+    const overview = await app.inject({ method: 'GET', url: '/api/v1/kb/overview', headers: authHeaders(manager) })
+    expect(overview.statusCode).toBe(200)
+    expect(overview.json().summary.published).toBe(1)
+    expect(overview.json().summary.helpful).toBe(1)
+    expect(overview.json().summary.views).toBeGreaterThanOrEqual(1)
+  })
+
+  it('supports related articles and prevents self-relations', async () => {
+    const second = await app.inject({ method: 'POST', url: '/api/v1/kb/articles', headers: authHeaders(manager), payload: { title: 'VPN troubleshooting checklist', summary: 'A checklist for diagnosing VPN issues.', body: 'Check DNS and restart the client.', visibility: 'portal', tags: ['vpn'] } })
+    expect(second.statusCode).toBe(201)
+    const secondId = second.json().article.id
+
+    const self = await app.inject({ method: 'POST', url: `/api/v1/kb/articles/${articleId}/relations`, headers: authHeaders(manager), payload: { relatedArticleId: articleId } })
+    expect(self.statusCode).toBe(400)
+
+    const relation = await app.inject({ method: 'POST', url: `/api/v1/kb/articles/${articleId}/relations`, headers: authHeaders(manager), payload: { relatedArticleId: secondId, relationType: 'follow_up' } })
+    expect(relation.statusCode).toBe(201)
+    const detail = await app.inject({ method: 'GET', url: `/api/v1/kb/articles/${articleId}`, headers: authHeaders(manager) })
+    expect(detail.json().relations).toHaveLength(1)
+    expect(detail.json().relations[0].relation_type).toBe('follow_up')
+
+    const removed = await app.inject({ method: 'DELETE', url: `/api/v1/kb/articles/${articleId}/relations/${relation.json().relation.id}`, headers: authHeaders(manager) })
+    expect(removed.statusCode).toBe(204)
+  })
+
+  it('lets a requester revise feedback instead of inflating the score', async () => {
+    const changed = await app.inject({ method: 'POST', url: `/api/v1/portal/kb/articles/${articleId}/feedback`, headers: authHeaders(endUser), payload: { helpful: false, comment: 'Needs more detail' } })
+    expect(changed.statusCode).toBe(200)
+    expect(changed.json().feedback.helpful).toBe(false)
+    const article = await app.inject({ method: 'GET', url: `/api/v1/portal/kb/articles/${articleId}`, headers: authHeaders(endUser) })
+    expect(article.json().article.helpful_count).toBe(0)
+    expect(article.json().article.not_helpful_count).toBe(1)
+  })
+
+  it('deleting a parent folder preserves child folders as top-level folders', async () => {
+    const parent = await app.inject({ method: 'POST', url: '/api/v1/kb/folders', headers: authHeaders(owner), payload: { name: 'Parent folder' } })
+    expect(parent.statusCode).toBe(201)
+    const parentId = parent.json().folder.id
+    const child = await app.inject({ method: 'POST', url: '/api/v1/kb/folders', headers: authHeaders(owner), payload: { name: 'Child folder', parentId } })
+    expect(child.statusCode).toBe(201)
+    const childId = child.json().folder.id
+
+    const removed = await app.inject({ method: 'DELETE', url: `/api/v1/kb/folders/${parentId}`, headers: authHeaders(owner) })
+    expect(removed.statusCode).toBe(204)
+    const folders = await app.inject({ method: 'GET', url: '/api/v1/kb/folders', headers: authHeaders(owner) })
+    expect(folders.json().folders.find((folder: { id: string }) => folder.id === childId)?.parent_id).toBeNull()
+  })
+
   it('articles are tenant-isolated', async () => {
     const steal = await app.inject({
       method: 'GET',

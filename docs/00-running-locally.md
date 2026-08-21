@@ -1,4 +1,4 @@
-# Running DeskOS locally
+# Running ReyDesk locally
 
 ## Prerequisites
 
@@ -55,6 +55,26 @@ npm run typecheck   # api (also: npm run typecheck --workspaces at repo root)
 npm run lint        # eslint (flat config, typescript-eslint)
 ```
 
+### Browser end-to-end tests
+
+The repository includes deterministic Playwright coverage for the authentication lock journey. The tests mock the API at the browser boundary, so they do not require a database, SMTP credentials, VAPID keys, or a real user account. They run against a production web build served on an isolated local port and cover:
+
+- Sign out → named lock screen
+- Password unlock
+- MFA challenge and invalid-code feedback
+- Explicit recovery-code mode
+- Desktop and narrow mobile Chromium layouts
+
+Install the Playwright package and Chromium once, then run:
+
+```powershell
+npm install
+npx playwright install chromium
+npm run test:e2e
+```
+
+Artifacts are written to `artifacts/playwright/` (and are ignored by Git). Set `CI=1` to enable retries and the HTML report. The mobile project uses a Chromium device profile rather than WebKit so CI only needs one browser download.
+
 ## Environment
 
 Defaults work with zero configuration. To customise, copy `apps/api/.env.example` to `apps/api/.env`:
@@ -63,19 +83,19 @@ Defaults work with zero configuration. To customise, copy `apps/api/.env.example
 |---|---|---|
 | `PORT` | `4000` | API port |
 | `DATABASE_URL` | `postgresql://deskos:deskos_dev_only@localhost:5432/deskos` | Matches `dev:db` |
-| `DESKOS_DB_POOL_MAX` | `10` | Maximum API PostgreSQL connections per process; size against the database connection budget when horizontally scaling |
-| `DESKOS_JWT_SECRET` | *(unset)* | Unset = ephemeral secret, tokens die on restart. **Required in production.** |
-| `DESKOS_EMAIL_KEY` | *(unset)* | Used to encrypt per-tenant IMAP channel passwords at rest (AES-256-GCM). Unset = ephemeral key in dev. **Required in production.** |
-| `DESKOS_IMAP_HOST` / `USER` / `PASS` | *(unset)* | **Legacy single-mailbox mode.** Set all three to enable email-to-ticket fallback when no channels are configured. See below. |
-| `DESKOS_IMAP_PORT` | `993` | SSL port (set `DESKOS_IMAP_TLS=false` for STARTTLS) |
-| `DESKOS_IMAP_POLL_INTERVAL_SEC` | `60` | How often the inbox is polled |
+| `REYDESK_DB_POOL_MAX` | `10` | Maximum API PostgreSQL connections per process; size against the database connection budget when horizontally scaling |
+| `REYDESK_JWT_SECRET` | *(unset)* | Unset = ephemeral secret, tokens die on restart. **Required in production.** |
+| `REYDESK_EMAIL_KEY` | *(unset)* | Used to encrypt per-tenant IMAP channel passwords at rest (AES-256-GCM). Unset = ephemeral key in dev. **Required in production.** |
+| `REYDESK_IMAP_HOST` / `USER` / `PASS` | *(unset)* | **Legacy single-mailbox mode.** Set all three to enable email-to-ticket fallback when no channels are configured. See below. |
+| `REYDESK_IMAP_PORT` | `993` | SSL port (set `REYDESK_IMAP_TLS=false` for STARTTLS) |
+| `REYDESK_IMAP_POLL_INTERVAL_SEC` | `60` | How often the inbox is polled |
 | `RELAY_MAX_CONNECTIONS` | `10000` | Per-relay-process WebSocket ceiling; production must use the distributed broker registry |
 | `RELAY_MAX_PEERS_PER_SESSION` | `4` | Per-session peer ceiling |
 | `RELAY_MAX_MESSAGES_PER_SECOND` | `1000` | Per-connection signalling/control message ceiling |
 | `RELAY_MAX_MESSAGE_BYTES` | `65536` | Maximum broker message size |
 
 | `REDIS_URL` | *(unset)* | Enables Redis-backed relay room membership, ticket consumption, and cross-instance pub/sub; required for production relay readiness |
-| `RELAY_REDIS_PREFIX` | `deskos:relay` | Redis key/channel namespace for this deployment |
+| `RELAY_REDIS_PREFIX` | `reydesk:relay` | Redis key/channel namespace for this deployment |
 
 For a local distributed-relay test, start Redis with `docker compose up -d redis`, or run the installed Redis service directly with `redis-server`. Then run the relay with `REDIS_URL=redis://localhost:6379`. The adapter explicitly uses RESP2 for compatibility with the Redis 5 service on this development machine; production co-locates Redis on the application server initially and may move to a supported managed Redis later (see `04-system-architecture.md` §5).
 
@@ -87,7 +107,7 @@ Two ways to get inbound email → tickets:
 
 ### 1. Per-tenant email channels (recommended for multi-tenant)
 
-Each tenant configures **their own** mailbox (IMAP host/user/pass, encrypted at rest with `DESKOS_EMAIL_KEY`). The poller runs every 60s, connects to every enabled channel, and routes each message into the tenant that owns the channel — create a new ticket, or append a reply to the matching ticket when the subject carries a number like `[#39]` / `#39` / leading `42` (resolved tickets auto-reopen). Duplicate `Message-ID`s are dropped via the tenant-scoped `processed_emails` table.
+Each tenant configures **their own** mailbox (IMAP host/user/pass, encrypted at rest with `REYDESK_EMAIL_KEY`). The poller runs every 60s, connects to every enabled channel, and routes each message into the tenant that owns the channel — create a new ticket, or append a reply to the matching ticket when the subject carries a number like `[#39]` / `#39` / leading `42` (resolved tickets auto-reopen). Duplicate `Message-ID`s are dropped via the tenant-scoped `processed_emails` table.
 
 Admin endpoints (require `settings.manage`):
 
@@ -107,20 +127,20 @@ Note: the API trims whitespace from channel host/user/address inputs. A stray le
 
 ### 2. Legacy single-mailbox mode (dev only)
 
-When **no channels are configured** and `DESKOS_IMAP_*` are set, the poller falls back to the env-configured mailbox and routes every message to the **oldest tenant**. Configuring even one channel switches the poller to channel mode.
+When **no channels are configured** and `REYDESK_IMAP_*` are set, the poller falls back to the env-configured mailbox and routes every message to the **oldest tenant**. Configuring even one channel switches the poller to channel mode.
 
 ```powershell
 # apps/api/.env
-DESKOS_EMAIL_KEY=<openssl rand -hex 32 output>
-DESKOS_IMAP_HOST=safari.mxrouting.net
-DESKOS_IMAP_PORT=993
-DESKOS_IMAP_USER=support@example.com
-DESKOS_IMAP_PASS=change-me
-DESKOS_IMAP_TLS=true
+REYDESK_EMAIL_KEY=<openssl rand -hex 32 output>
+REYDESK_IMAP_HOST=safari.mxrouting.net
+REYDESK_IMAP_PORT=993
+REYDESK_IMAP_USER=support@example.com
+REYDESK_IMAP_PASS=change-me
+REYDESK_IMAP_TLS=true
 ```
 
-> Note: channel IMAP passwords are encrypted at rest (`DESKOS_EMAIL_KEY`) and never returned by the API — only a masked placeholder is. Credentials never live in the repo.
-| `DESKOS_DEV_DB_PORT` | `5432` | For `dev:db` if 5432 is taken — also update `DATABASE_URL` |
+> Note: channel IMAP passwords are encrypted at rest (`REYDESK_EMAIL_KEY`) and never returned by the API — only a masked placeholder is. Credentials never live in the repo.
+| `REYDESK_DEV_DB_PORT` | `5432` | For `dev:db` if 5432 is taken — also update `DATABASE_URL` |
 | `RELAY_MAX_CONNECTIONS` | `10000` | Per-relay-process WebSocket ceiling; production must use the distributed broker registry |
 | `RELAY_MAX_PEERS_PER_SESSION` | `4` | Per-session peer ceiling (technician, agent, and limited observers) |
 | `RELAY_MAX_MESSAGES_PER_SECOND` | `1000` | Per-connection signalling/control message ceiling |
@@ -130,6 +150,6 @@ The API and relay expose `/readyz` in addition to `/healthz`. Relay `/readyz` de
 
 ## Troubleshooting
 
-- **Port 5432 busy** — you have another Postgres running. Stop it, or set `DESKOS_DEV_DB_PORT=5433` and matching `DATABASE_URL`.
+- **Port 5432 busy** — you have another Postgres running. Stop it, or set `REYDESK_DEV_DB_PORT=5433` and matching `DATABASE_URL`.
 - **`EBUSY ... pg-embedded...node` during npm install** — a previous test/dev run was hard-killed and a zombie Node process is holding the native binding. Check `Get-Process node` for orphaned `vitest`/`tsx` processes and kill them (a reboot always clears it). Known quirk: `pg-embedded` rewrites its installed version with a `+pg18.0` suffix which makes npm re-extract on every install; if it recurs, set the `version` field in `node_modules\pg-embedded\package.json` and `node_modules\@pg-ts\pg-embedded-win32-x64-msvc\package.json` back to `0.2.3`.
 - **Orphan postgres after a killed test run** — find it with `Get-Process postgres` and stop with `& "$env:USERPROFILE\.theseus\postgresql\18.0.0\bin\pg_ctl.exe" stop --pgdata <data-dir-from-postmaster.pid> --mode fast`.

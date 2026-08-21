@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">DeskOS</string>
-    <string name="title_activity_main">DeskOS</string>
+    <string name="app_name">ReyDesk</string>
+    <string name="title_activity_main">ReyDesk</string>
     <string name="package_name">com.deskos.app</string>
     <string name="custom_url_scheme">com.deskos.app</string>
 </resources>

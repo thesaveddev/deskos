@@ -1,4 +1,4 @@
-# DeskOS Load Tests
+# ReyDesk Load Tests
 
 ## Prerequisites
 

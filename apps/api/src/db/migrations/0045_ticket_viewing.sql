@@ -10,6 +10,8 @@ CREATE TABLE ticket_viewers (
 );
 
 CREATE INDEX idx_ticket_viewers_ticket ON ticket_viewers(ticket_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_ticket_viewers_tenant_ticket_user
+  ON ticket_viewers (tenant_id, ticket_id, user_id);
 
 -- Clean up stale viewers (called on read)
 CREATE OR REPLACE FUNCTION cleanup_stale_viewers() RETURNS void AS $$

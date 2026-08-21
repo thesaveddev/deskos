@@ -1,13 +1,30 @@
 import type { FastifyInstance } from 'fastify'
+import { z } from 'zod'
 import { recordAudit } from '../../core/audit.js'
 import { withTenant } from '../../db/pool.js'
 import { authenticate } from '../../middleware/authenticate.js'
 import { requirePermission } from '../../middleware/requirePermission.js'
 import { requireTenant } from '../../middleware/requireTenant.js'
 import { createAiProvider, type AiProvider } from './gateway.js'
+import { createTenantAiProvider, getAiSettingsView, getAiUsage, aiProcessingNotice, testTenantAiProvider, updateAiSettings, type AiSettingsPatch } from './settings.js'
 import { draftKbArticle, findSimilarTickets, summarizeTicket } from './ai.js'
 import { dispatchTicketTriage, getTriageState, stopTicketTriage } from './triage.js'
 import '../../types.js'
+
+const aiSettingsPatchSchema = z.object({
+  enabled: z.boolean().optional(),
+  providerMode: z.enum(['managed', 'byok']).optional(),
+  provider: z.enum(['openai_compatible', 'azure_openai', 'ollama', 'vllm']).optional(),
+  baseUrl: z.string().trim().max(500).optional(),
+  model: z.string().trim().max(160).optional(),
+  modelAllowlist: z.array(z.string().trim().min(1).max(160)).max(20).optional(),
+  apiKey: z.string().max(500).optional(),
+  clearApiKey: z.boolean().optional(),
+  retentionDays: z.number().int().min(7).max(3650).optional(),
+  redactContent: z.boolean().optional(),
+  monthlyRequestLimit: z.number().int().min(-1).max(10_000_000).nullable().optional(),
+  monthlyTokenLimit: z.number().int().min(-1).max(1_000_000_000).nullable().optional(),
+}).strict()
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -18,12 +35,37 @@ declare module 'fastify' {
 
 export async function aiRoutes(app: FastifyInstance): Promise<void> {
   const gate = [authenticate, requireTenant, requirePermission('ai.use')]
-  const providerFor = () => app.aiProvider ?? createAiProvider(app.config.ai)
+  const settingsGate = [authenticate, requireTenant, requirePermission('settings.manage')]
+  const providerFor = async (tenantId: string) => createTenantAiProvider(app.db, app.config, tenantId, app.aiProvider)
+
+  app.get('/ai/settings', { preHandler: settingsGate }, async (request) => {
+    const ctx = request.tenantCtx!
+    return { settings: await getAiSettingsView(app.db, app.config, ctx.tenantId, Boolean(app.aiProvider)), notice: aiProcessingNotice() }
+  })
+
+  app.patch('/ai/settings', { preHandler: settingsGate }, async (request) => {
+    const ctx = request.tenantCtx!
+    await updateAiSettings(app.db, app.config, ctx.tenantId, request.user!.id, aiSettingsPatchSchema.parse(request.body ?? {}) as AiSettingsPatch)
+    return { settings: await getAiSettingsView(app.db, app.config, ctx.tenantId, Boolean(app.aiProvider)) }
+  })
+
+  app.post('/ai/settings/test', { preHandler: settingsGate }, async (request) => {
+    const ctx = request.tenantCtx!
+    return await testTenantAiProvider(app.db, app.config, ctx.tenantId, app.aiProvider)
+  })
+
+  app.get('/ai/usage', { preHandler: settingsGate }, async (request) => {
+    const ctx = request.tenantCtx!
+    const query = request.query as { days?: string }
+    const days = Math.max(1, Math.min(365, Number(query.days ?? 30) || 30))
+    return { usage: await getAiUsage(app.db, ctx.tenantId, days) }
+  })
 
   app.post('/ai/tickets/:id/summary', { preHandler: gate }, async (request) => {
     const ctx = request.tenantCtx!
     const { id } = request.params as { id: string }
-    const result = await summarizeTicket(app.db, ctx.tenantId, id, request.user!.id, providerFor(), app.config.ai.model)
+    const tenantAi = await providerFor(ctx.tenantId)
+    const result = await summarizeTicket(app.db, ctx.tenantId, id, request.user!.id, tenantAi.provider, tenantAi.model)
     await withTenant(app.db, ctx.tenantId, async (client) => {
       await recordAudit(client, ctx.tenantId, {
         actorType: 'user',
@@ -66,7 +108,8 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
   app.post('/ai/tickets/:id/kb-draft', { preHandler: gate }, async (request, reply) => {
     const ctx = request.tenantCtx!
     const { id } = request.params as { id: string }
-    const article = await draftKbArticle(app.db, ctx.tenantId, id, request.user!.id, providerFor(), app.config.ai.model)
+    const tenantAi = await providerFor(ctx.tenantId)
+    const article = await draftKbArticle(app.db, ctx.tenantId, id, request.user!.id, tenantAi.provider, tenantAi.model)
     await withTenant(app.db, ctx.tenantId, async (client) => {
       await recordAudit(client, ctx.tenantId, {
         actorType: 'user',

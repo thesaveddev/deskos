@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { searchAll } from '../lib/tickets.js'
 import { useAuth } from '../lib/auth.js'
+import { lockScreen, rememberLockedUser } from '../lib/lock.js'
 
 interface ListItem {
   id: string
@@ -76,7 +77,12 @@ export function CommandPalette() {
     { id: 'NewTicket', kind: 'action', label: 'Create a ticket', sub: 'New ticket', action: () => navigate('/tickets/new') },
     { id: 'Home', kind: 'action', label: 'Go home', sub: 'Dashboard', action: () => navigate('/') },
     { id: 'Reports', kind: 'action', label: 'Open reports', sub: 'Analytics', action: () => navigate('/reports') },
-    { id: 'SignOut', kind: 'action', label: 'Sign out', sub: 'End session', action: () => void auth.logout().then(() => navigate('/login')) },
+    { id: 'SignOut', kind: 'action', label: 'Sign out', sub: 'Return to the lock screen', action: () => {
+      close()
+      if (!auth.user) return
+      rememberLockedUser(auth.user)
+      void auth.logout().then(() => navigate('/lock'))
+    } },
   ], [navigate, auth])
 
   const searchResults = useMemo<ListItem[]>(() => {

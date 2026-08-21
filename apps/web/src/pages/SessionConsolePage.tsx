@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent, type MouseEvent, type PointerEvent } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import { Shell } from '../components/Shell.js'
-import { Alert } from '../components/ui.js'
+import { Alert, useConfirm } from '../components/ui.js'
 import { clearSessionDock, downloadRecording, endSession, getSession, inviteParticipant, joinSession, listMessages, listParticipants, listRecordings, sendMessage, transferSession, uploadRecording, writeSessionDock, type RemoteSession, type SessionEvent, type SessionParticipant, type SessionRecording } from '../lib/sessions.js'
 import { appendSessionChat, disposeSessionRuntime, endSessionRuntime, hasSessionRuntime, sendSessionChat, sendSessionControl, sendSessionFiles, sendSessionInput, sendSessionSystem, sendSessionTerminal, subscribeSessionRuntime, type RuntimeConsoleState } from '../lib/sessionRuntime.js'
 
@@ -28,6 +28,7 @@ function eventLabel(event: SessionEvent): string {
 
 export default function SessionConsolePage() {
   const { id } = useParams<{ id: string }>()
+  const confirm = useConfirm()
   const location = useLocation()
   const [session, setSession] = useState<RemoteSession | null>(null)
   const [events, setEvents] = useState<SessionEvent[]>([])
@@ -305,8 +306,8 @@ export default function SessionConsolePage() {
     sendSessionSystem(id, { action: 'process_list' }, controlArmed)
   }
 
-  const terminateProcess = (pid: number) => {
-    if (!id || !canSystemManage || !window.confirm(`Terminate process ${pid}?`)) return
+  const terminateProcess = async (pid: number) => {
+    if (!id || !canSystemManage || !await confirm(`Terminate process ${pid}?`, { title: 'Terminate process', confirmLabel: 'Terminate', destructive: true })) return
     setSysdataStatus(`Terminating process ${pid}…`)
     sendSessionSystem(id, { action: 'process_terminate', pid }, controlArmed)
   }
@@ -317,8 +318,8 @@ export default function SessionConsolePage() {
     sendSessionSystem(id, { action: 'service_list' }, controlArmed)
   }
 
-  const changeService = (action: 'service_start' | 'service_stop', name: string) => {
-    if (!id || !canSystemManage || !window.confirm(`${action === 'service_start' ? 'Start' : 'Stop'} ${name}?`)) return
+  const changeService = async (action: 'service_start' | 'service_stop', name: string) => {
+    if (!id || !canSystemManage || !await confirm(`${action === 'service_start' ? 'Start' : 'Stop'} ${name}?`, { title: `${action === 'service_start' ? 'Start' : 'Stop'} service`, confirmLabel: action === 'service_start' ? 'Start service' : 'Stop service', destructive: action === 'service_stop' })) return
     setSysdataStatus(`${action === 'service_start' ? 'Starting' : 'Stopping'} ${name}…`)
     sendSessionSystem(id, { action, name }, controlArmed)
   }
@@ -352,7 +353,7 @@ export default function SessionConsolePage() {
   }
 
   const transfer = async (userId: string) => {
-    if (!id || !window.confirm('Transfer session ownership to this technician?')) return
+    if (!id || !await confirm('Transfer session ownership to this technician?', { title: 'Transfer session ownership', confirmLabel: 'Transfer session' })) return
     setParticipantNotice(null)
     try {
       await transferSession(id, userId)
@@ -578,7 +579,7 @@ export default function SessionConsolePage() {
             <div className="detail-card-head"><h2>Session state</h2><span className="mono muted">live</span></div>
             {canControl ? <button className={`btn btn-sm btn-block ${controlArmed ? 'btn-danger' : 'btn-primary'}`} onClick={() => setControlArmed((armed) => !armed)}>{controlArmed ? 'Disable input control' : 'Enable input control'}</button> : null}
             <div className="console-state-line"><span className={`status-pill session-state-${session?.state ?? 'requested'}`}>{session?.state ?? 'requested'}</span><span className="mono muted">{stateLabel(consoleState)}</span></div>
-            <p className="console-help">The session remains connected while you navigate DeskOS. Return using the session dock; the peer, video stream, and input channels stay owned by the browser session runtime.</p>
+            <p className="console-help">The session remains connected while you navigate ReyDesk. Return using the session dock; the peer, video stream, and input channels stay owned by the browser session runtime.</p>
           </section>
           {session?.recording_mode === 'video' ? <section className="detail-card">
             <div className="detail-card-head"><h2>Recording</h2><span className="mono muted">{recordingActive ? 'capturing' : 'video · consented'}</span></div>

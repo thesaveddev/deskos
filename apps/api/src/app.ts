@@ -10,6 +10,7 @@ import staticPlugin from '@fastify/static'
 import { ZodError } from 'zod'
 import type { AppConfig } from './config.js'
 import { AppError, toErrorBody } from './core/errors.js'
+import { BRAND } from './core/brand.js'
 import { MetricsRegistry } from './core/metrics.js'
 import { OtelTraceExporter, unixNano } from './core/otel.js'
 import { captureError, initSentry } from './core/sentry.js'
@@ -29,6 +30,7 @@ import { agentRoutes } from './modules/devices/agent.routes.js'
 import { deviceRoutes } from './modules/devices/devices.routes.js'
 import { aiRoutes } from './modules/ai/ai.routes.js'
 import { createAiProvider } from './modules/ai/gateway.js'
+import { createTenantAiProvider, purgeExpiredAiUsage } from './modules/ai/settings.js'
 import { runTicketTriage, setTriageDispatcher } from './modules/ai/triage.js'
 import { aiAgentRoutes } from './modules/ai-agent/ai-agent.routes.js'
 import { chatRoutes } from './modules/chat/chat.routes.js'
@@ -116,6 +118,10 @@ export async function buildApp(config: AppConfig): Promise<FastifyInstance> {
   const emailWorker: EmailWorker = new EmailWorker(config.imap, config.emailKey, pool)
   const mailer: Mailer = new Mailer(config.smtp)
   const emailQueue: EmailQueue = new EmailQueue(mailer)
+  const aiRetentionTimer = setInterval(() => {
+    void purgeExpiredAiUsage(pool).catch((error) => app.log.warn({ error }, 'AI usage retention purge failed'))
+  }, 6 * 60 * 60 * 1000)
+  aiRetentionTimer.unref?.()
   const metrics = new MetricsRegistry()
   const otel = new OtelTraceExporter(config.otel)
 
@@ -143,16 +149,26 @@ export async function buildApp(config: AppConfig): Promise<FastifyInstance> {
   // ticket, and magic-link mail. The recipient lookup is deliberately done
   // here at the application boundary so core notification writes stay small
   // and transaction-safe.
-  setTriageDispatcher((tenantId, ticketId, trigger = 'created') => runTicketTriage({
-    pool,
-    provider: app.aiProvider ?? createAiProvider(config.ai),
-    model: config.ai.model,
-    mailer,
-    emailQueue,
-    publicUrl: config.publicUrl,
-  }, tenantId, ticketId, trigger))
+  setTriageDispatcher(async (tenantId, ticketId, trigger = 'created') => {
+    const tenantAi = await createTenantAiProvider(pool, config, tenantId, app.aiProvider).catch((error) => {
+      // Keep ticket creation resilient when AI is intentionally disabled or
+      // not yet configured. Triage will record a disabled/handoff state.
+      if (error && typeof error === 'object' && 'code' in error && String((error as { code?: unknown }).code) === 'ai_unavailable') {
+        return { provider: createAiProvider(config.ai), model: config.ai.model }
+      }
+      throw error
+    })
+    return runTicketTriage({
+      pool,
+      provider: tenantAi.provider,
+      model: tenantAi.model,
+      mailer,
+      emailQueue,
+      publicUrl: config.publicUrl,
+    }, tenantId, ticketId, trigger)
+  })
 
-  setEmailDispatcher(async ({ tenantId, userId, kind, body }) => {
+  setEmailDispatcher(async ({ tenantId, userId, kind, body, subjectType, subjectId }) => {
     const recipient = (await pool.query(
       `SELECT u.email, t.name AS tenant_name
          FROM users u JOIN memberships m ON m.user_id = u.id
@@ -164,17 +180,35 @@ export async function buildApp(config: AppConfig): Promise<FastifyInstance> {
       app.log.warn({ userId, tenantId, kind, mailConfigured: app.mailer.enabled }, 'Email notification could not be dispatched')
       return false
     }
+
+    const publicUrl = config.publicUrl.replace(/\/$/, '')
+    let action: { label: string; url: string } | undefined
+    if (subjectType === 'ticket' && subjectId) {
+      const ticket = (await pool.query('SELECT number FROM tickets WHERE id = $1 AND tenant_id = $2', [subjectId, tenantId])).rows[0]
+      if (ticket) {
+        const staffView = kind === 'ticket.lock_release_requested' || kind === 'sla.breached' || kind === 'service.approval' || kind === 'service.approval_decided' || kind === 'change.approval'
+        action = { label: staffView ? 'Open ticket' : 'View request', url: staffView ? `${publicUrl}/tickets/${subjectId}` : `${publicUrl}/portal/tickets/${ticket.number}` }
+      }
+    } else if (subjectType === 'remote_session' && subjectId) {
+      action = { label: 'Open session', url: `${publicUrl}/sessions/${subjectId}` }
+    } else if (subjectType === 'device' && subjectId) {
+      action = { label: 'View device', url: `${publicUrl}/devices/${subjectId}` }
+    }
+
     return app.emailQueue.addAndSend(app.mailer.buildNotificationMail({
       to: recipient.email,
       tenantName: recipient.tenant_name,
       kind,
       body,
+      action,
+      settingsUrl: `${publicUrl}/settings/notifications`,
     }))
   })
 
   app.addHook('onClose', async (instance) => {
     setTriageDispatcher(null)
     instance.emailWorker?.stop()
+    clearInterval(aiRetentionTimer)
     await notificationRealtime.stop()
     await instance.otel.stop()
     await instance.db.end()
@@ -271,7 +305,7 @@ export async function buildApp(config: AppConfig): Promise<FastifyInstance> {
     done()
   })
 
-  app.get('/healthz', async () => ({ status: 'ok', service: 'deskos-api' }))
+  app.get('/healthz', async () => ({ status: 'ok', service: `${BRAND.slug}-api` }))
   app.get('/metrics', async (_request, reply) => {
     const body = app.metrics.render({
       total: app.db.totalCount,
@@ -283,12 +317,12 @@ export async function buildApp(config: AppConfig): Promise<FastifyInstance> {
   app.get('/readyz', async (_request, reply) => {
     try {
       await app.db.query('SELECT 1')
-      return reply.send({ status: 'ok', service: 'deskos-api', database: 'ok' })
+      return reply.send({ status: 'ok', service: `${BRAND.slug}-api`, database: 'ok' })
     } catch {
-      return reply.code(503).send({ status: 'not_ready', service: 'deskos-api', database: 'unavailable' })
+      return reply.code(503).send({ status: 'not_ready', service: `${BRAND.slug}-api`, database: 'unavailable' })
     }
   })
-  app.get('/api/v1/meta', async () => ({ name: 'DeskOS API', version: '0.0.1' }))
+  app.get('/api/v1/meta', async () => ({ name: `${BRAND.name} API`, version: '0.0.1' }))
 
   await app.register(async (v1) => {
     await v1.register(authRoutes)

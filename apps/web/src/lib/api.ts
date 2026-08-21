@@ -2,13 +2,15 @@ export class ApiError extends Error {
   readonly status: number
   readonly code: string
   readonly deniedReason?: string
+  readonly details?: Record<string, unknown>
 
-  constructor(status: number, code: string, message: string, deniedReason?: string) {
+  constructor(status: number, code: string, message: string, deniedReason?: string, details?: Record<string, unknown>) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.code = code
     this.deniedReason = deniedReason
+    this.details = details
   }
 }
 
@@ -55,10 +57,10 @@ interface ApiOptions {
 async function parseError(res: Response): Promise<ApiError> {
   try {
     const body = (await res.json()) as {
-      error?: { code?: string; message?: string; denied_reason?: string }
+      error?: { code?: string; message?: string; denied_reason?: string; details?: Record<string, unknown> }
     }
     if (body?.error?.message) {
-      return new ApiError(res.status, body.error.code ?? 'unknown', body.error.message, body.error.denied_reason)
+      return new ApiError(res.status, body.error.code ?? 'unknown', body.error.message, body.error.denied_reason, body.error.details)
     }
   } catch { /* not JSON */ }
   // Friendly defaults instead of raw status codes

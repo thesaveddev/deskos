@@ -11,8 +11,8 @@ export default function ContactPage() {
 
   return (
     <LandingLayout
-      title="Contact Us — DeskOS"
-      description="Get in touch with the DeskOS team. Sales enquiries, technical support, partnership opportunities, and general questions."
+      title="Contact Us — ReyDesk"
+      description="Get in touch with the ReyDesk team. Sales enquiries, technical support, partnership opportunities, and general questions."
     >
       <section className="landing-hero">
         <div className="landing-hero-inner">
@@ -81,9 +81,9 @@ export default function ContactPage() {
               <div className="contact-info-icon">📧</div>
               <div className="contact-info-text">
                 <h3>Email</h3>
-                <p>General: <a href="mailto:hello@deskos.com">hello@deskos.com</a><br />
-                Sales: <a href="mailto:sales@deskos.com">sales@deskos.com</a><br />
-                Support: <a href="mailto:support@deskos.com">support@deskos.com</a></p>
+                <p>General: <a href="mailto:hello@reydesk.com">hello@reydesk.com</a><br />
+                Sales: <a href="mailto:sales@reydesk.com">sales@reydesk.com</a><br />
+                Support: <a href="mailto:support@reydesk.com">support@reydesk.com</a></p>
               </div>
             </div>
 
@@ -109,9 +109,9 @@ export default function ContactPage() {
               <div className="contact-info-text">
                 <h3>Follow us</h3>
                 <p>
-                  <a href="https://github.com/thesaveddev/deskos" target="_blank" rel="noreferrer">GitHub</a> ·{' '}
-                  <a href="https://twitter.com/deskos" target="_blank" rel="noreferrer">Twitter/X</a> ·{' '}
-                  <a href="https://linkedin.com/company/deskos" target="_blank" rel="noreferrer">LinkedIn</a>
+                  <a href="https://github.com/thesaveddev/reydesk" target="_blank" rel="noreferrer">GitHub</a> ·{' '}
+                  <a href="https://twitter.com/reydesk" target="_blank" rel="noreferrer">Twitter/X</a> ·{' '}
+                  <a href="https://linkedin.com/company/reydesk" target="_blank" rel="noreferrer">LinkedIn</a>
                 </p>
               </div>
             </div>

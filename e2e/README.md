@@ -1,4 +1,4 @@
-# DeskOS staging browser journeys
+# ReyDesk staging browser journeys
 
 The default Playwright suite uses deterministic API boundary fixtures for fast local coverage. The staging specs in this directory intentionally use the deployed web/API stack and are skipped unless explicitly enabled.
 
@@ -26,7 +26,7 @@ For the remote-support journey:
 - `DESKOS_E2E_DEVICE_ID` — a dedicated enrolled staging endpoint
 - `DESKOS_E2E_AGENT_TOKEN` — the endpoint's device bearer token
 
-Keep the native DeskOS agent/helper running on that endpoint for the complete run. It must be online, able to capture a screen, and configured to accept the requested staging session permissions. The test creates a real attended session, sends consent through the authenticated agent control plane, waits for WebRTC media, exercises browser input control, uploads a harmless text file, runs `echo DESKOS_PLAYWRIGHT_REMOTE_OK` in the explicitly elevated terminal, and ends the session.
+Keep the native ReyDesk agent/helper running on that endpoint for the complete run. It must be online, able to capture a screen, and configured to accept the requested staging session permissions. The test creates a real attended session, sends consent through the authenticated agent control plane, waits for WebRTC media, exercises browser input control, uploads a harmless text file, runs `echo DESKOS_PLAYWRIGHT_REMOTE_OK` in the explicitly elevated terminal, and ends the session.
 
 ## Run
 

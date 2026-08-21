@@ -1,4 +1,4 @@
-/* DeskOS Web Push service worker. */
+/* ReyDesk Web Push service worker. */
 self.addEventListener('install', () => {
   self.skipWaiting()
 })
@@ -8,21 +8,23 @@ self.addEventListener('activate', (event) => {
 })
 
 self.addEventListener('push', (event) => {
-  let data = { title: 'DeskOS', body: '', url: '/' }
+  let data = { title: 'ReyDesk', body: '', url: '/' }
   try {
     const parsed = event.data ? event.data.json() : {}
-    data = { title: 'DeskOS', body: '', url: '/', ...parsed }
+    data = { title: 'ReyDesk', body: '', url: '/', ...parsed }
   } catch {
-    /* non-JSON payload — show the raw body */
+    // Some push providers deliver a plain-text payload. Do not show a blank
+    // notification in that case.
+    data.body = event.data ? event.data.text() : ''
   }
-  const title = data.title || 'DeskOS'
+  const title = data.title || 'ReyDesk'
   const options = {
     body: data.body || '',
     data: { url: data.url || '/' },
-    tag: data.tag || 'deskos',
+    tag: data.tag || 'reydesk',
     renotify: Boolean(data.tag),
-    icon: '/deskos-icon.svg',
-    badge: '/deskos-icon.svg',
+    icon: '/reydesk-icon.svg',
+    badge: '/reydesk-icon.svg',
   }
   event.waitUntil(self.registration.showNotification(title, options))
 })

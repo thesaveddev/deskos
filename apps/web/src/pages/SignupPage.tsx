@@ -61,7 +61,7 @@ export default function SignupPage() {
       <div className="auth-panel">
         <BrandRow />
         <h1 className="auth-title">Create your organisation</h1>
-        <p className="auth-sub">Start a DeskOS workspace — you will be the owner.</p>
+        <p className="auth-sub">Start a ReyDesk workspace — you will be the owner.</p>
 
         {error ? <Alert kind="error">{error}</Alert> : null}
 

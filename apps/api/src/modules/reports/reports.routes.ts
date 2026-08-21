@@ -6,11 +6,12 @@ import { requirePermission } from '../../middleware/requirePermission.js'
 import { requireTenant } from '../../middleware/requireTenant.js'
 import '../../types.js'
 
-function dateFilter(from?: string, to?: string): { clause: string; params: any[] } {
+function dateFilter(from?: string, to?: string, qualifier = ''): { clause: string; params: any[] } {
   const params: any[] = []
+  const col = qualifier ? `${qualifier}.created_at` : 'created_at'
   let clause = ''
-  if (from) { params.push(from); clause += ` AND created_at >= $${params.length}::timestamptz` }
-  if (to) { params.push(to); clause += ` AND created_at <= $${params.length}::timestamptz` }
+  if (from) { params.push(from); clause += ` AND ${col} >= $${params.length}::timestamptz` }
+  if (to) { params.push(to); clause += ` AND ${col} <= $${params.length}::timestamptz` }
   return { clause, params }
 }
 
@@ -84,18 +85,20 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
           params,
         )
 
+        const { clause: tClause, params: tParams } = dateFilter(q.from, q.to, 't')
+
         const byCategory = await client.query(
           `SELECT COALESCE(c.name, 'Uncategorized') AS category, count(*)::int AS n
            FROM tickets t LEFT JOIN categories c ON c.id = t.category_id
-           WHERE 1=1${clause} GROUP BY c.name ORDER BY n DESC LIMIT 10`,
-          params,
+           WHERE 1=1${tClause} GROUP BY c.name ORDER BY n DESC LIMIT 10`,
+          tParams,
         )
 
         const byTeam = await client.query(
           `SELECT COALESCE(tm.name, 'Unassigned') AS team, count(*)::int AS n
            FROM tickets t LEFT JOIN teams tm ON tm.id = t.team_id
-           WHERE 1=1${clause} GROUP BY tm.name ORDER BY n DESC LIMIT 10`,
-          params,
+           WHERE 1=1${tClause} GROUP BY tm.name ORDER BY n DESC LIMIT 10`,
+          tParams,
         )
 
         const hourly = await client.query(
@@ -122,11 +125,11 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
                     FILTER (WHERE t.first_response_at IS NOT NULL), 0)::numeric::float8 AS avg_response_min
            FROM tickets t
            LEFT JOIN users u ON u.id = t.assignee_id
-           WHERE t.assignee_id IS NOT NULL${clause}
+           WHERE t.assignee_id IS NOT NULL${tClause}
            GROUP BY u.id, u.name
            ORDER BY total DESC
            LIMIT 20`,
-          params,
+          tParams,
         )
 
         const sessions = await client.query(
@@ -330,7 +333,7 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const ctx = request.tenantCtx!
       const q = (request.query as any)
-      const { clause, params } = dateFilter(q.from, q.to)
+      const { clause, params } = dateFilter(q.from, q.to, 't')
 
       return withTenant(app.db, ctx.tenantId, async (client) => {
         const rows = await client.query(

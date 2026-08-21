@@ -113,15 +113,15 @@ export default function SupportPage() {
 
   return (
     <LandingLayout
-      title="Support — DeskOS"
-      description="Get help with DeskOS. Submit bug reports, feature requests, and technical support tickets."
+      title="Support — ReyDesk"
+      description="Get help with ReyDesk. Submit bug reports, feature requests, and technical support tickets."
     >
       <section className="landing-hero">
         <div className="landing-hero-inner">
           <span className="landing-kicker">Support</span>
-          <h1 className="landing-title">Need help with DeskOS?</h1>
+          <h1 className="landing-title">Need help with ReyDesk?</h1>
           <p className="landing-sub">
-            Submit a ticket for any issue with DeskOS — bugs, feature requests, billing, or technical support. Our team typically responds within 24 hours.
+            Submit a ticket for any issue with ReyDesk — bugs, feature requests, billing, or technical support. Our team typically responds within 24 hours.
           </p>
         </div>
       </section>

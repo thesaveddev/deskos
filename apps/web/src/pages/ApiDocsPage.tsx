@@ -122,8 +122,8 @@ export default function ApiDocsPage() {
 
   return (
     <LandingLayout
-      title="API Documentation — DeskOS"
-      description="DeskOS API documentation. OAuth2-authenticated REST API with OpenAPI 3.1 specification. Integrate with your existing tools."
+      title="API Documentation — ReyDesk"
+      description="ReyDesk API documentation. OAuth2-authenticated REST API with OpenAPI 3.1 specification. Integrate with your existing tools."
     >
       <section className="landing-hero">
         <div className="landing-hero-inner">

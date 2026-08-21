@@ -53,7 +53,7 @@ test.describe('staging remote-support journey', () => {
       await fileInput.setInputFiles({
         name: 'deskos-playwright-check.txt',
         mimeType: 'text/plain',
-        buffer: Buffer.from('DeskOS staging remote-support transfer check\n'),
+        buffer: Buffer.from('ReyDesk staging remote-support transfer check\n'),
       })
       await expect(page.getByText(/File uploaded successfully/i)).toBeVisible({ timeout: 30_000 })
 

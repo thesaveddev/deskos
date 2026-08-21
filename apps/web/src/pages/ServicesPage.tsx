@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Shell } from '../components/Shell.js'
-import { Alert, Field, Modal, PageHeader, Panel } from '../components/ui.js'
+import { Alert, Field, Modal, PageHeader, Panel, useConfirm } from '../components/ui.js'
 import { useAuth } from '../lib/auth.js'
 import { createService, deleteService, listServices, updateService, type Service } from '../lib/catalogue.js'
 
@@ -15,6 +15,7 @@ const EMPTY_FORM: FormState = { name: '', description: '', approvalRequired: fal
 
 export default function ServicesPage() {
   const canManage = useAuth((s) => s.memberships.some((m) => m.permissions.includes('catalogue.manage')))
+  const confirm = useConfirm()
   const [items, setItems] = useState<Service[] | null>(null)
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [editing, setEditing] = useState<Service | null>(null)
@@ -82,7 +83,7 @@ export default function ServicesPage() {
   }
 
   async function remove(item: Service) {
-    if (!confirm(`Delete service "${item.name}"?`)) return
+    if (!await confirm(`Delete service “${item.name}”?`, { title: 'Delete service', confirmLabel: 'Delete', destructive: true })) return
     setError(null)
     try {
       await deleteService(item.id)

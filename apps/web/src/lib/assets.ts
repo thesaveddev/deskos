@@ -18,6 +18,12 @@ export interface Asset {
   device_id: string | null
   device_name?: string | null
   ext: Record<string, unknown>
+  qr_payload?: string | null
+  barcode_value?: string | null
+  assignment_status?: 'assigned' | 'shared' | 'temporary' | 'returned' | null
+  assigned_user_name?: string | null
+  assigned_department?: string | null
+  assigned_location?: string | null
   created_at: string
   updated_at: string
 }

@@ -21,7 +21,7 @@ export async function authenticateOAuth(request: FastifyRequest, _reply: Fastify
   }
 }
 
-/** Require the token to grant a DeskOS permission (via scope mapping). */
+/** Require the token to grant a ReyDesk permission (via scope mapping). */
 export function requireOAuthScope(permission: string) {
   return async (request: FastifyRequest): Promise<void> => {
     const ctx = request.oauthCtx

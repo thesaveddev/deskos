@@ -37,7 +37,7 @@ describe('AI ticket triage', () => {
         return JSON.stringify({ action: 'handoff', message: 'This needs a technician to investigate safely. A member of the support team will take over.', confidence: 0.7 })
       },
     }
-    app = await createTestApp({ DESKOS_SMTP_JSON: 'true', DESKOS_SMTP_FROM: 'DeskOS <support@example.com>' }, (instance) => {
+    app = await createTestApp({ DESKOS_SMTP_JSON: 'true', DESKOS_SMTP_FROM: 'ReyDesk <support@example.com>' }, (instance) => {
       instance.decorate('aiProvider', provider)
     })
     owner = await signupOwner(app, { tenantName: 'AI Triage Org' })
@@ -97,6 +97,27 @@ describe('AI ticket triage', () => {
     const mail = app.mailer.sent.find((message) => message.subject.startsWith('Resolved:') && message.subject.includes(`[${number}]`))
     expect(mail).toBeTruthy()
     expect(mail!.text).toContain('mouse is working again')
+  })
+
+  it('exposes tenant AI governance, usage limits, and processing notice', async () => {
+    const initial = await app.inject({ method: 'GET', url: '/api/v1/ai/settings', headers: authHeaders(owner) })
+    expect(initial.statusCode).toBe(200)
+    expect(initial.json().settings.entitlement.plan).toBe('trial')
+    expect(initial.json().settings.processingNotice).toContain('redacts')
+
+    const updated = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/ai/settings',
+      headers: authHeaders(owner),
+      payload: { monthlyRequestLimit: 25, monthlyTokenLimit: 5000, retentionDays: 45, redactContent: true },
+    })
+    expect(updated.statusCode).toBe(200)
+    expect(updated.json().settings.monthlyRequestLimit).toBe(25)
+    expect(updated.json().settings.monthlyTokenLimit).toBe(5000)
+
+    const usage = await app.inject({ method: 'GET', url: '/api/v1/ai/usage?days=7', headers: authHeaders(owner) })
+    expect(usage.statusCode).toBe(200)
+    expect(usage.json().usage).toMatchObject({ totalRequests: expect.any(Number), totalTokens: expect.any(Number) })
   })
 
   it('hands off when the provider returns an unsafe or uncertain path', async () => {

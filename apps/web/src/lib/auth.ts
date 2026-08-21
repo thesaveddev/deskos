@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { api, clearTokens, getAccessToken, getActiveTenant, setActiveTenant as persistActiveTenant, setTokens } from './api.js'
+import { ApiError, api, clearTokens, getAccessToken, getActiveTenant, setActiveTenant as persistActiveTenant, setTokens } from './api.js'
 
 export interface Membership {
   tenant: { id: string; slug: string; name: string; branding?: { portalTitle?: string; logoUrl?: string; primaryColor?: string } }
@@ -30,6 +30,27 @@ interface AuthState {
 
 async function fetchMe(): Promise<MeResponse> {
   return api<MeResponse>('/me')
+}
+
+/**
+ * Session issuance and `/me` can briefly cross a server restart or proxy
+ * reconnect during first-login MFA setup. Retry only the session hydration;
+ * never retry credentials or MFA factors themselves.
+ */
+async function fetchMeAfterSession(): Promise<MeResponse> {
+  let lastError: unknown
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await fetchMe()
+    } catch (error) {
+      lastError = error
+      const status = error instanceof ApiError ? error.status : 0
+      const retryable = status === 0 || status >= 500
+      if (!retryable || attempt === 2) throw error
+      await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)))
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('Could not load the signed-in user')
 }
 
 /** Keep the persisted tenant if it is still a valid membership; else the first. */
@@ -63,7 +84,7 @@ export const useAuth = create<AuthState>()((set) => ({
 
   applySession: async (tokens) => {
     setTokens(tokens.accessToken, tokens.refreshToken)
-    const me = await fetchMe()
+    const me = await fetchMeAfterSession()
     const activeTenantId = resolveActiveTenant(me)
     persistActiveTenant(activeTenantId)
     set({ status: 'authed', user: me.user, memberships: me.memberships, activeTenantId })

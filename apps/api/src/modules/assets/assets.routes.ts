@@ -59,6 +59,13 @@ const licenceUpdateSchema = z.object({
   expiresAt: dateString.nullable().optional(),
 })
 
+const licenceAssignmentSchema = z.object({
+  userId: z.string().uuid(),
+  seats: z.number().int().min(1).max(10_000).default(1),
+  reason: z.string().trim().max(500).default(''),
+  notes: z.string().trim().max(5_000).default(''),
+})
+
 /** Confirm a deviceId belongs to the current tenant (RLS-scoped lookup). */
 async function ensureDeviceInTenant(client: DbClient, tenantId: string, deviceId: string): Promise<void> {
   const { rows } = await client.query('SELECT 1 FROM devices WHERE id = $1 AND tenant_id = $2', [deviceId, tenantId])
@@ -103,10 +110,14 @@ export async function assetRoutes(app: FastifyInstance): Promise<void> {
       }
       const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''
       const res = await client.query(
-        `SELECT a.*, u.name AS owner_name, d.name AS device_name
+        `SELECT a.*, u.name AS owner_name, d.name AS device_name,
+                da.assignment_status, au.name AS assigned_user_name,
+                da.department AS assigned_department, da.location AS assigned_location
            FROM assets a
            LEFT JOIN users u ON u.id = a.owner_id
            LEFT JOIN devices d ON d.id = a.device_id
+           LEFT JOIN device_assignments da ON da.device_id = a.device_id AND da.ended_at IS NULL
+           LEFT JOIN users au ON au.id = da.user_id
            ${where}
           ORDER BY a.name ASC LIMIT 200`,
         values,
@@ -120,10 +131,14 @@ export async function assetRoutes(app: FastifyInstance): Promise<void> {
     const { id } = request.params as { id: string }
     return withTenant(app.db, ctx.tenantId, async (client) => {
       const { rows } = await client.query(
-        `SELECT a.*, u.name AS owner_name, d.name AS device_name
+        `SELECT a.*, u.name AS owner_name, d.name AS device_name,
+                da.assignment_status, au.name AS assigned_user_name,
+                da.department AS assigned_department, da.location AS assigned_location
            FROM assets a
            LEFT JOIN users u ON u.id = a.owner_id
            LEFT JOIN devices d ON d.id = a.device_id
+           LEFT JOIN device_assignments da ON da.device_id = a.device_id AND da.ended_at IS NULL
+           LEFT JOIN users au ON au.id = da.user_id
           WHERE a.id = $1`,
         [id],
       )
@@ -147,13 +162,14 @@ export async function assetRoutes(app: FastifyInstance): Promise<void> {
       if (dup.rows[0]) throw AppError.conflict('Asset tag already exists')
 
       const res = await client.query(
-        `INSERT INTO assets (tenant_id, tag, type, name, status, owner_id, location, supplier, warranty_until, purchase, device_id, ext)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12::jsonb)
+        `INSERT INTO assets (tenant_id, tag, type, name, status, owner_id, location, supplier, warranty_until, purchase, device_id, ext, qr_payload, barcode_value)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12::jsonb, $13, $14)
          RETURNING *`,
         [
           ctx.tenantId, body.tag, body.type, body.name, body.status, body.ownerId ?? null,
           body.location ?? null, body.supplier ?? null, body.warrantyUntil ?? null,
           JSON.stringify(body.purchase), body.deviceId ?? null, JSON.stringify(body.ext),
+          `deskos://asset/${ctx.tenantId}/${body.tag}`, body.tag,
         ],
       )
       await recordAudit(client, ctx.tenantId, {
@@ -181,8 +197,7 @@ export async function assetRoutes(app: FastifyInstance): Promise<void> {
       if (body.deviceId) await ensureDeviceInTenant(client, ctx.tenantId, body.deviceId)
       if (body.ownerId) await ensureOwnerInTenant(client, ctx.tenantId, body.ownerId)
       if (body.tag && body.tag !== current.tag) {
-        const dup = await client.query('SELECT 1 FROM assets WHERE tag = $1 AND id <> $2', [body.tag, id])
-        if (dup.rows[0]) throw AppError.conflict('Asset tag already exists')
+        throw AppError.badRequest('Asset tags are immutable after creation. Create a new asset record if the label was entered incorrectly.', 'asset_tag_immutable')
       }
 
       const res = await client.query(
@@ -245,6 +260,59 @@ export async function assetRoutes(app: FastifyInstance): Promise<void> {
         ? await client.query('SELECT * FROM licences WHERE asset_id = $1 ORDER BY name ASC', [assetId])
         : await client.query('SELECT * FROM licences ORDER BY expires_at ASC NULLS LAST, name ASC LIMIT 200')
       return { licences: res.rows }
+    })
+  })
+
+  app.get('/licences/:id/assignments', { preHandler: read }, async (request) => {
+    const ctx = request.tenantCtx!
+    const { id } = request.params as { id: string }
+    return withTenant(app.db, ctx.tenantId, async (client) => {
+      const licence = (await client.query('SELECT id FROM licences WHERE id = $1', [id])).rows[0]
+      if (!licence) throw AppError.notFound('Licence not found')
+      const result = await client.query(
+        `SELECT la.*, u.name AS user_name, u.email AS user_email, ab.name AS assigned_by_name
+           FROM licence_assignments la
+           JOIN users u ON u.id = la.user_id
+           LEFT JOIN users ab ON ab.id = la.assigned_by
+          WHERE la.licence_id = $1 ORDER BY la.assigned_at DESC`,
+        [id],
+      )
+      return { assignments: result.rows }
+    })
+  })
+
+  app.post('/licences/:id/assignments', { preHandler: write }, async (request, reply) => {
+    const ctx = request.tenantCtx!
+    const { id } = request.params as { id: string }
+    const body = licenceAssignmentSchema.parse(request.body)
+    const assignment = await withTenant(app.db, ctx.tenantId, async (client) => {
+      const licence = (await client.query('SELECT id, seats_total, seats_used FROM licences WHERE id = $1', [id])).rows[0]
+      if (!licence) throw AppError.notFound('Licence not found')
+      const member = (await client.query("SELECT 1 FROM memberships WHERE tenant_id = $1 AND user_id = $2 AND status = 'active'", [ctx.tenantId, body.userId])).rows[0]
+      if (!member) throw AppError.badRequest('The selected staff member is not active in this organization', 'licence_user_invalid')
+      const used = (await client.query('SELECT COALESCE(sum(seats), 0)::int AS seats FROM licence_assignments WHERE licence_id = $1 AND ended_at IS NULL', [id])).rows[0].seats
+      if (Number(licence.seats_total) > 0 && Number(used) + body.seats > Number(licence.seats_total)) throw AppError.conflict('There are not enough licence seats available', 'licence_seats_exhausted')
+      const result = await client.query(
+        `INSERT INTO licence_assignments (tenant_id, licence_id, user_id, assigned_by, seats, reason, notes)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+        [ctx.tenantId, id, body.userId, request.user!.id, body.seats, body.reason, body.notes],
+      )
+      await client.query('UPDATE licences SET seats_used = (SELECT COALESCE(sum(seats), 0) FROM licence_assignments WHERE licence_id = $1 AND ended_at IS NULL), updated_at = now() WHERE id = $1', [id])
+      await recordAudit(client, ctx.tenantId, { actorId: request.user!.id, action: 'licence.assignment.created', objectType: 'licence_assignment', objectId: result.rows[0].id, ip: request.ip, payload: { licenceId: id, userId: body.userId, seats: body.seats } })
+      return result.rows[0]
+    })
+    return reply.code(201).send({ assignment })
+  })
+
+  app.post('/licences/:id/assignments/:assignmentId/return', { preHandler: write }, async (request) => {
+    const ctx = request.tenantCtx!
+    const { id, assignmentId } = request.params as { id: string; assignmentId: string }
+    return withTenant(app.db, ctx.tenantId, async (client) => {
+      const result = await client.query("UPDATE licence_assignments SET ended_at = now() WHERE id = $1 AND licence_id = $2 AND ended_at IS NULL RETURNING *", [assignmentId, id])
+      if (!result.rows[0]) throw AppError.notFound('Active licence assignment not found')
+      await client.query('UPDATE licences SET seats_used = (SELECT COALESCE(sum(seats), 0) FROM licence_assignments WHERE licence_id = $1 AND ended_at IS NULL), updated_at = now() WHERE id = $1', [id])
+      await recordAudit(client, ctx.tenantId, { actorId: request.user!.id, action: 'licence.assignment.returned', objectType: 'licence_assignment', objectId: assignmentId, ip: request.ip })
+      return { assignment: result.rows[0] }
     })
   })
 

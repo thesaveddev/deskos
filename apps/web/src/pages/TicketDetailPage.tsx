@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { Shell } from '../components/Shell.js'
-import { Alert } from '../components/ui.js'
+import { Alert, Modal } from '../components/ui.js'
 import { Icon } from '../components/Icons.js'
 import { getAccessToken } from '../lib/api.js'
 import { useAuth } from '../lib/auth.js'
@@ -16,6 +16,7 @@ import {
   type Escalation, type Team, type TicketLockInfo, type LockReleaseRequest,
 } from '../lib/tickets.js'
 import { listCannedResponses, type CannedResponse } from '../lib/canned.js'
+import '../styles/ticket-lock.css'
 import { listDevices, type Device } from '../lib/devices.js'
 import { draftKbArticle, getTriageState, listSimilarTickets, retryTriage, stopTriage, summarizeTicket, type KbDraftArticle, type SimilarTicket, type TriageState } from '../lib/ai.js'
 
@@ -71,6 +72,7 @@ export default function TicketDetailPage() {
   const [lockBusy, setLockBusy] = useState(false)
   const [releaseRequests, setReleaseRequests] = useState<LockReleaseRequest[]>([])
   const [releaseBusy, setReleaseBusy] = useState(false)
+  const [showLockModal, setShowLockModal] = useState(false)
   const [viewers, setViewers] = useState<Array<{ user_id: string; name: string; email: string; viewing_at: string }>>([])
 
   // Escalation & forward
@@ -589,38 +591,20 @@ export default function TicketDetailPage() {
       {error ? <Alert kind="error">{error}</Alert> : null}
 
       {/* Compact lock and viewer status indicators */}
-      <div className="ticket-presence-status" aria-label="Ticket presence status">
-        <span
+      <div className="ticket-presence-status" aria-label="Ticket presence status">        <button
+          type="button"
           className={`ticket-status-icon ${ticketLock ? 'is-locked' : 'is-unlocked'}`}
+          onClick={() => setShowLockModal(true)}
           data-tooltip={ticketLock
-            ? `${lockIsMine ? 'Locked to' : 'Locked by'} ${ticketLock.locked_by_name || ticketLock.locked_by_email}`
-            : 'Unlocked'}
-          tabIndex={0}
+            ? `${lockIsMine ? 'Locked to' : 'Locked by'} ${ticketLock.locked_by_name || ticketLock.locked_by_email} · manage lock`
+            : 'Unlocked · manage lock'}
+          aria-label={ticketLock ? `Manage lock: ${lockIsMine ? 'locked to' : 'locked by'} ${ticketLock.locked_by_name || ticketLock.locked_by_email}` : 'Manage ticket lock'}
         >
           <Icon name={ticketLock ? 'lock' : 'unlock'} size={17} />
           <span className="sr-only">{ticketLock ? `${lockIsMine ? 'Locked to' : 'Locked by'} ${ticketLock.locked_by_name || ticketLock.locked_by_email}` : 'Unlocked'}</span>
-        </span>
-        {ticketLock && canOverrideTicketLock && !lockIsMine ? (
-          <button
-            type="button"
-            className="ticket-status-icon ticket-status-action"
-            onClick={() => void handleForceUnlock()}
-            disabled={lockBusy}
-            data-tooltip="Force unlock ticket"
-            aria-label="Force unlock ticket"
-          >
-            <Icon name="unlock" size={16} />
-          </button>
-        ) : null}
-        {readOnlyForLock ? (
-          <div className="ticket-readonly-notice">
-            <Icon name="lock" size={16} />
-            <div><strong>Read-only view</strong><span>{blockingName} is viewing or working on this ticket.</span></div>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => void handleRequestRelease()} disabled={releaseBusy || releaseRequests.some((request) => request.status === 'pending' && request.requested_by === auth.user?.id)}>
-              {releaseRequests.some((request) => request.status === 'pending' && request.requested_by === auth.user?.id) ? 'Release requested' : releaseBusy ? 'Requesting…' : 'Request release'}
-            </button>
-          </div>
-        ) : null}
+        </button>
+        {ticketLock && canOverrideTicketLock && !lockIsMine ? <span className="ticket-status-hint">Admin release available in lock actions</span> : null}
+        {readOnlyForLock ? <div className="ticket-readonly-notice"><Icon name="lock" size={16} /><div><strong>Read-only view</strong><span>{blockingName} is viewing or working on this ticket. Use the lock icon to request release.</span></div></div> : null}
         <span
           className={`ticket-status-icon ${viewers.length > 0 ? 'is-viewing' : 'is-not-viewing'}`}
           data-tooltip={viewers.length > 0
@@ -633,17 +617,14 @@ export default function TicketDetailPage() {
         </span>
       </div>
 
-      {releaseRequests.some((request) => request.status === 'pending' && request.locked_by === auth.user?.id) ? (
-        <section className="ticket-release-requests">
-          <span className="etch">Lock release requests</span>
-          {releaseRequests.filter((request) => request.status === 'pending' && request.locked_by === auth.user?.id).map((request) => (
-            <div className="ticket-release-request" key={request.id}>
-              <div><strong>{request.requested_by_name ?? 'An agent'} wants to work on this ticket</strong><span className="muted">{request.message || 'They requested that you release the lock.'}</span></div>
-              <div className="ticket-release-request-actions"><button type="button" className="btn btn-primary btn-sm" disabled={releaseBusy} onClick={() => void handleResolveRelease(request, 'approve')}>Release lock</button><button type="button" className="btn btn-ghost btn-sm" disabled={releaseBusy} onClick={() => void handleResolveRelease(request, 'deny')}>Keep lock</button></div>
-            </div>
-          ))}
-        </section>
-      ) : null}
+      <Modal open={showLockModal} onClose={() => setShowLockModal(false)} title="Ticket lock" width={560}>
+        <div className="ticket-lock-modal">
+          <div className="ticket-lock-modal-state"><Icon name={ticketLock ? 'lock' : 'unlock'} size={20} /><div><strong>{ticketLock ? `${lockIsMine ? 'Locked to you' : `Locked by ${blockingName}`}` : 'Ticket is unlocked'}</strong><span>{ticketLock ? 'Only the current lock holder can edit this ticket.' : 'Assigning this ticket or opening your assigned ticket can claim the lock.'}</span></div></div>
+          {readOnlyForLock && !lockIsMine ? <button type="button" className="btn btn-primary btn-sm" onClick={() => void handleRequestRelease()} disabled={releaseBusy || releaseRequests.some((request) => request.status === 'pending' && request.requested_by === auth.user?.id)}><Icon name="send" size={14} />{releaseRequests.some((request) => request.status === 'pending' && request.requested_by === auth.user?.id) ? 'Release requested' : releaseBusy ? 'Requesting…' : 'Request release'}</button> : null}
+          {ticketLock && canOverrideTicketLock && !lockIsMine ? <button type="button" className="btn btn-ghost btn-sm" onClick={() => void handleForceUnlock()} disabled={lockBusy}><Icon name="unlock" size={14} />{lockBusy ? 'Releasing…' : 'Release lock as manager'}</button> : null}
+          {releaseRequests.some((request) => request.status === 'pending' && request.locked_by === auth.user?.id) ? <div className="ticket-lock-modal-requests"><span className="etch">Requests from other agents</span>{releaseRequests.filter((request) => request.status === 'pending' && request.locked_by === auth.user?.id).map((request) => <div className="ticket-release-request" key={request.id}><div><strong>{request.requested_by_name ?? 'An agent'} wants to work on this ticket</strong><span className="muted">{request.message || 'They requested that you release the lock.'}</span></div><div className="ticket-release-request-actions"><button type="button" className="btn btn-primary btn-sm" disabled={releaseBusy} onClick={() => void handleResolveRelease(request, 'approve')}>Release lock</button><button type="button" className="btn btn-ghost btn-sm" disabled={releaseBusy} onClick={() => void handleResolveRelease(request, 'deny')}>Keep lock</button></div></div>)}</div> : null}
+        </div>
+      </Modal>
 
       <section className="ticket-device-context">
         <div>

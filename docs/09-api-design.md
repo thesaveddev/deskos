@@ -3,8 +3,8 @@
 ## 1. Conventions
 
 - **REST over HTTPS**, JSON; base `/api/v1`. Versioned by path; breaking changes require new version.
-- Auth: `Authorization: Bearer <access_jwt>` (15 min) + refresh flow at `POST /auth/refresh` (rotating refresh, httpOnly cookie on web). API keys for service accounts (`X-DeskOS-Key`). OAuth2 client-credentials in P2.
-- Tenant scoping: from membership + `X-DeskOS-Tenant` header (MSP) or portal host. Exactly one tenant per request; cross-tenant references are 404, not 403.
+- Auth: `Authorization: Bearer <access_jwt>` (15 min) + refresh flow at `POST /auth/refresh` (rotating refresh, httpOnly cookie on web). API keys for service accounts (`X-ReyDesk-Key`). OAuth2 client-credentials in P2.
+- Tenant scoping: from membership + `X-ReyDesk-Tenant` header (MSP) or portal host. Exactly one tenant per request; cross-tenant references are 404, not 403.
 - Errors: `{ "error": { "code": "permission_denied", "message": "...", "denied_reason": "mfa_stepup_required" } }` with stable machine codes.
 - Pagination: cursor-based (`?cursor=&limit=`), default 50, max 200. Sorting whitelisted per endpoint.
 - Idempotency: `Idempotency-Key` honoured on POSTs that create side-effects (tickets, sessions, automations).
@@ -70,7 +70,7 @@ GET    /sessions/:id/events       GET  /sessions/:id/recording
 POST   /sessions/:id/notes/finalise   (approve AI-drafted notes → ticket thread)
 ```
 
-### Broker WebSocket protocol (`wss://broker.deskos.example/ws`)
+### Broker WebSocket protocol (`wss://relay.reydesk.com/ws`)
 Message envelope: `{ "v":1, "sid": "<session>", "type": "...", "payload": {...} }`
 
 | type (client→broker) | purpose |

@@ -4,8 +4,8 @@ import LandingLayout from '../components/LandingLayout'
 export default function AboutPage() {
   return (
     <LandingLayout
-      title="About — DeskOS"
-      description="DeskOS is built by Clean IT Ltd. One app for remote support, device management, and IT tickets."
+      title="About — ReyDesk"
+      description="ReyDesk is built by Clean IT Ltd. One app for remote support, device management, and IT tickets."
     >
       <section className="landing-hero">
         <div className="landing-hero-inner">
@@ -40,7 +40,7 @@ export default function AboutPage() {
         </div>
         <div className="legal-content">
           <p>
-            DeskOS is one application that handles remote support, endpoint monitoring, and IT ticketing. Everything shares the same database. A remote session is linked to a ticket. A device alert can auto-create a ticket. The audit log records everything across all three.
+            ReyDesk is one application that handles remote support, endpoint monitoring, and IT ticketing. Everything shares the same database. A remote session is linked to a ticket. A device alert can auto-create a ticket. The audit log records everything across all three.
           </p>
           <p>
             The design principles were straightforward:
@@ -80,10 +80,10 @@ export default function AboutPage() {
         </div>
         <div className="legal-content">
           <p>
-            DeskOS is built by <strong>Clean IT Ltd</strong>, a small UK-based company. We build IT tools because we've used bad IT tools and we think things can be better.
+            ReyDesk is built by <strong>Clean IT Ltd</strong>, a small UK-based company. We build IT tools because we've used bad IT tools and we think things can be better.
           </p>
           <p>
-            We're not a 500-person company. We're a small team writing code we'd want to use ourselves. If you have feedback, email us at <a href="mailto:hello@deskos.com">hello@deskos.com</a> — we read every message.
+            We're not a 500-person company. We're a small team writing code we'd want to use ourselves. If you have feedback, email us at <a href="mailto:hello@reydesk.com">hello@reydesk.com</a> — we read every message.
           </p>
         </div>
       </section>

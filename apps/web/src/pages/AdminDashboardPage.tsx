@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Shell } from '../components/Shell.js'
 import { Alert, PageHeader } from '../components/ui.js'
 import { api } from '../lib/api.js'
@@ -50,7 +51,7 @@ export default function AdminDashboardPage() {
 
   return (
     <Shell>
-      <PageHeader title="Platform Admin" subtitle="Overview of all DeskOS organizations, users, and system health." />
+      <PageHeader title="Platform Admin" subtitle="Overview of all ReyDesk organizations, users, and system health." actions={<Link className="btn btn-primary btn-sm" to="/admin/support">Open support queue</Link>} />
 
       {/* Top stats */}
       <div className="stat-row">

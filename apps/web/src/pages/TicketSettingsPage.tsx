@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Alert, Modal } from '../components/ui.js'
+import { Alert, Modal, useConfirm } from '../components/ui.js'
 import { useAuth } from '../lib/auth.js'
 import { api } from '../lib/api.js'
+import { Icon } from '../components/Icons.js'
 
 /* ── Types ──────────────────────────────────────────────────── */
 interface SlaPolicy { id: string; name: string; is_default: boolean; matrix: Record<string, { response: number; resolution: number }> }
 interface Category { id: string; name: string; description: string }
 interface EscalationPolicy { id: number; name: string; trigger_after_minutes: number; trigger_on_priority: string[]; target_team_id: string | null; auto_assign: boolean; enabled: boolean }
-interface Team { id: string; name: string }
+interface Team { id: string; name: string; accepts_tickets?: boolean }
 interface Settings {
   ticket_prefix: string; auto_assign_enabled: boolean; auto_close_enabled: boolean; auto_close_after_days: number
   require_description: boolean; allow_attachments: boolean; public_notes_visible: boolean
@@ -38,7 +39,8 @@ function Toggle({ checked, onChange, disabled, label, desc }: { checked: boolean
 export default function TicketSettingsPage() {
   const auth = useAuth()
   const perms = new Set(auth.memberships.flatMap((m) => m.permissions))
-  const canManage = perms.has('ticket.write')
+  const canManage = perms.has('settings.manage')
+  const confirm = useConfirm()
 
   const [tab, setTab] = useState<Tab>('general')
   const [settings, setSettings] = useState<Settings | null>(null)
@@ -117,7 +119,7 @@ export default function TicketSettingsPage() {
   }
 
   const deleteSla = async (id: string) => {
-    if (!confirm('Delete this SLA policy?')) return
+    if (!await confirm('Delete this SLA policy?', { title: 'Delete SLA policy', confirmLabel: 'Delete policy', destructive: true })) return
     try { await api(`/sla-policies/${id}`, { method: 'DELETE' }); await load() } catch { /* */ }
   }
 
@@ -135,7 +137,7 @@ export default function TicketSettingsPage() {
   }
 
   const deleteCat = async (id: string) => {
-    if (!confirm('Delete this category?')) return
+    if (!await confirm('Delete this category?', { title: 'Delete ticket category', confirmLabel: 'Delete category', destructive: true })) return
     try { await api(`/categories/${id}`, { method: 'DELETE' }); await load() } catch { /* */ }
   }
 
@@ -152,7 +154,7 @@ export default function TicketSettingsPage() {
   }
 
   const deleteEsc = async (id: number) => {
-    if (!confirm('Delete this policy?')) return
+    if (!await confirm('Delete this policy?', { title: 'Delete escalation policy', confirmLabel: 'Delete policy', destructive: true })) return
     try { await api(`/escalation-policies/${id}`, { method: 'DELETE' }); await load() } catch { /* */ }
   }
 
@@ -225,7 +227,7 @@ export default function TicketSettingsPage() {
         <div className="ts-sections">
           <div className="ts-section-header">
             <p className="ts-section-desc">Define response and resolution time targets per priority level.</p>
-            <button className="btn btn-primary btn-sm" onClick={() => { setSlaEdit(null); setSlaName(''); setSlaMatrix({ p1: { response: 15, resolution: 240 }, p2: { response: 60, resolution: 480 }, p3: { response: 240, resolution: 1440 }, p4: { response: 480, resolution: 2880 } }); setShowSlaForm(true) }}>+ New policy</button>
+            <button className="btn btn-primary btn-sm" onClick={() => { setSlaEdit(null); setSlaName(''); setSlaMatrix({ p1: { response: 15, resolution: 240 }, p2: { response: 60, resolution: 480 }, p3: { response: 240, resolution: 1440 }, p4: { response: 480, resolution: 2880 } }); setShowSlaForm(true) }}><Icon name="add" size={14} />New policy</button>
           </div>
 
           {slaPolicies.length === 0 && <p className="ts-empty">No SLA policies yet. Create one to get started.</p>}
@@ -238,7 +240,7 @@ export default function TicketSettingsPage() {
                   {sla.is_default && <span className="ts-badge ts-badge-accent">Default</span>}
                 </div>
                 <div className="ts-card-actions">
-                  <button className="btn btn-ghost btn-sm" onClick={() => { setSlaEdit(sla); setSlaName(sla.name); setSlaMatrix(sla.matrix); setShowSlaForm(true) }}>Edit</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => { setSlaEdit(sla); setSlaName(sla.name); setSlaMatrix(sla.matrix); setShowSlaForm(true) }}><Icon name="edit" size={14} />Edit</button>
                   {!sla.is_default && <button className="btn btn-ghost btn-sm btn-danger" onClick={() => void deleteSla(sla.id)}>Delete</button>}
                 </div>
               </div>
@@ -272,7 +274,7 @@ export default function TicketSettingsPage() {
             </table>
             <div className="ts-form-actions" style={{ marginTop: '1rem' }}>
               <button className="btn btn-primary btn-sm" onClick={() => void saveSla()} disabled={busy || !slaName.trim()}>{busy ? 'Saving…' : 'Save'}</button>
-              <button className="btn btn-ghost btn-sm" onClick={() => { setShowSlaForm(false); setSlaEdit(null) }}>Cancel</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => { setShowSlaForm(false); setSlaEdit(null) }}><Icon name="close" size={14} />Cancel</button>
             </div>
           </Modal>
         </div>
@@ -283,7 +285,7 @@ export default function TicketSettingsPage() {
         <div className="ts-sections">
           <div className="ts-section-header">
             <p className="ts-section-desc">Classify tickets by type of issue or request.</p>
-            <button className="btn btn-primary btn-sm" onClick={() => { setCatEdit(null); setCatName(''); setCatDesc(''); setShowCatForm(true) }}>+ New category</button>
+            <button className="btn btn-primary btn-sm" onClick={() => { setCatEdit(null); setCatName(''); setCatDesc(''); setShowCatForm(true) }}><Icon name="add" size={14} />New category</button>
           </div>
 
           {categories.length === 0 && <p className="ts-empty">No categories yet.</p>}
@@ -296,7 +298,7 @@ export default function TicketSettingsPage() {
                   {cat.description && <span className="ts-list-desc">{cat.description}</span>}
                 </div>
                 <div className="ts-list-actions">
-                  <button className="btn btn-ghost btn-sm" onClick={() => { setCatEdit(cat); setCatName(cat.name); setCatDesc(cat.description); setShowCatForm(true) }}>Edit</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => { setCatEdit(cat); setCatName(cat.name); setCatDesc(cat.description); setShowCatForm(true) }}><Icon name="edit" size={14} />Edit</button>
                   <button className="btn btn-ghost btn-sm btn-danger" onClick={() => void deleteCat(cat.id)}>Delete</button>
                 </div>
               </div>
@@ -314,7 +316,7 @@ export default function TicketSettingsPage() {
             </div>
             <div className="ts-form-actions">
               <button className="btn btn-primary btn-sm" onClick={() => void saveCat()} disabled={busy || !catName.trim()}>{busy ? 'Saving…' : 'Save'}</button>
-              <button className="btn btn-ghost btn-sm" onClick={() => { setShowCatForm(false); setCatEdit(null) }}>Cancel</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => { setShowCatForm(false); setCatEdit(null) }}><Icon name="close" size={14} />Cancel</button>
             </div>
           </Modal>
         </div>
@@ -325,7 +327,7 @@ export default function TicketSettingsPage() {
         <div className="ts-sections">
           <div className="ts-section-header">
             <p className="ts-section-desc">Automatically escalate tickets based on time and priority.</p>
-            <button className="btn btn-primary btn-sm" onClick={() => { setEscName(''); setEscMinutes(60); setEscPriorities([]); setEscTeam(''); setEscAutoAssign(false); setShowEscForm(true) }}>+ New policy</button>
+            <button className="btn btn-primary btn-sm" onClick={() => { setEscName(''); setEscMinutes(60); setEscPriorities([]); setEscTeam(''); setEscAutoAssign(false); setShowEscForm(true) }}><Icon name="add" size={14} />New policy</button>
           </div>
 
           {escalations.length === 0 && <p className="ts-empty">No escalation policies yet.</p>}
@@ -376,7 +378,7 @@ export default function TicketSettingsPage() {
               <label className="ts-label">Target team</label>
               <select className="ts-input" value={escTeam} onChange={(e) => setEscTeam(e.target.value)}>
                 <option value="">Keep current team</option>
-                {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                {teams.filter((t) => t.accepts_tickets !== false).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
             </div>
             <Toggle label="Auto-assign to team members" checked={escAutoAssign} onChange={setEscAutoAssign} />

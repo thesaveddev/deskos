@@ -44,8 +44,8 @@ services:
       - '8025:8025'
 
   # coturn for the WebRTC NAT/media path (TURN). `--static-auth-secret` must
-  # match the API's DESKOS_ICE_TURN_SECRET; the API mints short-lived REST-API
-  # credentials HMAC'd with that secret. Change DESKOS_ICE_TURN_SECRET to the
+  # match the API's REYDESK_ICE_TURN_SECRET; the API mints short-lived REST-API
+  # credentials HMAC'd with that secret. Change REYDESK_ICE_TURN_SECRET to the
   # value below for local development.
   turn:
     image: coturn/coturn:4.6.3-alpine
@@ -53,8 +53,8 @@ services:
     command: >
       -n
       --log-file=stdout
-      --realm=deskos
-      --static-auth-secret=deskos-turn-dev-only
+      --realm=reydesk
+      --static-auth-secret=reydesk-turn-dev-only
       --no-tls
       --no-dtls
       --listening-ip=127.0.0.1

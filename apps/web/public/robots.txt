@@ -1,5 +1,5 @@
-# DeskOS — robots.txt
-# https://www.deskos.com
+# ReyDesk — robots.txt
+# https://www.reydesk.com
 
 User-agent: *
 Allow: /
@@ -13,7 +13,7 @@ Disallow: /signup
 Disallow: /settings/
 
 # Sitemaps
-Sitemap: https://www.deskos.com/sitemap.xml
+Sitemap: https://www.reydesk.com/sitemap.xml
 
 # Crawl-delay (optional, for polite bots)
 User-agent: GPTBot

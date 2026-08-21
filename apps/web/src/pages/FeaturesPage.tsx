@@ -225,7 +225,7 @@ function FeatureSection({
 const featuresJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'SoftwareApplication',
-  name: 'DeskOS',
+  name: 'ReyDesk',
   applicationCategory: 'BusinessApplication',
   featureList: [
     'Remote desktop support with end-to-end encryption',
@@ -239,21 +239,21 @@ const featuresJsonLd = {
     'Knowledge base with AI drafting',
     'Patch management with ring rollout',
   ],
-  url: 'https://www.deskos.com/features',
+  url: 'https://www.reydesk.com/features',
 }
 
 export default function FeaturesPage() {
   return (
     <LandingLayout
-      title="Features — DeskOS | Remote Support, RMM & ITSM"
-      description="Explore DeskOS features: remote desktop support, endpoint management, IT ticketing, AI assistant, security compliance, and 50+ integrations."
+      title="Features — ReyDesk | Remote Support, RMM & ITSM"
+      description="Explore ReyDesk features: remote desktop support, endpoint management, IT ticketing, AI assistant, security compliance, and 50+ integrations."
       structuredData={featuresJsonLd}
     >
       {/* hero */}
       <section className="landing-hero">
         <div className="landing-hero-inner">
           <span className="landing-kicker">Platform</span>
-          <h1 className="landing-title">What DeskOS does.</h1>
+          <h1 className="landing-title">What ReyDesk does.</h1>
           <p className="landing-sub">
             Remote support, device monitoring, ticketing, AI assistance, security auditing, and integrations. All in one app, sharing one database.
           </p>
@@ -318,14 +318,14 @@ export default function FeaturesPage() {
           <span className="landing-kicker">Deployment</span>
           <h2 className="landing-h2">Three ways to connect a device.</h2>
           <p className="landing-section-sub">
-            From a single ad-hoc support code to a fleet-wide Group Policy rollout — DeskOS meets you where you are.
+            From a single ad-hoc support code to a fleet-wide Group Policy rollout — ReyDesk meets you where you are.
           </p>
         </div>
         <div className="landing-deploys">
           <article className="landing-deploy">
             <span className="etch">Customer-assisted</span>
             <h3>Send the MSI and a code</h3>
-            <p>The user installs the agent, opens Enroll DeskOS Agent, and enters one 8-digit code. No terminal, no credentials.</p>
+            <p>The user installs the agent, opens Enroll ReyDesk Agent, and enters one 8-digit code. No terminal, no credentials.</p>
           </article>
           <article className="landing-deploy">
             <span className="etch">Technician-assisted</span>

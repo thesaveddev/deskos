@@ -1,6 +1,6 @@
 # 05 — Remote Support Architecture
 
-The differentiator of DeskOS. Design goals: sub-100 ms perceived input latency on good links, connect < 5 s, NAT-proof, consent- and policy-enforced, fully auditable, browser technician console (no client install), reboot-survivable.
+The differentiator of ReyDesk. Design goals: sub-100 ms perceived input latency on good links, connect < 5 s, NAT-proof, consent- and policy-enforced, fully auditable, browser technician console (no client install), reboot-survivable.
 
 ## 1. Topology
 
@@ -47,7 +47,7 @@ The differentiator of DeskOS. Design goals: sub-100 ms perceived input latency o
 - Install → agent generates keypair → enrolment code (one-time, tenant-scoped) or tenant deployment token → broker issues **device certificate** (short-lived cert + auto-rotation). All subsequent auth is certificate/mTLS-backed websocket + signed heartbeats. No shared secrets stored on device beyond protected key material.
 
 ### Session types
-1. **Attended (consent):** technician requests session with a target *contact* (or generates a session code/link). End user opens `/connect/:code` (or agent consent UI): sees technician name/photo, organisation, requested permissions → Accept. Consent grant is per-permission, time-boxed, revocable at any moment (agent-side kill-switch + banner "DeskOS is sharing your screen — End now").
+1. **Attended (consent):** technician requests session with a target *contact* (or generates a session code/link). End user opens `/connect/:code` (or agent consent UI): sees technician name/photo, organisation, requested permissions → Accept. Consent grant is per-permission, time-boxed, revocable at any moment (agent-side kill-switch + banner "ReyDesk is sharing your screen — End now").
 2. **Unattended (policy):** technician selects device. Broker evaluates policy gate (§4). User of the device gets an on-screen notification banner during connection ("Marcus from Acme IT is connecting — reason: ticket #4521").
 3. **Inspection (view-only telemetry):** lightweight channel for processes/services/health without screen sharing — used by device-page tabs; still policy-checked and audited.
 

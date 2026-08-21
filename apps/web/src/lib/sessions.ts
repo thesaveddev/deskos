@@ -89,6 +89,8 @@ export function listSessions(params: { state?: RemoteSessionState; deviceId?: st
   const query = new URLSearchParams()
   if (params.state) query.set('state', params.state)
   if (params.deviceId) query.set('deviceId', params.deviceId)
+  if (params.limit !== undefined) query.set('limit', String(params.limit))
+  if (params.offset !== undefined) query.set('offset', String(params.offset))
   const suffix = query.toString() ? `?${query.toString()}` : ''
   return api(`/sessions${suffix}`)
 }
@@ -148,6 +150,8 @@ export function transferSession(id: string, userId: string): Promise<{ participa
 export interface AdhocSession {
   id: string
   code: string
+  codeLength: number
+  claimMode: 'code'
   connectUrl: string
   expiresAt: string
 }
@@ -169,12 +173,17 @@ export function createAdhocSession(body: {
   permissions: string[]
   reason?: string
   expiresInMin?: number
+  codeLength?: 10 | 11 | 12
 }): Promise<AdhocSession> {
   return api('/adhoc-sessions', { method: 'POST', body })
 }
 
 export function listAdhocSessions(): Promise<{ sessions: AdhocSessionRecord[] }> {
   return api('/adhoc-sessions')
+}
+
+export function emailAdhocSession(id: string, code: string, to: string, mode: 'code' | 'email_link' = 'email_link'): Promise<{ ok: boolean; jobId: string; mode: string }> {
+  return api(`/adhoc-sessions/${id}/email`, { method: 'POST', body: { code, to, mode } })
 }
 
 export function revokeAdhocSession(id: string): Promise<{ id: string; state: string }> {

@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Alert, Field } from '../components/ui.js'
+import { Alert, Field, useConfirm } from '../components/ui.js'
 import { PasswordField } from '../components/PasswordField.js'
 import {
   createEmailChannel,
   deleteEmailChannel,
   getEmailStatus,
+  getOutboundEmailStatus,
   listEmailChannels,
   pollAllEmailChannels,
   pollEmailChannel,
@@ -28,11 +29,13 @@ const EMPTY_FORM: EmailChannelInput = {
 export default function EmailSettingsPage() {
   const [channels, setChannels] = useState<EmailChannel[]>([])
   const [status, setStatus] = useState<{ enabled: boolean; running: boolean; lastPollAt: string | null; lastError: string | null } | null>(null)
+  const [outbound, setOutbound] = useState<Awaited<ReturnType<typeof getOutboundEmailStatus>> | null>(null)
   const [form, setForm] = useState<EmailChannelInput>(EMPTY_FORM)
   const [editing, setEditing] = useState<EmailChannel | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const confirm = useConfirm()
 
   const refresh = useCallback(() => {
     void listEmailChannels()
@@ -41,6 +44,9 @@ export default function EmailSettingsPage() {
     void getEmailStatus()
       .then((s) => setStatus(s))
       .catch(() => setStatus(null))
+    void getOutboundEmailStatus()
+      .then((s) => setOutbound(s))
+      .catch(() => setOutbound(null))
   }, [])
 
   useEffect(() => {
@@ -164,7 +170,7 @@ export default function EmailSettingsPage() {
   }
 
   async function handleDelete(channel: EmailChannel) {
-    if (!window.confirm(`Delete channel "${channel.name}"? Incoming email will stop creating tickets here.`)) return
+    if (!await confirm(`Delete channel “${channel.name}”? Incoming email will stop creating tickets here.`, { title: 'Delete email channel', confirmLabel: 'Delete channel', destructive: true })) return
     setBusy(true)
     setError(null)
     setNotice(null)
@@ -208,6 +214,10 @@ export default function EmailSettingsPage() {
 
       <div className="email-status-bar">
         <span>
+          Outbound SMTP: <strong className={outbound?.enabled ? 'sla-ok' : 'sla-crit'}>{outbound?.enabled ? 'ready' : 'not configured'}</strong>
+          {outbound?.enabled ? ` · ${outbound.host}:${outbound.port}` : ''}
+        </span>
+        <span>
           Poller: <strong>{status?.enabled ? 'on' : 'off'}</strong>
           {status?.running ? ' (running)' : ''}
         </span>
@@ -215,6 +225,7 @@ export default function EmailSettingsPage() {
           <span className="muted">last poll {new Date(status.lastPollAt).toLocaleTimeString()}</span>
         ) : null}
         {status?.lastError ? <span className="sla-crit">error: {status.lastError}</span> : null}
+        {outbound && outbound.queue.dead > 0 ? <span className="sla-crit">{outbound.queue.dead} email(s) failed permanently</span> : null}
       </div>
 
       {channels.length === 0 && !editing ? (

@@ -18,6 +18,7 @@ const KIND_LABELS: Record<string, string> = {
   'session.adhoc.claimed': 'Support code claimed',
   'automation': 'Automation actions',
   'membership.invited': 'Membership invited',
+  'telephony.call_received': 'Inbound call',
 }
 
 export default function NotificationSettingsPage() {
@@ -25,6 +26,7 @@ export default function NotificationSettingsPage() {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [busyKind, setBusyKind] = useState<string | null>(null)
+  const [pushConfigured, setPushConfigured] = useState(false)
   const [pushEnabled, setPushEnabled] = useState(false)
   const [pushCount, setPushCount] = useState(0)
   const [pushBusy, setPushBusy] = useState(false)
@@ -44,10 +46,16 @@ export default function NotificationSettingsPage() {
   useEffect(() => {
     void getPushStatus()
       .then((status) => {
-        setPushEnabled(status.enabled)
+        setPushConfigured(status.enabled)
+        // The API reports deployment capability separately from whether this
+        // user has registered a browser. Treating `enabled` as the local
+        // subscription made the UI show "Disable" while zero browsers were
+        // subscribed, so users could never start the setup flow.
+        setPushEnabled(status.enabled && status.subscriptions > 0)
         setPushCount(status.subscriptions)
       })
       .catch(() => {
+        setPushConfigured(false)
         setPushEnabled(false)
         setPushCount(0)
       })
@@ -75,7 +83,8 @@ export default function NotificationSettingsPage() {
         setNotice('Push notifications enabled — you will be notified on this device.')
       }
       const status = await getPushStatus()
-      setPushEnabled(status.enabled)
+      setPushConfigured(status.enabled)
+      setPushEnabled(status.enabled && status.subscriptions > 0)
       setPushCount(status.subscriptions)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Push setup failed')
@@ -125,7 +134,7 @@ export default function NotificationSettingsPage() {
         <div className="channel-main">
           <span className="channel-name">Push notifications</span>
           <span className="channel-meta">
-            {pushEnabled ? `Enabled on ${pushCount} device${pushCount === 1 ? '' : 's'} — delivered when you're not in the app.` : 'Not enabled on this device.'}
+            {pushEnabled ? `Enabled on ${pushCount} registered device${pushCount === 1 ? '' : 's'} — delivered when you're not in the app.` : pushConfigured ? 'Not enabled on this browser yet.' : 'Web Push is not configured on this server.'}
           </span>
         </div>
         <div className="channel-actions">

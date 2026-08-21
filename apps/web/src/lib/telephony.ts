@@ -16,6 +16,21 @@ export interface CallLog {
   ticket_number: number | null
   ticket_subject: string | null
   provider_call_id: string | null
+  ext?: Record<string, unknown>
+}
+
+export interface TelephonyIntegration {
+  id: string
+  name: string
+  provider: string
+  enabled: boolean
+  auto_match: boolean
+  click_to_call_url: string | null
+  has_provider_secret: boolean
+  provider_config?: { accountSid?: string; fromNumber?: string; twimlUrl?: string; webhookUrl?: string }
+  webhook_path: string
+  created_at: string
+  updated_at: string
 }
 
 export interface ListCallsFilters {
@@ -23,6 +38,18 @@ export interface ListCallsFilters {
   direction?: CallDirection
   status?: CallStatus
   q?: string
+}
+
+export function listTelephonyIntegrations(): Promise<{ integrations: TelephonyIntegration[] }> {
+  return api('/telephony/integrations')
+}
+
+export function createTelephonyIntegration(body: { name: string; provider?: string; clickToCallUrl?: string; providerSecret?: string; providerConfig?: Record<string, unknown>; autoMatch?: boolean; enabled?: boolean }): Promise<{ integration: TelephonyIntegration; webhookToken: string }> {
+  return api('/telephony/integrations', { method: 'POST', body })
+}
+
+export function deleteTelephonyIntegration(id: string): Promise<{ ok: true }> {
+  return api(`/telephony/integrations/${id}`, { method: 'DELETE' })
 }
 
 export function listCalls(filters: ListCallsFilters = {}): Promise<{ calls: CallLog[] }> {
@@ -33,6 +60,14 @@ export function listCalls(filters: ListCallsFilters = {}): Promise<{ calls: Call
   if (filters.q) params.set('q', filters.q)
   const qs = params.toString()
   return api(`/telephony/calls${qs ? `?${qs}` : ''}`)
+}
+
+export function clickToCall(body: { toNumber: string; fromNumber?: string; ticketId?: string | null }): Promise<{ call: CallLog; dialUri: string }> {
+  return api('/telephony/click-to-call', { method: 'POST', body })
+}
+
+export function matchCall(id: string): Promise<{ call: CallLog; match: { status: string; candidates: Array<{ id: string; number: number; subject: string }> } }> {
+  return api(`/telephony/calls/${id}/match`, { method: 'POST', body: {} })
 }
 
 export function logCall(body: {

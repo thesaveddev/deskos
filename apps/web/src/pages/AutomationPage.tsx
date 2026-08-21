@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Shell } from '../components/Shell.js'
-import { Alert, Field, Modal, PageHeader, Panel } from '../components/ui.js'
+import { Alert, Field, Modal, PageHeader, Panel, useConfirm } from '../components/ui.js'
 import { useAuth } from '../lib/auth.js'
+import { Icon } from '../components/Icons.js'
 import {
   createAutomation, deleteAutomation, listAutomations, toggleAutomation, updateAutomation,
   type Automation, type AutomationAction, type AutomationCondition, type AutomationTrigger,
@@ -89,6 +90,7 @@ export default function AutomationPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const confirm = useConfirm()
 
   const load = useCallback(async () => {
     try {
@@ -176,7 +178,7 @@ export default function AutomationPage() {
   }
 
   async function remove(item: Automation) {
-    if (!confirm(`Delete automation "${item.name}"?`)) return
+    if (!await confirm(`Delete automation “${item.name}”?`, { title: 'Delete automation', confirmLabel: 'Delete', destructive: true })) return
     setError(null)
     try {
       await deleteAutomation(item.id)
@@ -196,7 +198,7 @@ export default function AutomationPage() {
       <PageHeader
         title="Automations"
         subtitle="Trigger → condition → action rules, applied atomically."
-        actions={canManage ? <button className="btn btn-primary btn-sm" onClick={openCreate}>New automation</button> : undefined}
+        actions={canManage ? <button className="btn btn-primary btn-sm" onClick={openCreate}><Icon name="add" size={14} />New automation</button> : undefined}
       />
 
       {error ? <Alert kind="error">{error}</Alert> : null}
@@ -216,9 +218,9 @@ export default function AutomationPage() {
                 </div>
                 {canManage ? (
                   <div className="channel-actions">
-                    <button className="btn btn-ghost btn-sm" onClick={() => void toggle(item)}>{item.enabled ? 'Disable' : 'Enable'}</button>
-                    <button className="btn btn-ghost btn-sm" onClick={() => openEdit(item)}>Edit</button>
-                    <button className="btn btn-ghost btn-sm" onClick={() => void remove(item)}>Delete</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => void toggle(item)}><Icon name={item.enabled ? 'stop' : 'play'} size={14} />{item.enabled ? 'Disable' : 'Enable'}</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => openEdit(item)}><Icon name="edit" size={14} />Edit</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => void remove(item)}><Icon name="delete" size={14} />Delete</button>
                   </div>
                 ) : null}
               </li>
@@ -236,7 +238,7 @@ export default function AutomationPage() {
           <>
             <button type="button" className="btn btn-ghost" onClick={() => { setModalOpen(false); setEditing(null); setForm(EMPTY_FORM) }} disabled={busy}>Cancel</button>
             <button type="submit" form="automation-form" className="btn btn-primary" disabled={busy || !form.name.trim()}>
-              {busy ? 'Saving…' : editing ? 'Save changes' : 'Create automation'}
+              <Icon name="save" size={14} />{busy ? 'Saving…' : editing ? 'Save changes' : 'Create automation'}
             </button>
           </>
         }
@@ -273,7 +275,7 @@ export default function AutomationPage() {
             </div>
           ))}
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => setForm({ ...form, conditions: [...form.conditions, { field: '', op: 'eq', value: '' }] })}>
-            + condition
+            <Icon name="add" size={14} />condition
           </button>
 
           <h3 className="channel-title" style={{ marginTop: 20 }}>Then (actions)</h3>
@@ -293,7 +295,7 @@ export default function AutomationPage() {
             )
           })}
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => setForm({ ...form, actions: [...form.actions, { type: 'add_note', value: '' }] })}>
-            + action
+            <Icon name="add" size={14} />action
           </button>
         </form>
       </Modal>

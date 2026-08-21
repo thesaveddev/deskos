@@ -31,6 +31,7 @@ import PricingPage from './pages/PricingPage.js'
 import PrivacyPage from './pages/PrivacyPage.js'
 import TermsPage from './pages/TermsPage.js'
 import AboutPage from './pages/AboutPage.js'
+import AcceptInvitationPage from './pages/AcceptInvitationPage.js'
 import ContactPage from './pages/ContactPage.js'
 import ApiDocsPage from './pages/ApiDocsPage.js'
 import SupportPage from './pages/SupportPage.js'
@@ -157,6 +158,7 @@ export default function App() {
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/signup" element={<SignupPage />} />
+      <Route path="/accept-invitation" element={<AcceptInvitationPage />} />
       <Route path="/connect/:code" element={<ConnectPage />} />
       <Route path="/features" element={<FeaturesPage />} />
       <Route path="/use-cases" element={<UseCasesPage />} />

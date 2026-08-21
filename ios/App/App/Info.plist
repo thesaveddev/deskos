@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-        <string>DeskOS</string>
+        <string>ReyDesk</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -67,12 +67,12 @@
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>DeskOS uses the camera for remote support screen sharing and video calls.</string>
+	<string>ReyDesk uses the camera for remote support screen sharing and video calls.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>DeskOS uses the microphone for remote support audio during sessions.</string>
+	<string>ReyDesk uses the microphone for remote support audio during sessions.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>DeskOS accesses photos for file transfer during remote support sessions.</string>
+	<string>ReyDesk accesses photos for file transfer during remote support sessions.</string>
 	<key>NSFaceIDUsageDescription</key>
-	<string>DeskOS uses Face ID for secure biometric authentication.</string>
+	<string>ReyDesk uses Face ID for secure biometric authentication.</string>
 </dict>
 </plist>

@@ -11,11 +11,12 @@ import {
   type AppRegistryEntry,
   type AppInstall,
 } from '../lib/marketplace.js'
-import { PageHeader, Panel, Modal } from '../components/ui.js'
+import { PageHeader, Panel, Modal, useConfirm } from '../components/ui.js'
 
 export default function MarketplacePage() {
   const perms = new Set(useAuth((s) => s.memberships).flatMap((m: any) => m.permissions))
   const canManage = perms.has('marketplace.manage')
+  const confirm = useConfirm()
 
   const [apps, setApps] = useState<AppRegistryEntry[]>([])
   const [installs, setInstalls] = useState<AppInstall[]>([])
@@ -101,7 +102,7 @@ export default function MarketplacePage() {
   }
 
   const handleDelete = async (slug: string) => {
-    if (!confirm(`Delete "${slug}"? This cannot be undone.`)) return
+    if (!await confirm(`Delete “${slug}”? This cannot be undone.`, { title: 'Delete marketplace app', confirmLabel: 'Delete app', destructive: true })) return
     try {
       await deleteApp(slug)
       await refresh()

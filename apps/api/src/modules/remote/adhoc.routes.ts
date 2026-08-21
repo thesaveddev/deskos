@@ -13,13 +13,22 @@ import { generateEnrolCode, hashToken } from '../devices/device-auth.js'
 import { assertSessionPermission, sessionPermissions } from './remote.routes.js'
 import '../../types.js'
 
-const _DEFAULT_CODE_TTL_MS = 30 * 60_000
-
 const createSchema = z.object({
   permissions: z.array(z.enum(sessionPermissions)).min(1).max(10).default(['view_screen']),
   reason: z.string().trim().max(500).optional(),
-  expiresInMin: z.number().int().min(1).max(1440).default(30),
+  expiresInMin: z.number().int().min(1).max(1440).optional(),
+  codeLength: z.union([z.literal(10), z.literal(11), z.literal(12)]).default(10),
 })
+
+const emailSchema = z.object({
+  to: z.string().email().max(320),
+  code: z.string().regex(/^\d{8,12}$/),
+  mode: z.enum(['code', 'email_link']).default('email_link'),
+})
+
+// Eight-digit links remain readable for legacy sessions; new sessions default
+// to 10 digits and can be configured to 11 or 12 digits.
+const publicCodeSchema = z.string().regex(/^\d{8,12}$/)
 
 const claimSchema = z.object({
   name: z.string().min(1).max(120).optional(),
@@ -39,6 +48,10 @@ interface AdhocRow {
   device_id: string | null
   remote_session_id: string | null
   expires_at: Date
+  claim_mode: 'code' | 'email_link'
+  claim_token_hash: string | null
+  claim_token_used_at: Date | null
+  claim_fingerprint_hash: string | null
 }
 
 /** Pre-tenant lookup by code hash, mirroring the device-token read path. */
@@ -50,7 +63,8 @@ async function findAdhocByCode(pool: DbPool, code: string): Promise<AdhocRow | u
     await client.query("SELECT set_config('app.adhoc_code_hash', $1, true)", [codeHash])
     const { rows } = await client.query(
       `SELECT id, tenant_id, state, permissions, reason, requested_by,
-              device_id, remote_session_id, expires_at
+              device_id, remote_session_id, expires_at, claim_mode,
+              claim_token_hash, claim_token_used_at, claim_fingerprint_hash
          FROM adhoc_sessions
         WHERE code_hash = $1
         LIMIT 1`,
@@ -73,8 +87,25 @@ async function findAdhocByCode(pool: DbPool, code: string): Promise<AdhocRow | u
 function publicAdhoc(
   row: AdhocRow,
   helperAvailable: boolean,
-): { state: string; reason: string; permissions: string[]; helperAvailable: boolean } {
-  return { state: row.state, reason: row.reason, permissions: row.permissions, helperAvailable }
+): { state: string; reason: string; permissions: string[]; helperAvailable: boolean; claimMode: string } {
+  return {
+    state: row.state,
+    reason: row.reason,
+    permissions: row.permissions,
+    helperAvailable,
+    claimMode: row.claim_mode,
+  }
+}
+
+function newClaimToken(): string {
+  return `deskos_link_${randomBytes(32).toString('base64url')}`
+}
+
+function claimFingerprint(request: { headers: Record<string, string | string[] | undefined> }): string | null {
+  const value = request.headers['x-deskos-claim-fingerprint']
+  if (Array.isArray(value)) return null
+  const fingerprint = value?.trim()
+  return fingerprint && fingerprint.length <= 300 ? fingerprint : null
 }
 
 /** Technician-facing route (registered under /api/v1). */
@@ -84,8 +115,11 @@ export async function adhocSessionRoutes(app: FastifyInstance): Promise<void> {
     const body = createSchema.parse(request.body)
     assertSessionPermission(ctx.orgRole, 'attended', body.permissions, body.reason)
 
-    const code = generateEnrolCode()
-    const expiresAt = new Date(Date.now() + (body.expiresInMin ?? 30) * 60_000)
+    const tenantRow = (await app.db.query('SELECT settings FROM tenants WHERE id = $1', [ctx.tenantId])).rows[0]
+    const remoteDefaults = (tenantRow?.settings?.remote_support ?? {}) as Record<string, unknown>
+    const expiresInMin = Number(body.expiresInMin ?? remoteDefaults.default_expiry_minutes ?? 30)
+    const code = generateEnrolCode(body.codeLength)
+    const expiresAt = new Date(Date.now() + expiresInMin * 60_000)
     const created = await withTenant(app.db, ctx.tenantId, async (client) => {
       const res = await client.query(
         `INSERT INTO adhoc_sessions (tenant_id, code_hash, permissions, reason, requested_by, expires_at)
@@ -100,7 +134,7 @@ export async function adhocSessionRoutes(app: FastifyInstance): Promise<void> {
         objectType: 'adhoc_session',
         objectId: res.rows[0].id,
         ip: request.ip,
-        payload: { permissions: body.permissions },
+        payload: { permissions: body.permissions, codeLength: body.codeLength, claimMode: 'code' },
       })
       return res.rows[0]
     })
@@ -110,7 +144,53 @@ export async function adhocSessionRoutes(app: FastifyInstance): Promise<void> {
       code,
       connectUrl: `${app.config.publicUrl}/connect/${code}`,
       expiresAt: created.expires_at,
+      codeLength: code.length,
+      claimMode: 'code',
     })
+  })
+
+  app.post('/adhoc-sessions/:id/email', { preHandler: [authenticate, requireTenant] }, async (request, reply) => {
+    const ctx = request.tenantCtx!
+    if (!roleHasPermission(ctx.orgRole, 'remote.attended')) {
+      throw AppError.forbidden('Missing permission: remote.attended', 'missing_permission')
+    }
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const body = emailSchema.parse(request.body)
+    const row = await findAdhocByCode(app.db, body.code)
+    if (!row || row.id !== id || row.tenant_id !== ctx.tenantId || row.requested_by !== request.user!.id || row.state !== 'open' || new Date(row.expires_at).getTime() <= Date.now()) {
+      throw AppError.notFound('This support code is invalid or expired.')
+    }
+    const claimToken = body.mode === 'email_link' ? newClaimToken() : null
+    await withTenant(app.db, ctx.tenantId, (client) => client.query(
+      `UPDATE adhoc_sessions
+          SET claim_mode = $2,
+              claim_token_hash = $3,
+              claim_token_used_at = NULL,
+              claim_fingerprint_hash = NULL,
+              updated_at = now()
+        WHERE id = $1 AND state = 'open'`,
+      [id, body.mode, claimToken ? hashToken(claimToken) : null],
+    ))
+    const connectUrl = claimToken
+      ? `${app.config.publicUrl}/connect/${body.code}?claimToken=${encodeURIComponent(claimToken)}`
+      : `${app.config.publicUrl}/connect/${body.code}`
+    const message = app.mailer.buildRemoteSupportMail({
+      to: body.to,
+      connectUrl,
+      code: body.code,
+      mode: body.mode,
+    })
+    const jobId = app.emailQueue.add(message)
+    await withTenant(app.db, ctx.tenantId, (client) => recordAudit(client, ctx.tenantId, {
+      actorType: 'user',
+      actorId: request.user!.id,
+      action: 'session.adhoc.email_queued',
+      objectType: 'adhoc_session',
+      objectId: id,
+      ip: request.ip,
+      payload: { recipient: body.to, jobId, mode: body.mode },
+    }))
+    return reply.code(202).send({ ok: true, jobId, mode: body.mode })
   })
 
   app.get('/adhoc-sessions', { preHandler: [authenticate, requireTenant] }, async (request, reply) => {
@@ -165,9 +245,18 @@ export async function adhocSessionRoutes(app: FastifyInstance): Promise<void> {
 /** Public routes (registered at the root, no tenant auth). */
 export async function connectRoutes(app: FastifyInstance): Promise<void> {
   app.get('/connect/:code', { config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }, async (request, reply) => {
-    const { code } = request.params as { code: string }
+    reply.header('Cache-Control', 'no-store')
+    const { code: rawCode } = request.params as { code: string }
+    const codeResult = publicCodeSchema.safeParse(rawCode)
+    if (!codeResult.success) return reply.code(404).send({ error: { code: 'not_found', message: 'This support link is invalid or expired.' } })
+    const code = codeResult.data
+    const query = request.query as { claimToken?: string }
+    const claimToken = typeof query.claimToken === 'string' ? query.claimToken : null
     const row = await findAdhocByCode(app.db, code)
     if (!row) return reply.code(404).send({ error: { code: 'not_found', message: 'This support link is invalid or expired.' } })
+    if (claimToken && (row.claim_mode !== 'email_link' || row.claim_token_used_at || hashToken(claimToken) !== row.claim_token_hash)) {
+      return reply.code(404).send({ error: { code: 'not_found', message: 'This support link is invalid or expired.' } })
+    }
     if (row.state !== 'open' || new Date(row.expires_at).getTime() <= Date.now()) {
       return reply.code(404).send({ error: { code: 'not_found', message: 'This support link is invalid or expired.' } })
     }
@@ -179,7 +268,13 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
     '/connect/:code/download',
     { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
     async (request, reply) => {
-      const { code } = request.params as { code: string }
+      reply.header('Cache-Control', 'no-store')
+      const { code: rawCode } = request.params as { code: string }
+      const codeResult = publicCodeSchema.safeParse(rawCode)
+      if (!codeResult.success) {
+        return reply.code(404).send({ error: { code: 'not_found', message: 'This support link is invalid or expired.' } })
+      }
+      const code = codeResult.data
       const row = await findAdhocByCode(app.db, code)
       if (!row || row.state !== 'open' || new Date(row.expires_at).getTime() <= Date.now()) {
         return reply
@@ -200,24 +295,61 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     '/connect/:code/claim',
-    { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
+    { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
     async (request, reply) => {
-      const { code } = request.params as { code: string }
+      reply.header('Cache-Control', 'no-store')
+      const { code: rawCode } = request.params as { code: string }
+      const codeResult = publicCodeSchema.safeParse(rawCode)
+      if (!codeResult.success) throw AppError.notFound('This support link is invalid or expired.')
+      const code = codeResult.data
       const body = claimSchema.parse(request.body)
+      const query = request.query as { claimToken?: string }
+      const claimToken = typeof query.claimToken === 'string' ? query.claimToken : null
+      const fingerprint = claimFingerprint(request)
       const row = await findAdhocByCode(app.db, code)
       if (!row) throw AppError.notFound('This support link is invalid or expired.')
       if (new Date(row.expires_at).getTime() <= Date.now()) {
         throw AppError.notFound('This support link is invalid or expired.')
       }
+      if (row.claim_mode === 'email_link') {
+        if (!claimToken || row.claim_token_used_at || hashToken(claimToken) !== row.claim_token_hash || !fingerprint) {
+          throw AppError.notFound('This secure support link is invalid or has expired.')
+        }
+        const fingerprintHash = hashToken(fingerprint)
+        if (row.claim_fingerprint_hash && row.claim_fingerprint_hash !== fingerprintHash) {
+          throw AppError.notFound('This secure support link is already bound to another device.')
+        }
+      }
 
+      const effectiveClaimToken = row.claim_mode === 'email_link' ? claimToken : null
+      const effectiveFingerprint = row.claim_mode === 'email_link' ? fingerprint : null
       const deviceToken = `deskos_dev_${randomBytes(24).toString('base64url')}`
       const claimed = await withTenant(app.db, row.tenant_id, async (client) => {
         const consumed = await client.query(
           `UPDATE adhoc_sessions
-              SET state = 'claimed', claimed_at = now(), updated_at = now()
-            WHERE id = $1 AND state = 'open' AND expires_at > now()
+              SET state = 'claimed',
+                claimed_at = now(),
+                claim_token_used_at = CASE WHEN $2::text IS NULL THEN claim_token_used_at ELSE now() END,
+                claim_fingerprint_hash = CASE
+                  WHEN $2::text IS NULL THEN claim_fingerprint_hash
+                  ELSE COALESCE(claim_fingerprint_hash, $3::text)
+                END,
+                updated_at = now()
+            WHERE id = $1
+              AND state = 'open'
+              AND expires_at > now()
+              AND (
+                claim_mode = 'code'
+                OR (
+                  claim_mode = 'email_link'
+                  AND claim_token_hash = $2
+                  AND claim_token_used_at IS NULL
+                  AND ($3::text IS NOT NULL)
+                  AND (claim_fingerprint_hash IS NULL OR claim_fingerprint_hash = $3)
+                )
+              )
            RETURNING id`,
-          [row.id],
+          [row.id, effectiveClaimToken ? hashToken(effectiveClaimToken) : null, effectiveFingerprint ? hashToken(effectiveFingerprint) : null],
         )
         if (!consumed.rowCount) throw AppError.conflict('This support link is no longer available.', 'code_unavailable')
 
@@ -225,10 +357,11 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         const device = (
           await client.query(
             `INSERT INTO devices
-               (tenant_id, name, hostname, os, os_version, arch, ip_address, agent_version, agent_token_hash, last_seen_at)
-             VALUES ($1, $2, $3, $4, $5, $6, '', '', $7, now())
+               (tenant_id, name, hostname, os, os_version, arch, ip_address, agent_version,
+                agent_token_hash, agent_token_expires_at, adhoc, last_seen_at)
+             VALUES ($1, $2, $3, $4, $5, $6, '', '', $7, $8, true, now())
              RETURNING id, name`,
-            [row.tenant_id, name, body.hostname ?? '', body.os ?? '', body.osVersion ?? '', body.arch ?? '', hashToken(deviceToken)],
+            [row.tenant_id, name, body.hostname ?? '', body.os ?? '', body.osVersion ?? '', body.arch ?? '', hashToken(deviceToken), row.expires_at],
           )
         ).rows[0]
 

@@ -7,9 +7,16 @@ import type { AiConfig } from '../../config.js'
  * isolated here so a local/self-hosted endpoint can be swapped in later and so
  * tests can drive the routes with a mock.
  */
+export interface AiGenerateOptions {
+  maxTokens?: number
+  /** Used for tenant usage accounting; never sent to the provider. */
+  operation?: string
+}
+
+
 export interface AiProvider {
   /** Generate text from one user prompt. Throws an AppError on failure. */
-  generate(prompt: string, opts?: { maxTokens?: number }): Promise<string>
+  generate(prompt: string, opts?: AiGenerateOptions): Promise<string>
 }
 
 const disabledProvider: AiProvider = {
@@ -17,7 +24,7 @@ const disabledProvider: AiProvider = {
     throw new AppError(
       503,
       'ai_disabled',
-      'AI assistant is not configured (set DESKOS_AI_ENABLED=true and DESKOS_AI_BASE_URL)',
+      'AI assistant is not configured (set REYDESK_AI_ENABLED=true and REYDESK_AI_BASE_URL; legacy DESKOS_AI_* aliases are accepted during migration)',
     )
   },
 }
@@ -31,16 +38,21 @@ export function createAiProvider(config: AiConfig): AiProvider {
 class OpenAiCompatibleProvider implements AiProvider {
   constructor(private readonly config: AiConfig) {}
 
-  async generate(prompt: string, opts?: { maxTokens?: number }): Promise<string> {
+  async generate(prompt: string, opts?: AiGenerateOptions): Promise<string> {
     const base = this.config.baseUrl.replace(/\/+$/, '')
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), this.config.timeoutMs)
     try {
-      const res = await fetch(`${base}/chat/completions`, {
+      const provider = this.config.provider ?? 'openai_compatible'
+      const isAzure = provider === 'azure_openai'
+      const endpoint = isAzure
+        ? `${base}/openai/deployments/${encodeURIComponent(this.config.model)}/chat/completions?api-version=${encodeURIComponent(this.config.azureApiVersion ?? '2024-10-21')}`
+        : `${base}/chat/completions`
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          ...(this.config.apiKey ? { authorization: `Bearer ${this.config.apiKey}` } : {}),
+          ...(this.config.apiKey ? (isAzure ? { 'api-key': this.config.apiKey } : { authorization: `Bearer ${this.config.apiKey}` }) : {}),
         },
         body: JSON.stringify({
           model: this.config.model,

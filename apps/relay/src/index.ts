@@ -36,6 +36,8 @@ export interface RelayRuntimeOptions {
   maxMessageBytes?: number
   roomMemberTtlMs?: number
   memberHeartbeatMs?: number
+  /** Browser origins allowed to open relay WebSockets; requests without Origin (native agents) remain allowed. */
+  allowedOrigins?: string[]
 }
 
 export interface RelayRuntimeStats {
@@ -53,18 +55,37 @@ export interface RelayRuntime {
 }
 
 const defaultPort = Number(process.env.RELAY_PORT ?? process.env.PORT ?? 4100)
+
+function setting(name: string): string | undefined {
+  return process.env[name] ?? process.env[name.replace(/^REYDESK_/, 'DESKOS_')]
+}
 const defaultHost = process.env.HOST ?? '0.0.0.0'
+
+function relaySecretFromEnvironment(): string {
+  const secret = setting('REYDESK_RELAY_SECRET')?.trim()
+  if (secret) {
+    if (process.env.NODE_ENV === 'production' && secret.length < 32) {
+      throw new Error('DESKOS_RELAY_SECRET must be at least 32 characters in production')
+    }
+    return secret
+  }
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('DESKOS_RELAY_SECRET must be set in production')
+  }
+  return 'reydesk-relay-dev-only'
+}
 
 export async function createRelayRuntime(options: RelayRuntimeOptions): Promise<RelayRuntime> {
   const relaySecret = options.relaySecret
   const redisUrl = options.redisUrl ?? ''
-  const redisPrefix = options.redisPrefix ?? 'deskos:relay'
+  const redisPrefix = options.redisPrefix ?? 'reydesk:relay'
   const maxConnections = Math.max(1, options.maxConnections ?? 10_000)
   const maxPeersPerSession = Math.max(2, options.maxPeersPerSession ?? 4)
   const maxMessagesPerSecond = Math.max(50, options.maxMessagesPerSecond ?? 1_000)
   const maxMessageBytes = Math.max(4_096, options.maxMessageBytes ?? 64 * 1024)
   const roomMemberTtlMs = Math.max(10_000, options.roomMemberTtlMs ?? 60_000)
   const memberHeartbeatMs = Math.max(2_000, options.memberHeartbeatMs ?? 15_000)
+  const allowedOrigins = (options.allowedOrigins ?? []).map((origin) => origin.trim()).filter(Boolean)
 
   const rooms = new Map<string, Set<Peer>>()
   const usedTickets = new InMemoryTicketStore()
@@ -83,6 +104,17 @@ export async function createRelayRuntime(options: RelayRuntimeOptions): Promise<
 
   const app = Fastify({
     logger: { level: process.env.LOG_LEVEL ?? 'info' },
+  })
+
+  app.addHook('onRequest', async (request, reply) => {
+    if (!request.url.startsWith('/ws') || allowedOrigins.length === 0) return
+    const origin = request.headers.origin
+    // Native endpoint agents do not send Origin. Browser peers must be from
+    // an explicitly configured console origin to reduce token abuse from an
+    // unrelated website.
+    if (origin && !allowedOrigins.includes(origin)) {
+      return reply.code(403).send({ error: 'origin_not_allowed' })
+    }
   })
 
   function distributedRegistryEnabled(): boolean {
@@ -387,7 +419,7 @@ export async function createRelayRuntime(options: RelayRuntimeOptions): Promise<
 
   app.get('/healthz', async () => ({
     status: 'ok',
-    service: 'deskos-broker',
+    service: 'reydesk-relay',
     sessions: rooms.size,
     connections: activeConnections,
     capacity: maxConnections,
@@ -399,7 +431,7 @@ export async function createRelayRuntime(options: RelayRuntimeOptions): Promise<
     const ready = !production || distributedRegistryEnabled()
     return reply.code(ready ? 200 : 503).send({
       status: ready ? 'ok' : 'not_ready',
-      service: 'deskos-broker',
+      service: 'reydesk-relay',
       reason: ready ? undefined : 'redis_registry_not_configured',
       registry: distributedRegistryEnabled() ? 'redis' : 'in-memory',
     })
@@ -456,30 +488,43 @@ export async function createRelayRuntime(options: RelayRuntimeOptions): Promise<
 
 export async function buildRelayApp(): Promise<FastifyInstance> {
   const runtime = await createRelayRuntime({
-    relaySecret: process.env.DESKOS_RELAY_SECRET ?? 'deskos-relay-dev-only',
+    relaySecret: relaySecretFromEnvironment(),
     redisUrl: process.env.REDIS_URL ?? '',
-    redisPrefix: process.env.RELAY_REDIS_PREFIX ?? 'deskos:relay',
+    redisPrefix: process.env.RELAY_REDIS_PREFIX ?? 'reydesk:relay',
     maxConnections: Math.max(1, Number(process.env.RELAY_MAX_CONNECTIONS ?? 10_000)),
     maxPeersPerSession: Math.max(2, Number(process.env.RELAY_MAX_PEERS_PER_SESSION ?? 4)),
     maxMessagesPerSecond: Math.max(50, Number(process.env.RELAY_MAX_MESSAGES_PER_SECOND ?? 1_000)),
     maxMessageBytes: Math.max(4_096, Number(process.env.RELAY_MAX_MESSAGE_BYTES ?? 64 * 1024)),
     roomMemberTtlMs: Math.max(10_000, Number(process.env.RELAY_MEMBER_TTL_MS ?? 60_000)),
     memberHeartbeatMs: Math.max(2_000, Number(process.env.RELAY_MEMBER_HEARTBEAT_MS ?? 15_000)),
+    allowedOrigins: relayAllowedOrigins(),
   })
   return runtime.app
 }
 
+function relayAllowedOrigins(): string[] {
+  const origins = (process.env.RELAY_ALLOWED_ORIGINS ?? '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+  if (process.env.NODE_ENV === 'production' && origins.length === 0) {
+    throw new Error('RELAY_ALLOWED_ORIGINS must be configured in production')
+  }
+  return origins
+}
+
 async function start(): Promise<void> {
   const runtime = await createRelayRuntime({
-    relaySecret: process.env.DESKOS_RELAY_SECRET ?? 'deskos-relay-dev-only',
+    relaySecret: relaySecretFromEnvironment(),
     redisUrl: process.env.REDIS_URL ?? '',
-    redisPrefix: process.env.RELAY_REDIS_PREFIX ?? 'deskos:relay',
+    redisPrefix: process.env.RELAY_REDIS_PREFIX ?? 'reydesk:relay',
     maxConnections: Math.max(1, Number(process.env.RELAY_MAX_CONNECTIONS ?? 10_000)),
     maxPeersPerSession: Math.max(2, Number(process.env.RELAY_MAX_PEERS_PER_SESSION ?? 4)),
     maxMessagesPerSecond: Math.max(50, Number(process.env.RELAY_MAX_MESSAGES_PER_SECOND ?? 1_000)),
     maxMessageBytes: Math.max(4_096, Number(process.env.RELAY_MAX_MESSAGE_BYTES ?? 64 * 1024)),
     roomMemberTtlMs: Math.max(10_000, Number(process.env.RELAY_MEMBER_TTL_MS ?? 60_000)),
     memberHeartbeatMs: Math.max(2_000, Number(process.env.RELAY_MEMBER_HEARTBEAT_MS ?? 15_000)),
+    allowedOrigins: relayAllowedOrigins(),
   })
   await runtime.connectRedis()
   const shutdown = async () => {

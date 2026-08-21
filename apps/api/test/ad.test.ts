@@ -63,7 +63,7 @@ describe('Active Directory integration', () => {
       method: 'POST',
       url: '/api/v1/ad/connections',
       headers: authHeaders(owner),
-      payload: { name: 'Corp', host: 'dc.corp.local', port: 636, useSsl: true, baseDn: 'DC=corp,DC=local', bindDn: 'CN=DeskOS', bindPassword: 'super-secret-bind' },
+      payload: { name: 'Corp', host: 'dc.corp.local', port: 636, useSsl: true, baseDn: 'DC=corp,DC=local', bindDn: 'CN=ReyDesk', bindPassword: 'super-secret-bind' },
     })
     expect(res.statusCode).toBe(201)
     connectionId = res.json().id

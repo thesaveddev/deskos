@@ -5,8 +5,10 @@ import { recordAudit } from '../../core/audit.js'
 import { AppError } from '../../core/errors.js'
 import { checkUpdate } from '../../core/update.js'
 import { withTenant } from '../../db/pool.js'
-import { evaluateDevice } from '../dex/dex.js'
-import { evaluateMonitoringRules } from '../monitoring/monitoring.js'
+import { evaluateDevice, recordExperienceEvent } from '../dex/dex.js'
+import { evaluateAnomalies, evaluateMonitoringRules } from '../monitoring/monitoring.js'
+import { notify } from '../../core/notify.js'
+import { firstOwner } from './alerts.js'
 import { authenticateAgent, hashToken } from './device-auth.js'
 import '../../types.js'
 
@@ -20,6 +22,7 @@ const enrolSchema = z.object({
   arch: z.string().max(40).optional(),
   ip: z.string().max(64).optional(),
   agentVersion: z.string().max(40).optional(),
+  deviceType: z.enum(['laptop', 'workstation', 'server', 'network_device', 'mobile', 'other']).optional(),
 })
 
 const heartbeatSchema = z.object({}).strict()
@@ -31,12 +34,26 @@ const inventorySchema = z.object({
   arch: z.string().max(40).optional(),
   ip: z.string().max(64).optional(),
   agentVersion: z.string().max(40).optional(),
+  deviceType: z.enum(['laptop', 'workstation', 'server', 'network_device', 'mobile', 'other']).optional(),
+  powerSource: z.string().max(40).optional(),
+  batteryPct: z.number().min(0).max(100).nullable().optional(),
+  batteryHealthPct: z.number().min(0).max(100).nullable().optional(),
+  uptimeSeconds: z.number().int().min(0).max(2_000_000_000).optional(),
 })
 
 const metricsSchema = z.object({
   cpuPct: z.number().min(0).max(100),
   memPct: z.number().min(0).max(100),
   diskPct: z.number().min(0).max(100),
+  diskFreeBytes: z.number().int().min(0).optional(),
+  networkLatencyMs: z.number().min(0).max(60_000).nullable().optional(),
+  networkPacketLossPct: z.number().min(0).max(100).nullable().optional(),
+  batteryPct: z.number().min(0).max(100).nullable().optional(),
+  batteryHealthPct: z.number().min(0).max(100).nullable().optional(),
+  uptimeSeconds: z.number().int().min(0).max(2_000_000_000).optional(),
+  processCount: z.number().int().min(0).max(1_000_000).optional(),
+  serviceStates: z.record(z.string().max(120), z.enum(['running', 'stopped', 'paused', 'unknown'])).optional(),
+  reason: z.string().max(40).optional(),
 })
 
 const updateTelemetrySchema = z.object({
@@ -81,6 +98,26 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
     const deviceToken = `deskos_dev_${randomBytes(24).toString('base64url')}`
 
     const created = await withTenant(app.db, tenantId, async (client) => {
+      // Fleet deployment scripts can be retried by Intune/GPO. Reuse the
+      // existing endpoint identity when the same hostname checks in instead
+      // of creating a second or third device record.
+      if (credentialType === 'fleet_token' && body.hostname && body.name) {
+        const existing = (await client.query(
+          `SELECT id, name FROM devices WHERE tenant_id = $1 AND lower(hostname) = lower($2) AND lower(name) = lower($3) ORDER BY updated_at DESC LIMIT 1`,
+          [tenantId, body.hostname, body.name],
+        )).rows[0]
+        if (existing) {
+          await client.query(
+            `UPDATE devices SET hostname = COALESCE(NULLIF($2, ''), hostname), os = COALESCE(NULLIF($3, ''), os),
+                    os_version = COALESCE(NULLIF($4, ''), os_version), arch = COALESCE(NULLIF($5, ''), arch),
+                    ip_address = COALESCE(NULLIF($6, ''), ip_address), agent_version = COALESCE(NULLIF($7, ''), agent_version),
+                    device_type = COALESCE(NULLIF($8, ''), device_type), agent_token_hash = $9, last_seen_at = now(), updated_at = now()
+              WHERE id = $1`,
+            [existing.id, body.hostname ?? '', body.os ?? '', body.osVersion ?? '', body.arch ?? '', body.ip ?? '', body.agentVersion ?? '', body.deviceType ?? '', hashToken(deviceToken)],
+          )
+          return existing
+        }
+      }
       if (credentialType === 'enrol_code') {
         const consumed = await client.query(
           `UPDATE tenants
@@ -97,12 +134,12 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
       const name = body.name ?? body.hostname ?? 'Unnamed device'
       const res = await client.query(
         `INSERT INTO devices
-           (tenant_id, name, hostname, os, os_version, arch, ip_address, agent_version, agent_token_hash, last_seen_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
+           (tenant_id, name, hostname, os, os_version, arch, ip_address, agent_version, device_type, agent_token_hash, last_seen_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
          RETURNING id, name`,
         [
           tenantId, name, body.hostname ?? '', body.os ?? '', body.osVersion ?? '',
-          body.arch ?? '', body.ip ?? '', body.agentVersion ?? '', hashToken(deviceToken),
+          body.arch ?? '', body.ip ?? '', body.agentVersion ?? '', body.deviceType ?? 'workstation', hashToken(deviceToken),
         ],
       )
       await recordAudit(client, tenantId, {
@@ -116,10 +153,12 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
       return res.rows[0]
     })
 
+    const tenantSettings = (await app.db.query('SELECT settings FROM tenants WHERE id = $1', [tenantId])).rows[0]?.settings ?? {}
+    const heartbeatIntervalSec = Number(tenantSettings.endpoints?.heartbeat_interval_seconds ?? 30)
     return reply.code(201).send({
       device: { id: created.id, name: created.name },
       deviceToken,
-      heartbeatIntervalSec: 30,
+      heartbeatIntervalSec,
     })
   })
 
@@ -136,11 +175,16 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
         [ctx.deviceId, ctx.tenantId],
       )
       if (!res.rows[0]) throw AppError.notFound('Device not found')
+      const lastPresence = (await client.query('SELECT status FROM device_presence_events WHERE device_id = $1 ORDER BY observed_at DESC LIMIT 1', [ctx.deviceId])).rows[0]
+      if (lastPresence?.status !== 'online') {
+        await client.query(`INSERT INTO device_presence_events (tenant_id, device_id, status, source) VALUES ($1, $2, 'online', 'heartbeat')`, [ctx.tenantId, ctx.deviceId])
+      }
       // Resolve any open offline alert for this device (back online).
       const alerts = await client.query(
         `UPDATE device_alerts SET resolved_at = now()
           WHERE device_id = $1 AND kind = 'offline' AND resolved_at IS NULL
-         RETURNING ticket_id`,
+         RETURNING ticket_id, availability_policy_id`,
+
         [ctx.deviceId],
       )
       for (const alert of alerts.rows) {
@@ -150,6 +194,13 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
              VALUES ($1, $2, 'system_event', 'internal', $3, $4::jsonb)`,
             [ctx.tenantId, alert.ticket_id, 'Device is back online (heartbeat received).', JSON.stringify({ event: 'device_back_online' })],
           )
+        }
+        const policy = alert.availability_policy_id
+          ? (await client.query('SELECT recovery_notifications FROM device_availability_policies WHERE id = $1', [alert.availability_policy_id])).rows[0]
+          : { recovery_notifications: true }
+        if (policy?.recovery_notifications !== false) {
+          const ownerId = await firstOwner(client, ctx.tenantId)
+          if (ownerId) await notify(client, ctx.tenantId, { userId: ownerId, kind: 'device.alert', subjectType: 'device', subjectId: ctx.deviceId, body: 'Device is back online and has reported again.' })
         }
       }
       return res.rows[0]
@@ -173,6 +224,11 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
         ['arch', 'arch'],
         ['ip_address', 'ip'],
         ['agent_version', 'agentVersion'],
+        ['device_type', 'deviceType'],
+        ['power_source', 'powerSource'],
+        ['battery_pct', 'batteryPct'],
+        ['battery_health_pct', 'batteryHealthPct'],
+        ['uptime_seconds', 'uptimeSeconds'],
       ] as const) {
         const value = body[key]
         if (value !== undefined) {
@@ -182,7 +238,7 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
       }
       values.push(ctx.deviceId, ctx.tenantId)
       const res = await client.query(
-        `UPDATE devices SET ${sets.length ? sets.join(', ') + ', ' : ''}updated_at = now()
+        `UPDATE devices SET ${sets.length ? sets.join(', ') + ', ' : ''}last_seen_at = now(), last_inventory_at = now(), updated_at = now()
           WHERE id = $${values.length - 1} AND tenant_id = $${values.length}
          RETURNING id, name`,
         values,
@@ -206,20 +262,36 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
       )
       if (!res.rows[0]) throw AppError.notFound('Device not found')
       await client.query(
-        `INSERT INTO device_metrics (tenant_id, device_id, cpu_pct, mem_pct, disk_pct)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [ctx.tenantId, ctx.deviceId, body.cpuPct, body.memPct, body.diskPct],
+        `INSERT INTO device_metrics
+           (tenant_id, device_id, cpu_pct, mem_pct, disk_pct, disk_free_bytes, network_latency_ms, network_packet_loss_pct, battery_pct, battery_health_pct, uptime_seconds, process_count, service_states, recorded_reason)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14)`,
+        [ctx.tenantId, ctx.deviceId, body.cpuPct, body.memPct, body.diskPct, body.diskFreeBytes ?? null, body.networkLatencyMs ?? null, body.networkPacketLossPct ?? null, body.batteryPct ?? null, body.batteryHealthPct ?? null, body.uptimeSeconds ?? null, body.processCount ?? null, JSON.stringify(body.serviceStates ?? {}), body.reason ?? 'periodic'],
       )
     })
 
     // Telemetry must remain reliable even if an individual monitoring rule is
     // malformed or its ticket action cannot be created.
     try {
-      await withTenant(app.db, ctx.tenantId, (client) => evaluateMonitoringRules(client, ctx.tenantId, ctx.deviceId, {
-        cpu_pct: body.cpuPct,
-        mem_pct: body.memPct,
-        disk_pct: body.diskPct,
-      }))
+      await withTenant(app.db, ctx.tenantId, async (client) => {
+        await evaluateMonitoringRules(client, ctx.tenantId, ctx.deviceId, {
+          cpu_pct: body.cpuPct,
+          mem_pct: body.memPct,
+          disk_pct: body.diskPct,
+          battery_pct: body.batteryPct,
+          battery_health_pct: body.batteryHealthPct,
+          network_latency_ms: body.networkLatencyMs,
+          network_packet_loss_pct: body.networkPacketLossPct,
+          uptime_seconds: body.uptimeSeconds,
+          process_count: body.processCount,
+          service_states: body.serviceStates,
+        })
+        await evaluateAnomalies(client, ctx.tenantId, ctx.deviceId, {
+          cpu_pct: body.cpuPct,
+          mem_pct: body.memPct,
+          disk_pct: body.diskPct,
+          network_latency_ms: body.networkLatencyMs,
+        })
+      })
     } catch (err) {
       request.log.warn({ err, deviceId: ctx.deviceId }, 'monitoring rule evaluation failed')
     }
@@ -231,6 +303,28 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
       request.log.warn({ err, deviceId: ctx.deviceId }, 'dex evaluation failed')
     }
 
+    return { ok: true }
+  })
+
+  // -- DEX application experience events ------------------------------------
+  // These are raw real-user-monitoring facts; scoring remains best-effort and
+  // can be recomputed later when an organization changes its weights.
+  app.post('/agent/dex/events', { preHandler: [authenticateAgent] }, async (request) => {
+    const body = z.object({
+      userId: z.string().uuid().nullable().optional(),
+      applicationName: z.string().trim().min(1).max(200),
+      eventType: z.enum(['launch', 'crash', 'hang', 'close', 'login']),
+      durationMs: z.number().int().min(0).max(86_400_000).nullable().optional(),
+      successful: z.boolean().nullable().optional(),
+      metadata: z.record(z.unknown()).optional(),
+    }).parse(request.body)
+    const ctx = request.deviceCtx!
+    await withTenant(app.db, ctx.tenantId, (client) => recordExperienceEvent(client, ctx.tenantId, ctx.deviceId, body))
+    try {
+      await withTenant(app.db, ctx.tenantId, (client) => evaluateDevice(client, ctx.tenantId, ctx.deviceId))
+    } catch (err) {
+      request.log.warn({ err, deviceId: ctx.deviceId }, 'dex experience evaluation failed')
+    }
     return { ok: true }
   })
 

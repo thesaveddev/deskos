@@ -4,10 +4,14 @@ import { recordAudit } from '../../core/audit.js'
 import { notify } from '../../core/notify.js'
 import { DEFAULT_SLA_MATRIX } from '../tenants/defaults.js'
 import { computeDeadlines } from '../tickets/sla.js'
+import { checkDeviceAvailabilityForTenant } from './availability.js'
 
 export interface DeviceAlertOpts {
   offlineSec: number
   lowDiskPct: number
+  /** Offline conditions may be visible as alerts without creating tickets. */
+  createTickets?: boolean
+  offlineCreateTickets?: boolean
 }
 
 export interface AlertCheckResult {
@@ -58,7 +62,7 @@ async function defaultPolicy(client: DbClient, tenantId: string): Promise<Defaul
 export async function createAutomationTicket(
   client: DbClient,
   tenantId: string,
-  opts: { subject: string; body: string; deviceId: string; requesterId: string; priority?: 'p1' | 'p2' | 'p3' | 'p4' },
+  opts: { subject: string; body: string; deviceId: string; requesterId: string; priority?: 'p1' | 'p2' | 'p3' | 'p4'; teamId?: string },
 ): Promise<string> {
   const policy = (await defaultPolicy(client, tenantId)) ?? {
     id: 'none',
@@ -80,12 +84,12 @@ export async function createAutomationTicket(
 
   const res = await client.query(
     `INSERT INTO tickets
-       (tenant_id, number, type, status, priority, subject, requester_id, device_id, sla_policy_id, source, tags, due_response_at, due_resolution_at)
-     VALUES ($1, $2, 'incident', 'new', $3, $4, $5, $6, $7, 'api', '{automation,device}', $8, $9)
+       (tenant_id, number, type, status, priority, subject, requester_id, team_id, device_id, sla_policy_id, source, tags, due_response_at, due_resolution_at)
+     VALUES ($1, $2, 'incident', 'new', $3, $4, $5, $6, $7, $8, 'api', '{automation,device}', $9, $10)
      RETURNING id`,
     [
       tenantId, number, priority, opts.subject, opts.requesterId,
-      opts.deviceId, policy.id === 'none' ? null : policy.id, dueResponseAt, dueResolutionAt,
+      opts.teamId ?? null, opts.deviceId, policy.id === 'none' ? null : policy.id, dueResponseAt, dueResolutionAt,
     ],
   )
   const ticketId = res.rows[0].id as string
@@ -108,7 +112,7 @@ export async function createAutomationTicket(
 async function raiseAlert(
   client: DbClient,
   tenantId: string,
-  opts: { deviceId: string; deviceName: string; kind: 'offline' | 'low_disk'; severity: 'warning' | 'critical'; message: string; body: string },
+  opts: { deviceId: string; deviceName: string; kind: 'offline' | 'low_disk'; severity: 'warning' | 'critical'; message: string; body: string; createTicket?: boolean },
 ): Promise<number> {
   const ownerId = await firstOwner(client, tenantId)
   if (!ownerId) return 0 // no active owner -> nothing to notify or attribute the ticket to
@@ -122,14 +126,17 @@ async function raiseAlert(
 
   const subject =
     opts.kind === 'offline' ? `Device offline: ${opts.deviceName}` : `Low disk on ${opts.deviceName}`
-  const ticketId = await createAutomationTicket(client, tenantId, {
-    subject,
-    body: opts.body,
-    deviceId: opts.deviceId,
-    requesterId: ownerId,
-  })
+  let ticketId: string | null = null
+  if (opts.createTicket !== false) {
+    ticketId = await createAutomationTicket(client, tenantId, {
+      subject,
+      body: opts.body,
+      deviceId: opts.deviceId,
+      requesterId: ownerId,
+    })
+    await client.query('UPDATE device_alerts SET ticket_id = $1 WHERE id = $2', [ticketId, alertId])
+  }
 
-  await client.query('UPDATE device_alerts SET ticket_id = $1 WHERE id = $2', [ticketId, alertId])
   await notify(client, tenantId, {
     userId: ownerId,
     kind: 'device.alert',
@@ -149,29 +156,17 @@ export async function checkDeviceAlertsForTenant(
   return withTenant(pool, tenantId, async (client) => {
     const result: AlertCheckResult = { offline: 0, lowDisk: 0, tickets: 0, resolved: 0 }
 
-    // -- Offline detection --------------------------------------------------
-    const offline = await client.query(
-      `SELECT d.id, d.name
-         FROM devices d
-        WHERE d.tenant_id = $1
-          AND d.last_seen_at IS NOT NULL
-          AND d.last_seen_at < now() - make_interval(secs => $2)
-          AND NOT EXISTS (
-            SELECT 1 FROM device_alerts a
-             WHERE a.device_id = d.id AND a.kind = 'offline' AND a.resolved_at IS NULL
-          )`,
-      [tenantId, opts.offlineSec],
-    )
-    for (const device of offline.rows) {
-      result.offline += await raiseAlert(client, tenantId, {
-        deviceId: device.id,
-        deviceName: device.name,
-        kind: 'offline',
-        severity: 'warning',
-        message: `${device.name} has not reported for ${opts.offlineSec}s`,
-        body: `Device ${device.name} went offline (no heartbeat for ${opts.offlineSec}s). A support ticket was created automatically.`,
-      })
-    }
+    // -- Policy-driven availability ----------------------------------------
+    // This is intentionally isolated from telemetry ingestion. Policies can
+    // suppress a laptop on battery or delay ticket creation without affecting
+    // the heartbeat/metrics path.
+    const availability = await checkDeviceAvailabilityForTenant(client, tenantId, {
+      offlineSec: opts.offlineSec,
+      offlineCreateTickets: opts.offlineCreateTickets ?? opts.createTickets !== false,
+    })
+    result.offline += availability.offline
+    result.tickets += availability.tickets
+    result.resolved += availability.resolved
 
     // -- Low disk (latest metric per device) --------------------------------
     const lowDisk = await client.query(
@@ -195,43 +190,31 @@ export async function checkDeviceAlertsForTenant(
         kind: 'low_disk',
         severity: 'critical',
         message: `${device.name} disk usage at ${device.disk_pct}% (>= ${opts.lowDiskPct}%)`,
-        body: `Device ${device.name} is at ${device.disk_pct}% disk usage. A support ticket was created automatically.`,
+        body: `Device ${device.name} is at ${device.disk_pct}% disk usage.${opts.createTickets === false ? ' An alert was recorded without opening a ticket.' : ' A support ticket was created automatically.'}`,
+        createTicket: opts.createTickets !== false,
       })
     }
 
-    // -- Back online: resolve open offline alerts ---------------------------
-    const backOnline = await client.query(
-      `UPDATE device_alerts a
-          SET resolved_at = now()
-         FROM devices d
-        WHERE a.device_id = d.id AND a.kind = 'offline' AND a.resolved_at IS NULL
-          AND d.last_seen_at >= now() - make_interval(secs => $1)
-        RETURNING a.id, a.ticket_id, a.device_id, d.name`,
-      [opts.offlineSec],
-    )
-    for (const alert of backOnline.rows) {
-      result.resolved += 1
-      if (alert.ticket_id) {
-        await client.query(
-          `INSERT INTO ticket_threads (tenant_id, ticket_id, kind, visibility, body, meta)
-           VALUES ($1, $2, 'system_event', 'internal', $3, $4::jsonb)`,
-          [tenantId, alert.ticket_id, `Device ${alert.name} is back online.`, JSON.stringify({ event: 'device_back_online' })],
-        )
-      }
-    }
-
-    result.tickets = result.offline + result.lowDisk
+    result.tickets += result.lowDisk
     return result
   })
 }
 
 /** Sweep every tenant (tenant discovery uses the global tenants table, no RLS). */
 export async function checkAllDeviceAlerts(pool: DbPool, opts: DeviceAlertOpts): Promise<AlertCheckResult> {
-  const { rows } = await pool.query('SELECT id FROM tenants')
+  const { rows } = await pool.query('SELECT id, settings FROM tenants')
   const total: AlertCheckResult = { offline: 0, lowDisk: 0, tickets: 0, resolved: 0 }
   for (const tenant of rows) {
     try {
-      const r = await checkDeviceAlertsForTenant(pool, tenant.id, opts)
+      const settings = tenant.settings ?? {}
+      const configuredMinutes = Number(settings.endpoints?.offline_after_minutes)
+      const tenantOpts: DeviceAlertOpts = {
+        ...opts,
+        offlineSec: Number.isFinite(configuredMinutes) && configuredMinutes >= 1 ? Math.round(configuredMinutes * 60) : opts.offlineSec,
+        createTickets: settings.monitoring?.create_tickets_by_default !== false,
+        offlineCreateTickets: settings.monitoring?.offline_ticket_mode === 'ticket' && settings.monitoring?.create_tickets_by_default !== false,
+      }
+      const r = await checkDeviceAlertsForTenant(pool, tenant.id, tenantOpts)
       total.offline += r.offline
       total.lowDisk += r.lowDisk
       total.tickets += r.tickets

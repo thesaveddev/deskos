@@ -49,6 +49,14 @@ export interface PollResult {
   errors: number
 }
 
+export interface OutboundEmailStatus {
+  enabled: boolean
+  host: string | null
+  port: number
+  fromConfigured: boolean
+  queue: { sent: number; failed: number; dead: number; pending: number; processing: number; total: number }
+}
+
 export function listEmailChannels(): Promise<{ channels: EmailChannel[] }> {
   return api('/email/channels')
 }
@@ -86,6 +94,10 @@ export function pollEmailChannel(id: string): Promise<PollResult> {
 
 export function getEmailStatus(): Promise<EmailStatus> {
   return api('/email/status')
+}
+
+export function getOutboundEmailStatus(): Promise<OutboundEmailStatus> {
+  return api('/email/outbound/status')
 }
 
 export function pollAllEmailChannels(): Promise<PollResult> {

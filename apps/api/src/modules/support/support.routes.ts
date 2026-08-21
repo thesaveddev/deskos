@@ -28,7 +28,7 @@ const updateSchema = z.object({
 
 /**
  * Support routes — /api/v1/support/*
- * Public routes for any authenticated user to submit DeskOS product issues.
+ * Public routes for any authenticated user to submit ReyDesk product issues.
  * Admin routes for platform operators to manage support tickets and view metrics.
  */
 export async function supportRoutes(app: FastifyInstance): Promise<void> {

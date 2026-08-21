@@ -25,7 +25,7 @@ describe('Developer API ecosystem', () => {
 
     const spec = res.json() as Record<string, unknown>
     expect(spec.openapi).toBe('3.1.0')
-    expect(spec.info).toMatchObject({ title: 'DeskOS Public API' })
+    expect(spec.info).toMatchObject({ title: 'ReyDesk Public API' })
 
     const components = spec.components as Record<string, { securitySchemes: Record<string, unknown> }>
     expect(components.securitySchemes.bearerAuth).toBeTruthy()

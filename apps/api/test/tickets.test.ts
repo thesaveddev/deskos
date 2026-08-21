@@ -55,6 +55,34 @@ describe('tickets', () => {
     expect(second.number).toBe(2)
   })
 
+  it('automatically assigns technician-created tickets to the creator', async () => {
+    const ticket = await createTicket(analyst, 'Assigned to the technician')
+    expect(ticket.assignee_id).toBe(analyst.userId)
+
+    const mine = await app.inject({ method: 'GET', url: '/api/v1/tickets?assignee=me', headers: authHeaders(analyst) })
+    expect(mine.statusCode).toBe(200)
+    expect(mine.json().tickets.some((item: { id: string }) => item.id === ticket.id)).toBe(true)
+  })
+
+  it('stores requester details when a technician raises a ticket on someone else’s behalf', async () => {
+    const ticket = await createTicket(owner, 'Requester details captured', {
+      requesterName: 'Jordan Adeyemi',
+      requesterEmail: 'jordan@example.com',
+      requesterPhone: '+234 800 123 4567',
+      requesterDepartment: 'Finance',
+      requesterCompany: 'Example Ltd',
+      requesterLocation: 'Lagos · Floor 2',
+    })
+    expect(ticket.ext).toMatchObject({
+      requesterName: 'Jordan Adeyemi',
+      requesterEmail: 'jordan@example.com',
+      requesterPhone: '+234 800 123 4567',
+      requesterDepartment: 'Finance',
+      requesterCompany: 'Example Ltd',
+      requesterLocation: 'Lagos · Floor 2',
+    })
+  })
+
   it('links tickets to tenant devices and returns device context', async () => {
     const deviceId = await withTenant(app.db, owner.tenantId!, (client) =>
       client
@@ -90,14 +118,21 @@ describe('tickets', () => {
     expect(res.statusCode).toBe(404)
   })
 
-  it('lists tickets with filters', async () => {
+  it('lists tickets with filters and counts all actionable states', async () => {
     const all = await app.inject({ method: 'GET', url: '/api/v1/tickets', headers: authHeaders(owner) })
     expect(all.statusCode).toBe(200)
     expect(all.json().tickets.length).toBeGreaterThanOrEqual(2)
 
-    const mine = await app.inject({ method: 'GET', url: '/api/v1/tickets?assignee=me', headers: authHeaders(analyst) })
+    const openPage = await app.inject({ method: 'GET', url: '/api/v1/tickets?open=true&limit=1', headers: authHeaders(owner) })
+    expect(openPage.statusCode).toBe(200)
+    expect(openPage.json().total).toBeGreaterThanOrEqual(2)
+    expect(openPage.json().tickets).toHaveLength(1)
+    expect(['resolved', 'closed']).not.toContain(openPage.json().tickets[0].status)
+
+    const mine = await app.inject({ method: 'GET', url: '/api/v1/tickets?assignee=me&open=true', headers: authHeaders(analyst) })
     expect(mine.statusCode).toBe(200)
-    expect(mine.json().tickets).toHaveLength(0)
+    expect(mine.json().tickets).toHaveLength(1)
+    expect(mine.json().tickets[0].assignee_id).toBe(analyst.userId)
   })
 
   it('public reply sets first response and moves new → open', async () => {

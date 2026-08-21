@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 
-/** OAuth scope → DeskOS permission. Tokens carry resolved permissions. */
+/** OAuth scope → ReyDesk permission. Tokens carry resolved permissions. */
 export const SCOPE_PERMISSIONS: Record<string, string> = {
   'tickets:read': 'ticket.read',
   'tickets:write': 'ticket.write',

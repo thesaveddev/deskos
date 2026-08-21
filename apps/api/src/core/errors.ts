@@ -3,6 +3,7 @@ export interface ErrorBody {
     code: string
     message: string
     denied_reason?: string
+    details?: Record<string, unknown>
   }
 }
 
@@ -10,13 +11,15 @@ export class AppError extends Error {
   readonly statusCode: number
   readonly code: string
   readonly deniedReason?: string
+  readonly details?: Record<string, unknown>
 
-  constructor(statusCode: number, code: string, message: string, deniedReason?: string) {
+  constructor(statusCode: number, code: string, message: string, deniedReason?: string, details?: Record<string, unknown>) {
     super(message)
     this.name = 'AppError'
     this.statusCode = statusCode
     this.code = code
     this.deniedReason = deniedReason
+    this.details = details
   }
 
   static badRequest(message: string, code = 'bad_request'): AppError {
@@ -48,6 +51,7 @@ export function toErrorBody(err: unknown): { statusCode: number; body: ErrorBody
           code: err.code,
           message: err.message,
           ...(err.deniedReason ? { denied_reason: err.deniedReason } : {}),
+          ...(err.details ? { details: err.details } : {}),
         },
       },
     }

@@ -24,12 +24,12 @@ interface Lesson {
 
 const LESSONS: Lesson[] = [
   {
-    id: 'start-here', category: 'Getting started', title: 'Start here: understand the DeskOS workspace',
-    summary: 'A short tour of the parts of DeskOS and the order in which to set up your service desk.', audience: 'Everyone', duration: '5 min',
+    id: 'start-here', category: 'Getting started', title: 'Start here: understand the ReyDesk workspace',
+    summary: 'A short tour of the parts of ReyDesk and the order in which to set up your service desk.', audience: 'Everyone', duration: '5 min',
     sections: [
-      { heading: 'What DeskOS brings together', body: 'DeskOS connects ticketing, remote support, endpoint management, monitoring, knowledge, approvals, and reporting in one workspace. A ticket can be linked to a device, a monitoring alert can create a ticket, and a remote session can be recorded in the ticket timeline.' },
-      { heading: 'The normal operating rhythm', body: 'Most teams use DeskOS in this order:', steps: ['Configure your organization, teams, staff roles, and security rules.', 'Set up ticket categories, priorities, SLAs, and escalation rules.', 'Enroll or connect the devices you support.', 'Work the ticket queue, using remote sessions and knowledge articles when needed.', 'Review reports, device health, SLA performance, and audit history.'] },
-      { heading: 'The navigation', body: 'Dashboard is your starting point. Tickets is the work queue. Devices and Sessions handle endpoint and remote support work. Knowledge base stores reusable guidance. Settings controls the organization. Learn is this guide, and Support is where you contact the DeskOS team.' },
+      { heading: 'What ReyDesk brings together', body: 'ReyDesk connects ticketing, remote support, endpoint management, monitoring, knowledge, approvals, and reporting in one workspace. A ticket can be linked to a device, a monitoring alert can create a ticket, and a remote session can be recorded in the ticket timeline.' },
+      { heading: 'The normal operating rhythm', body: 'Most teams use ReyDesk in this order:', steps: ['Configure your organization, teams, staff roles, and security rules.', 'Set up ticket categories, priorities, SLAs, and escalation rules.', 'Enroll or connect the devices you support.', 'Work the ticket queue, using remote sessions and knowledge articles when needed.', 'Review reports, device health, SLA performance, and audit history.'] },
+      { heading: 'The navigation', body: 'Dashboard is your starting point. Tickets is the work queue. Devices and Sessions handle endpoint and remote support work. Knowledge base stores reusable guidance. Settings controls the organization. Learn is this guide, and Support is where you contact the ReyDesk team.' },
     ],
     tips: ['If a menu item is not visible, your role may not have the permission required for it.', 'Use the command palette in the top bar to search tickets and quickly open common actions.', 'The lock button protects your session without signing you out.'],
     links: [{ label: 'Open dashboard', to: '/' }, { label: 'Open settings', to: '/settings' }, { label: 'Open staff management', to: '/staff' }],
@@ -108,7 +108,7 @@ const LESSONS: Lesson[] = [
   },
   {
     id: 'security', category: 'Security', title: 'Protect accounts with MFA, sessions, and approvals',
-    summary: 'Configure strong sign-in protection and understand how DeskOS guards privileged actions.', audience: 'Everyone', duration: '9 min',
+    summary: 'Configure strong sign-in protection and understand how ReyDesk guards privileged actions.', audience: 'Everyone', duration: '9 min',
     sections: [
       { heading: 'Set up MFA', body: 'Open Security settings, start authenticator setup, scan the QR code with a TOTP-compatible app, and confirm the current code. Save the recovery codes somewhere secure before finishing. Recovery codes are for account recovery, not everyday sign-in.' },
       { heading: 'Organization MFA policy', body: 'An organization can make MFA required or allow users to opt in. When MFA is required and a user has not enrolled, the sign-in flow should guide them through setup rather than leaving them locked out.' },
@@ -131,7 +131,7 @@ const LESSONS: Lesson[] = [
     links: [{ label: 'Open reports', to: '/reports' }, { label: 'Open compliance', to: '/compliance' }, { label: 'Open dashboard', to: '/' }],
   },
   {
-    id: 'mobile', category: 'Mobile app', title: 'Use DeskOS on a phone or tablet',
+    id: 'mobile', category: 'Mobile app', title: 'Use ReyDesk on a phone or tablet',
     summary: 'Find the most important mobile actions and understand what still depends on native device setup.', audience: 'Everyone', duration: '5 min',
     sections: [
       { heading: 'The mobile layout', body: 'The mobile shell puts Dashboard, Tickets, Devices, Sessions, and Settings in the bottom navigation. Less frequent pages are under More. Use the back button in the top bar when you are inside a nested page.' },
@@ -146,9 +146,9 @@ const LESSONS: Lesson[] = [
     id: 'assets', category: 'Inventory and assets', title: 'Manage assets, assignments, and the CMDB',
     summary: 'Keep physical inventory, endpoint identity, staff ownership, and ticket context connected throughout the asset lifecycle.', audience: 'Technicians, asset managers, and administrators', duration: '11 min',
     sections: [
-      { heading: 'Keep the identifiers separate', body: 'An asset tag is the human-friendly inventory label. The hostname identifies the endpoint on a network, the serial number identifies the manufacturer record, and the DeskOS device ID identifies the platform record. Keep all four when available; changing a hostname should not create a new asset.' },
+      { heading: 'Keep the identifiers separate', body: 'An asset tag is the human-friendly inventory label. The hostname identifies the endpoint on a network, the serial number identifies the manufacturer record, and the ReyDesk device ID identifies the platform record. Keep all four when available; changing a hostname should not create a new asset.' },
       { heading: 'Assign a device properly', body: 'Assign a primary user, department or team, status, reason, and expected return date. Shared devices should be assigned to a pool rather than silently attributed to the last person who logged in. Temporary replacements should be marked as temporary so they are visible during offboarding.' },
-      { heading: 'Use assignment history', body: 'DeskOS closes the previous assignment when a device is transferred or returned. The history records who had it, who performed the change, when it happened, the reason, department, notes, and audit event. This is the record to use when investigating an incident from the past.' },
+      { heading: 'Use assignment history', body: 'ReyDesk closes the previous assignment when a device is transferred or returned. The history records who had it, who performed the change, when it happened, the reason, department, notes, and audit event. This is the record to use when investigating an incident from the past.' },
       { heading: 'Tag and find physical equipment', body: 'Use an immutable tag such as ITL-LAP-000421 and print a QR or barcode label. Scanning the label should take a technician to the device, current assignment, open tickets, warranty details, health, and previous assignments. Do not reuse a tag after retirement.' },
       { heading: 'Offboard safely', body: 'Before disabling a staff member, review their active devices, returned equipment, software licences, open tickets, and last known check-in. Record the return condition and transfer each asset to its next owner or shared pool.' },
     ],
@@ -170,11 +170,11 @@ const LESSONS: Lesson[] = [
   },
   {
     id: 'calls', category: 'Communication', title: 'Use calls and ticket activity together',
-    summary: 'Connect telephony to DeskOS so outbound calls, inbound webhooks, matching, and call outcomes remain part of the service record.', audience: 'Agents and service-desk managers', duration: '7 min',
+    summary: 'Connect telephony to ReyDesk so outbound calls, inbound webhooks, matching, and call outcomes remain part of the service record.', audience: 'Agents and service-desk managers', duration: '7 min',
     sections: [
       { heading: 'Why call activity belongs in the ticket', body: 'A phone conversation often changes the next action faster than a written reply. Recording the call direction, number, provider status, duration, agent, and linked ticket prevents important decisions from disappearing into a personal call log.' },
-      { heading: 'Make an outbound call', body: 'Open a ticket or the Calls workspace, confirm the requester and number, then use click-to-call. DeskOS creates the activity and updates its status as the provider reports initiated, ringing, answered, completed, missed, or failed.' },
-      { heading: 'Handle inbound calls', body: 'Configure the provider webhook with the public callback URL and signature validation. When a call arrives, DeskOS can match the caller to a user or organization, suggest related open tickets, and let the agent attach the call to the correct record.' },
+      { heading: 'Make an outbound call', body: 'Open a ticket or the Calls workspace, confirm the requester and number, then use click-to-call. ReyDesk creates the activity and updates its status as the provider reports initiated, ringing, answered, completed, missed, or failed.' },
+      { heading: 'Handle inbound calls', body: 'Configure the provider webhook with the public callback URL and signature validation. When a call arrives, ReyDesk can match the caller to a user or organization, suggest related open tickets, and let the agent attach the call to the correct record.' },
       { heading: 'Protect telephony data', body: 'Keep provider credentials in the encrypted integration record, never in the browser or ticket body. Validate webhook signatures, restrict callback routes, and limit who can view phone numbers and call metadata.' },
     ],
     tips: ['Confirm the number before calling and respect your organization’s recording policy.', 'Write a short outcome note when a call changes the plan.', 'If automatic matching is uncertain, link the call manually rather than attaching it to the wrong ticket.'],
@@ -184,9 +184,9 @@ const LESSONS: Lesson[] = [
     id: 'notifications', category: 'Communication', title: 'Configure notifications that people can trust',
     summary: 'Choose useful email and push events, understand delivery paths, and avoid alert fatigue.', audience: 'Everyone', duration: '6 min',
     sections: [
-      { heading: 'Choose the channel for the urgency', body: 'In-app notifications are best for work already happening in DeskOS. Email is useful for durable updates and people who are not watching the queue. Push is useful for time-sensitive attention on a phone or desktop, but should not be the only path for critical operational events.' },
+      { heading: 'Choose the channel for the urgency', body: 'In-app notifications are best for work already happening in ReyDesk. Email is useful for durable updates and people who are not watching the queue. Push is useful for time-sensitive attention on a phone or desktop, but should not be the only path for critical operational events.' },
       { heading: 'Keep preferences user-controlled', body: 'Users should be able to choose which events they receive where the organization policy permits. Managers can set defaults for team events, while security and access notifications should remain difficult to suppress.' },
-      { heading: 'Understand email delivery', body: 'DeskOS places outbound messages on a queue, retries transient failures, and uses branded HTML with a plain-text alternative. Production deployments need a real SMTP provider, verified sender identity, DNS authentication, and monitoring for bounces and complaints.' },
+      { heading: 'Understand email delivery', body: 'ReyDesk places outbound messages on a queue, retries transient failures, and uses branded HTML with a plain-text alternative. Production deployments need a real SMTP provider, verified sender identity, DNS authentication, and monitoring for bounces and complaints.' },
       { heading: 'Test push deliberately', body: 'Grant browser or native permission from Notification settings, register the device, and send a test. A successful browser subscription does not prove that a native mobile build has its platform credentials or that every device will receive a notification.' },
     ],
     tips: ['Do not send every low-priority telemetry event as push.', 'When debugging delivery, record the event ID and inspect queue and provider logs.', 'Treat email addresses, device subscriptions, and notification content as personal data.'],
@@ -206,10 +206,10 @@ const LESSONS: Lesson[] = [
     links: [{ label: 'Staff management', to: '/staff' }, { label: 'Settings', to: '/settings' }, { label: 'Billing', to: '/billing' }],
   },
   {
-    id: 'integrations', category: 'Integrations', title: 'Connect DeskOS to the rest of your stack',
+    id: 'integrations', category: 'Integrations', title: 'Connect ReyDesk to the rest of your stack',
     summary: 'Use webhooks, the API, marketplace apps, and directory integration without weakening tenant or secret boundaries.', audience: 'Administrators and developers', duration: '10 min',
     sections: [
-      { heading: 'Start with an integration purpose', body: 'Write down what system of record should own each object. For example, a directory may own staff identity, DeskOS may own tickets, and a monitoring platform may publish alerts. Clear ownership prevents sync loops and conflicting edits.' },
+      { heading: 'Start with an integration purpose', body: 'Write down what system of record should own each object. For example, a directory may own staff identity, ReyDesk may own tickets, and a monitoring platform may publish alerts. Clear ownership prevents sync loops and conflicting edits.' },
       { heading: 'Use webhooks for events', body: 'Webhooks are useful for ticket creation, status changes, sessions, and device events. Use an HTTPS endpoint, verify signatures, make your receiver idempotent, and return quickly before processing heavier work from a queue.' },
       { heading: 'Use the API for controlled reads and writes', body: 'Create a dedicated client with the smallest scopes possible. Store the secret in a vault, rotate it, log request IDs rather than tokens, and apply tenant-aware filtering to every integration workflow.' },
       { heading: 'Directory and SSO', body: 'Active Directory or Entra integration can reduce duplicate user administration, but it does not remove the need to review roles, teams, MFA policy, and offboarding. Test mapping with a small group before a full synchronization.' },
@@ -219,7 +219,7 @@ const LESSONS: Lesson[] = [
     links: [{ label: 'Integration settings', to: '/settings/integrations' }, { label: 'Developer API', to: '/api-docs' }, { label: 'Marketplace', to: '/marketplace' }],
   },
   {
-    id: 'production', category: 'Deployment and operations', title: 'Prepare DeskOS for production',
+    id: 'production', category: 'Deployment and operations', title: 'Prepare ReyDesk for production',
     summary: 'A release checklist for hosting, secrets, networking, storage, backups, observability, and capacity.', audience: 'Platform owners and deployment teams', duration: '14 min',
     sections: [
       { heading: 'Choose the initial shape', body: 'For an early production deployment, a horizontally-scalable application can still run as a small number of practical services: web/API, relay, database, and supporting storage. Separate components when load, reliability, security, or operational ownership justifies it—not because a diagram looks more impressive.' },
@@ -239,7 +239,7 @@ const LESSONS: Lesson[] = [
       { heading: 'Sign-in and MFA', body: 'Confirm the email, password, organization, time on the authenticator device, and whether the account is locked. If the organization requires MFA, follow the setup flow or use a saved recovery code. Password reset requires the configured outbound SMTP service.' },
       { heading: 'Tickets and pages', body: 'Hard-refresh after a deployment, check that your session has not expired, and try the page again without a stale tab. If only one ticket fails, record its number. If many pages are blank, capture the first browser error and check the API health/logs.' },
       { heading: 'Devices and remote sessions', body: 'Check last heartbeat, agent version, consent, requested permissions, relay availability, and whether a firewall or sleep state is involved. “Offline” and “remote channel unavailable” are separate conditions.' },
-      { heading: 'Escalate to support', body: 'Use Support to raise a ticket with the affected organization, user, page, steps to reproduce, expected result, actual result, and any correlation or session identifier shown by DeskOS.' },
+      { heading: 'Escalate to support', body: 'Use Support to raise a ticket with the affected organization, user, page, steps to reproduce, expected result, actual result, and any correlation or session identifier shown by ReyDesk.' },
     ],
     tips: ['Never paste access tokens, passwords, MFA codes, or private keys into a support ticket.', 'Try one controlled change at a time so the cause remains clear.', 'Keep the original error text; paraphrasing can hide the useful part.'],
     links: [{ label: 'Open support', to: '/support' }, { label: 'Open settings', to: '/settings' }, { label: 'Open sessions', to: '/sessions' }],
@@ -248,7 +248,7 @@ const LESSONS: Lesson[] = [
     id: 'customer-portal', category: 'Customer experience', title: 'Use the customer portal from request to closure',
     summary: 'Give requesters a clear, secure way to raise tickets, follow replies, add context, and confirm resolution.', audience: 'End users and customer administrators', duration: '8 min',
     sections: [
-      { heading: 'What the portal is for', body: 'The portal is the requester-facing side of DeskOS. A customer can create a request, see its status, read public replies, respond when more information is needed, and mark the issue resolved. Internal notes, private team discussions, and privileged actions stay out of the portal.' },
+      { heading: 'What the portal is for', body: 'The portal is the requester-facing side of ReyDesk. A customer can create a request, see its status, read public replies, respond when more information is needed, and mark the issue resolved. Internal notes, private team discussions, and privileged actions stay out of the portal.' },
       { heading: 'Raise a useful request', body: 'Describe the symptom, when it started, who is affected, the business impact, and what has already been tried. Include the device or service when known. Do not include passwords, MFA codes, API keys, or confidential data that the support team does not need.' },
       { heading: 'Understand the status', body: 'New means the request has entered the queue. Open means work is active. Pending user means the service desk needs an answer. Escalated means another team or specialist is involved. Resolved means a fix or answer was provided; reply if the problem returns.' },
       { heading: 'Use email and portal together', body: 'Replies from supported email channels can be matched to the ticket when the ticket reference is present. If a reply is not matched, open the portal and add it there so the conversation remains attached to the right request.' },
@@ -318,20 +318,20 @@ const LESSONS: Lesson[] = [
   },
   {
     id: 'governance', category: 'Security and compliance', title: 'Apply privacy, retention, and audit discipline',
-    summary: 'Make DeskOS safer to operate by controlling personal data, privileged evidence, retention, and review routines.', audience: 'Security, compliance, and organization administrators', duration: '10 min',
+    summary: 'Make ReyDesk safer to operate by controlling personal data, privileged evidence, retention, and review routines.', audience: 'Security, compliance, and organization administrators', duration: '10 min',
     sections: [
       { heading: 'Collect only what the workflow needs', body: 'Requester details, device telemetry, call metadata, session recordings, attachments, and audit events can contain personal or sensitive information. Define why each data type is collected, who needs access, and how long it should remain available.' },
       { heading: 'Separate visibility levels', body: 'Public replies are for requesters. Internal notes and team chat are for authorized staff. Session recordings, terminal output, elevation evidence, and security events require stricter access than ordinary ticket text.' },
       { heading: 'Use the audit trail as evidence', body: 'Review authentication, membership, MFA resets, privileged approvals, device assignment, ticket changes, remote sessions, and integrations. Investigate unexpected actions and retain the relevant evidence according to policy.' },
       { heading: 'Practice access reviews', body: 'On a regular schedule, review organization memberships, team membership, service accounts, API clients, webhook endpoints, device assignments, and passkeys. Offboarding should revoke access, return assets, and rotate credentials where needed.' },
-      { heading: 'Respond to incidents', body: 'Preserve timestamps and identifiers, contain the affected account or integration, avoid editing evidence unnecessarily, notify the responsible owner, and document the recovery. Use DeskOS tickets and approvals to coordinate the response.' },
+      { heading: 'Respond to incidents', body: 'Preserve timestamps and identifiers, contain the affected account or integration, avoid editing evidence unnecessarily, notify the responsible owner, and document the recovery. Use ReyDesk tickets and approvals to coordinate the response.' },
     ],
     tips: ['Do not use production customer data for casual testing.', 'Make retention and deletion behavior understandable to administrators.', 'A secure default is better than a policy nobody can operate consistently.'],
     links: [{ label: 'Security settings', to: '/settings/security' }, { label: 'Compliance', to: '/compliance' }, { label: 'Approvals', to: '/approvals' }],
   },
   {
-    id: 'developer-platform', category: 'Developer platform', title: 'Build safely with the DeskOS API and marketplace',
-    summary: 'Extend DeskOS with API clients and marketplace applications while preserving permissions, tenant boundaries, and supportability.', audience: 'Developers and platform administrators', duration: '10 min',
+    id: 'developer-platform', category: 'Developer platform', title: 'Build safely with the ReyDesk API and marketplace',
+    summary: 'Extend ReyDesk with API clients and marketplace applications while preserving permissions, tenant boundaries, and supportability.', audience: 'Developers and platform administrators', duration: '10 min',
     sections: [
       { heading: 'Choose the integration surface', body: 'Use the public API for deliberate reads and writes, webhooks for event delivery, and marketplace applications for packaged capabilities. Avoid browser automation when a supported API or event exists.' },
       { heading: 'Design for tenants and permissions', body: 'Every request should have an explicit organization context and the smallest required scope. Never assume that an identifier from one organization is valid in another. Check role and permission behavior with both an administrator and a restricted account.' },
@@ -365,7 +365,7 @@ export default function LearnPage({ publicView = false }: { publicView?: boolean
       <div className="learn-page">
         <header className="learn-hero">
           <div>
-            <span className="etch">DeskOS Learn</span>
+            <span className="etch">ReyDesk Learn</span>
             <h1 className="page-title">A clear guide to getting work done.</h1>
             <p className="learn-hero-copy">Understand the workspace, follow the right process, and know where to look when something needs attention.</p>
           </div>
@@ -396,13 +396,13 @@ export default function LearnPage({ publicView = false }: { publicView?: boolean
               {selected.sections.map((section, index) => <section className="learn-section" key={section.heading}><div className="learn-section-number">{String(index + 1).padStart(2, '0')}</div><div><h3>{section.heading}</h3><p>{section.body}</p>{section.steps ? <ol>{section.steps.map((step) => <li key={step}>{step}</li>)}</ol> : null}</div></section>)}
             </div>
             <aside className="learn-tips"><div className="learn-tips-head"><Icon name="shield" size={16} /><strong>Useful to remember</strong></div><ul>{selected.tips.map((tip) => <li key={tip}>{tip}</li>)}</ul></aside>
-            <div className="learn-next"><div><span className="etch">Continue in DeskOS</span><p>Open the relevant workspace and put this lesson into practice.</p></div><div className="learn-next-links">{selected.links.map((link) => <Link className="btn btn-ghost btn-sm" key={link.to} to={link.to}>{link.label}<Icon name="chevron-right" size={14} /></Link>)}</div></div>
+            <div className="learn-next"><div><span className="etch">Continue in ReyDesk</span><p>Open the relevant workspace and put this lesson into practice.</p></div><div className="learn-next-links">{selected.links.map((link) => <Link className="btn btn-ghost btn-sm" key={link.to} to={link.to}>{link.label}<Icon name="chevron-right" size={14} /></Link>)}</div></div>
           </article>
         </div>
       </div>
   )
 
   return publicView
-    ? <LandingLayout title="DeskOS Learn — IT support guides" description="Practical guides for using DeskOS tickets, remote support, devices, and administration.">{content}</LandingLayout>
+    ? <LandingLayout title="ReyDesk Learn — IT support guides" description="Practical guides for using ReyDesk tickets, remote support, devices, and administration.">{content}</LandingLayout>
     : <Shell>{content}</Shell>
 }

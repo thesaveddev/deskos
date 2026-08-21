@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth.js'
+import { rememberLockedUser } from '../lib/lock.js'
+import { BRAND } from '../lib/brand.js'
 
 /**
  * Customer portal shell. A deliberately lighter frame than the technician
@@ -21,7 +23,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
       <aside className="nav-rail portal-rail">
         <div className="nav-brand">
           {branding?.logoUrl ? <img className="brand-logo" src={branding.logoUrl} alt="" aria-hidden="true" /> : null}
-          <span className="brand">{branding?.portalTitle || 'DeskOS'}</span>
+          <span className="brand">{branding?.portalTitle || BRAND.name}</span>
           <span className="etch">Support portal</span>
         </div>
         <nav className="nav-items">
@@ -50,7 +52,9 @@ export function PortalShell({ children }: { children: ReactNode }) {
             <button
               className="btn btn-ghost btn-sm"
               onClick={() => {
-                void auth.logout().then(() => navigate('/login'))
+                if (!auth.user) return
+                rememberLockedUser(auth.user)
+                void auth.logout().then(() => navigate('/lock'))
               }}
             >
               Sign out

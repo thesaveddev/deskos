@@ -1,5 +1,15 @@
 import { api } from './api.js'
 
+export interface NoteCategory {
+  id: string
+  tenant_id: string
+  user_id: string
+  name: string
+  color: string
+  created_at: string
+  updated_at: string
+}
+
 export interface Note {
   id: number
   tenant_id: string
@@ -7,6 +17,10 @@ export interface Note {
   title: string
   body: string
   color: string
+  category_id: string | null
+  category_name?: string | null
+  category_color?: string | null
+  image_data: string | null
   position_x: number
   position_y: number
   width: number
@@ -30,18 +44,17 @@ export function getColorStyle(colorName: string) {
   return NOTE_COLORS.find((c) => c.name === colorName) || NOTE_COLORS[0]
 }
 
-export function listNotes(): Promise<{ notes: Note[] }> {
-  return api('/notes')
-}
+export function listNotes(): Promise<{ notes: Note[] }> { return api('/notes') }
+export function listNoteCategories(): Promise<{ categories: NoteCategory[] }> { return api('/notes/categories') }
+export function createNoteCategory(data: { name: string; color: string }): Promise<{ category: NoteCategory }> { return api('/notes/categories', { method: 'POST', body: data }) }
+export function deleteNoteCategory(id: string): Promise<{ ok: boolean }> { return api(`/notes/categories/${id}`, { method: 'DELETE' }) }
 
-export function createNote(data: { title?: string; body?: string; color?: string; position_x?: number; position_y?: number }): Promise<{ note: Note }> {
+export function createNote(data: { title?: string; body?: string; color?: string; category_id?: string | null; image_data?: string | null; position_x?: number; position_y?: number; width?: number; height?: number }): Promise<{ note: Note }> {
   return api('/notes', { method: 'POST', body: data })
 }
 
-export function updateNote(id: number, data: Partial<Pick<Note, 'title' | 'body' | 'color' | 'position_x' | 'position_y' | 'width' | 'height' | 'is_pinned'>>): Promise<{ note: Note }> {
+export function updateNote(id: number, data: Partial<Pick<Note, 'title' | 'body' | 'color' | 'category_id' | 'image_data' | 'position_x' | 'position_y' | 'width' | 'height' | 'is_pinned'>>): Promise<{ note: Note }> {
   return api(`/notes/${id}`, { method: 'PATCH', body: data })
 }
 
-export function deleteNote(id: number): Promise<{ ok: boolean }> {
-  return api(`/notes/${id}`, { method: 'DELETE' })
-}
+export function deleteNote(id: number): Promise<{ ok: boolean }> { return api(`/notes/${id}`, { method: 'DELETE' }) }

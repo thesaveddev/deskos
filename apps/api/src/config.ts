@@ -20,6 +20,8 @@ export interface AppConfig {
   emailKey: string
   relaySecret: string
   publicUrl: string
+  /** Browser origins allowed to call the API. Keep this explicit in production. */
+  webOrigins: string[]
   relayUrl: string
   /** Absolute path to the signed portable helper binary served on the connect page. */
   helperBinaryPath: string
@@ -84,6 +86,10 @@ export interface AiConfig {
   apiKey: string
   /** Chat model used for summaries and KB drafting. */
   model: string
+  /** Provider protocol used by the deployment-level managed credential. */
+  provider: 'openai_compatible' | 'azure_openai' | 'ollama' | 'vllm'
+  /** Azure OpenAI API version when the managed provider is Azure. */
+  azureApiVersion: string
   /** Per-request timeout in ms — AI must never block a critical path. */
   timeoutMs: number
 }
@@ -140,52 +146,60 @@ export interface SmtpConfig {
 function resolveJwtSecret(env: AppConfig['env'], raw: string | undefined): Uint8Array {
   if (raw && raw.length > 0) return new TextEncoder().encode(raw)
   if (env === 'production') {
-    throw new Error('DESKOS_JWT_SECRET must be set in production')
+    throw new Error('REYDESK_JWT_SECRET must be set in production (legacy DESKOS_JWT_SECRET is still accepted)')
   }
-  console.warn('[config] DESKOS_JWT_SECRET not set; generated an ephemeral secret (dev/test only)')
+  console.warn('[config] REYDESK_JWT_SECRET not set; generated an ephemeral secret (dev/test only)')
   return randomBytes(32)
 }
 
 function resolveEmailKey(env: AppConfig['env'], raw: string | undefined): string {
   if (raw && raw.length > 0) return raw
   if (env === 'production') {
-    throw new Error('DESKOS_EMAIL_KEY must be set in production')
+    throw new Error('REYDESK_EMAIL_KEY must be set in production (legacy DESKOS_EMAIL_KEY is still accepted)')
   }
-  console.warn('[config] DESKOS_EMAIL_KEY not set; generated an ephemeral key (dev/test only)')
+  console.warn('[config] REYDESK_EMAIL_KEY not set; generated an ephemeral key (dev/test only)')
   return randomBytes(32).toString('hex')
 }
 
 function resolveRelaySecret(env: AppConfig['env'], raw: string | undefined): string {
   if (raw && raw.length > 0) return raw
   if (env === 'production') {
-    throw new Error('DESKOS_RELAY_SECRET must be set in production')
+    throw new Error('REYDESK_RELAY_SECRET must be set in production (legacy DESKOS_RELAY_SECRET is still accepted)')
   }
-  return 'deskos-relay-dev-only'
+  return 'reydesk-relay-dev-only'
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
+  const value = (key: string): string | undefined => env[key] ?? env[key.replace(/^REYDESK_/, 'DESKOS_')]
   const nodeEnv = (env.NODE_ENV ?? 'development') as AppConfig['env']
+  const configuredPort = Number(env.PORT ?? 4000)
+  // Some local shells inject PORT=0. Vite still proxies to 4000, so allowing
+  // the API watcher to choose an ephemeral port makes the web app look offline
+  // after a restart. Keep the documented development port stable in that case.
+  const port = nodeEnv !== 'production' && configuredPort === 0 ? 4000 : configuredPort
+
   return {
     env: nodeEnv,
     host: env.HOST ?? '0.0.0.0',
-    port: Number(env.PORT ?? 4000),
+    port,
     databaseUrl: env.DATABASE_URL ?? 'postgresql://deskos:deskos_dev_only@localhost:5432/deskos',
-    dbPoolMax: Math.max(2, Number(env.DESKOS_DB_POOL_MAX ?? 10)),
-    jwtSecret: resolveJwtSecret(nodeEnv, env.DESKOS_JWT_SECRET),
-    jwtIssuer: env.DESKOS_JWT_ISSUER ?? 'deskos',
-    accessTokenTtlSec: Number(env.DESKOS_ACCESS_TTL_SEC ?? 15 * 60),
-    refreshTokenTtlDays: Number(env.DESKOS_REFRESH_TTL_DAYS ?? 30),
-    bcryptRounds: Number(env.DESKOS_BCRYPT_ROUNDS ?? 10),
-    uploadDir: env.DESKOS_UPLOAD_DIR ?? path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '.uploads'),
-    maxUploadBytes: Number(env.DESKOS_MAX_UPLOAD_BYTES ?? 25 * 1024 * 1024),
-    recordingDir: env.DESKOS_RECORDING_DIR ?? path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '.recordings'),
-    maxRecordingBytes: Number(env.DESKOS_MAX_RECORDING_BYTES ?? 1024 * 1024 * 1024),
-    emailKey: resolveEmailKey(nodeEnv, env.DESKOS_EMAIL_KEY),
-    relaySecret: resolveRelaySecret(nodeEnv, env.DESKOS_RELAY_SECRET),
-    publicUrl: (env.DESKOS_PUBLIC_URL ?? 'http://localhost:5180').replace(/\/$/, ''),
-    relayUrl: env.DESKOS_RELAY_URL ?? 'ws://localhost:4100/ws',
+    dbPoolMax: Math.max(2, Number(value('REYDESK_DB_POOL_MAX') ?? 10)),
+    jwtSecret: resolveJwtSecret(nodeEnv, value('REYDESK_JWT_SECRET')),
+    jwtIssuer: value('REYDESK_JWT_ISSUER') ?? 'reydesk',
+    accessTokenTtlSec: Number(value('REYDESK_ACCESS_TTL_SEC') ?? 15 * 60),
+    refreshTokenTtlDays: Number(value('REYDESK_REFRESH_TTL_DAYS') ?? 30),
+    bcryptRounds: Number(value('REYDESK_BCRYPT_ROUNDS') ?? 10),
+    uploadDir: value('REYDESK_UPLOAD_DIR') ?? path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '.uploads'),
+    maxUploadBytes: Number(value('REYDESK_MAX_UPLOAD_BYTES') ?? 25 * 1024 * 1024),
+    recordingDir: value('REYDESK_RECORDING_DIR') ?? path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '.recordings'),
+    maxRecordingBytes: Number(value('REYDESK_MAX_RECORDING_BYTES') ?? 1024 * 1024 * 1024),
+    emailKey: resolveEmailKey(nodeEnv, value('REYDESK_EMAIL_KEY')),
+    relaySecret: resolveRelaySecret(nodeEnv, value('REYDESK_RELAY_SECRET')),
+    publicUrl: resolvePublicUrl(nodeEnv, value('REYDESK_PUBLIC_URL')),
+    webOrigins: splitCsv(value('REYDESK_WEB_ORIGINS'), resolvePublicUrl(nodeEnv, value('REYDESK_PUBLIC_URL'))),
+    relayUrl: resolveRelayUrl(nodeEnv, value('REYDESK_RELAY_URL')),
     helperBinaryPath:
-      env.DESKOS_HELPER_BINARY ??
+      value('REYDESK_HELPER_BINARY') ??
       path.join(
         path.dirname(fileURLToPath(import.meta.url)),
         '..',
@@ -193,76 +207,78 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
         '..',
         'artifacts',
         'windows',
-        'deskos-helper.exe',
+        'reydesk-helper.exe',
       ),
-    deviceOfflineSec: Number(env.DESKOS_DEVICE_OFFLINE_SEC ?? 120),
-    deviceLowDiskPct: Number(env.DESKOS_DEVICE_LOW_DISK_PCT ?? 85),
+    deviceOfflineSec: Number(value('REYDESK_DEVICE_OFFLINE_SEC') ?? 120),
+    deviceLowDiskPct: Number(value('REYDESK_DEVICE_LOW_DISK_PCT') ?? 85),
     smtp: {
       enabled:
-        Boolean(env.DESKOS_SMTP_HOST && env.DESKOS_SMTP_FROM) ||
-        env.DESKOS_SMTP_JSON === 'true',
-      host: env.DESKOS_SMTP_HOST ?? '',
-      port: Number(env.DESKOS_SMTP_PORT ?? 587),
-      user: env.DESKOS_SMTP_USER ?? '',
-      pass: env.DESKOS_SMTP_PASS ?? '',
-      from: env.DESKOS_SMTP_FROM ?? '',
-      tls: env.DESKOS_SMTP_TLS !== 'false',
-      jsonTransport: env.DESKOS_SMTP_JSON === 'true',
+        Boolean(value('REYDESK_SMTP_HOST') && value('REYDESK_SMTP_FROM')) ||
+        value('REYDESK_SMTP_JSON') === 'true',
+      host: value('REYDESK_SMTP_HOST') ?? '',
+      port: Number(value('REYDESK_SMTP_PORT') ?? 587),
+      user: value('REYDESK_SMTP_USER') ?? '',
+      pass: value('REYDESK_SMTP_PASS') ?? '',
+      from: value('REYDESK_SMTP_FROM') ?? '',
+      tls: value('REYDESK_SMTP_TLS') !== 'false',
+      jsonTransport: value('REYDESK_SMTP_JSON') === 'true',
     },
     imap: {
-      enabled: Boolean(env.DESKOS_IMAP_HOST && env.DESKOS_IMAP_USER && env.DESKOS_IMAP_PASS),
-      host: env.DESKOS_IMAP_HOST ?? 'safari.mxrouting.net',
-      port: Number(env.DESKOS_IMAP_PORT ?? 993),
-      user: env.DESKOS_IMAP_USER ?? '',
-      pass: env.DESKOS_IMAP_PASS ?? '',
-      tls: env.DESKOS_IMAP_TLS !== 'false',
-      pollIntervalSec: Number(env.DESKOS_IMAP_POLL_INTERVAL_SEC ?? 60),
+      enabled: Boolean(value('REYDESK_IMAP_HOST') && value('REYDESK_IMAP_USER') && value('REYDESK_IMAP_PASS')),
+      host: value('REYDESK_IMAP_HOST') ?? 'safari.mxrouting.net',
+      port: Number(value('REYDESK_IMAP_PORT') ?? 993),
+      user: value('REYDESK_IMAP_USER') ?? '',
+      pass: value('REYDESK_IMAP_PASS') ?? '',
+      tls: value('REYDESK_IMAP_TLS') !== 'false',
+      pollIntervalSec: Number(value('REYDESK_IMAP_POLL_INTERVAL_SEC') ?? 60),
     },
     ice: {
-      stunUrls: splitCsv(env.DESKOS_ICE_STUN_URLS, 'stun:stun.l.google.com:19302'),
-      turnUrls: splitCsv(env.DESKOS_ICE_TURN_URLS),
-      turnSharedSecret: env.DESKOS_ICE_TURN_SECRET ?? '',
-      turnRealm: env.DESKOS_ICE_TURN_REALM ?? 'deskos',
-      turnTtlSec: Math.max(60, Number(env.DESKOS_ICE_TURN_TTL_SEC ?? 3600)),
-      turnUsername: env.DESKOS_ICE_TURN_USERNAME ?? 'deskos',
+      stunUrls: splitCsv(value('REYDESK_ICE_STUN_URLS'), 'stun:stun.l.google.com:19302'),
+      turnUrls: splitCsv(value('REYDESK_ICE_TURN_URLS')),
+      turnSharedSecret: value('REYDESK_ICE_TURN_SECRET') ?? '',
+      turnRealm: value('REYDESK_ICE_TURN_REALM') ?? 'reydesk',
+      turnTtlSec: Math.max(60, Number(value('REYDESK_ICE_TURN_TTL_SEC') ?? 3600)),
+      turnUsername: value('REYDESK_ICE_TURN_USERNAME') ?? 'reydesk',
     },
     update: {
-      version: env.DESKOS_UPDATE_VERSION ?? '',
-      minVersion: env.DESKOS_UPDATE_MIN_VERSION ?? env.DESKOS_UPDATE_VERSION ?? '',
-      url: env.DESKOS_UPDATE_URL ?? '',
-      sha256: (env.DESKOS_UPDATE_SHA256 ?? '').toLowerCase(),
-      signature: env.DESKOS_UPDATE_SIGNATURE ?? '',
-      rolloutPercent: Math.max(0, Math.min(100, Number(env.DESKOS_UPDATE_ROLLOUT_PERCENT ?? 100))),
+      version: value('REYDESK_UPDATE_VERSION') ?? '',
+      minVersion: value('REYDESK_UPDATE_MIN_VERSION') ?? value('REYDESK_UPDATE_VERSION') ?? '',
+      url: value('REYDESK_UPDATE_URL') ?? '',
+      sha256: (value('REYDESK_UPDATE_SHA256') ?? '').toLowerCase(),
+      signature: value('REYDESK_UPDATE_SIGNATURE') ?? '',
+      rolloutPercent: Math.max(0, Math.min(100, Number(value('REYDESK_UPDATE_ROLLOUT_PERCENT') ?? 100))),
     },
     otel: {
-      enabled: Boolean(env.DESKOS_OTEL_ENDPOINT),
-      endpoint: env.DESKOS_OTEL_ENDPOINT ?? '',
-      serviceName: env.DESKOS_OTEL_SERVICE_NAME ?? 'deskos-api',
-      serviceVersion: env.DESKOS_OTEL_SERVICE_VERSION ?? '0.0.1',
+      enabled: Boolean(value('REYDESK_OTEL_ENDPOINT')),
+      endpoint: value('REYDESK_OTEL_ENDPOINT') ?? '',
+      serviceName: value('REYDESK_OTEL_SERVICE_NAME') ?? 'reydesk-api',
+      serviceVersion: value('REYDESK_OTEL_SERVICE_VERSION') ?? '0.0.1',
     },
     sentry: {
-      dsn: env.DESKOS_SENTRY_DSN ?? '',
-      environment: env.DESKOS_SENTRY_ENVIRONMENT ?? nodeEnv,
-      release: env.DESKOS_SENTRY_RELEASE ?? 'deskos-api@0.0.1',
+      dsn: value('REYDESK_SENTRY_DSN') ?? '',
+      environment: value('REYDESK_SENTRY_ENVIRONMENT') ?? nodeEnv,
+      release: value('REYDESK_SENTRY_RELEASE') ?? 'reydesk-api@0.0.1',
     },
     ai: {
-      enabled: env.DESKOS_AI_ENABLED === 'true',
-      baseUrl: env.DESKOS_AI_BASE_URL ?? 'https://api.openai.com/v1',
-      apiKey: env.DESKOS_AI_API_KEY ?? '',
-      model: env.DESKOS_AI_MODEL ?? 'gpt-4o-mini',
-      timeoutMs: Math.max(1000, Number(env.DESKOS_AI_TIMEOUT_MS ?? 15000)),
+      enabled: value('REYDESK_AI_ENABLED') === 'true',
+      baseUrl: value('REYDESK_AI_BASE_URL') ?? 'https://api.openai.com/v1',
+      apiKey: value('REYDESK_AI_API_KEY') ?? '',
+      model: value('REYDESK_AI_MODEL') ?? 'gpt-4o-mini',
+      provider: (value('REYDESK_AI_PROVIDER') as AppConfig['ai']['provider'] | undefined) ?? 'openai_compatible',
+      azureApiVersion: value('REYDESK_AI_AZURE_API_VERSION') ?? '2024-10-21',
+      timeoutMs: Math.max(1000, Number(value('REYDESK_AI_TIMEOUT_MS') ?? 15000)),
     },
     webauthn: {
-      rpName: env.DESKOS_WEBAUTHN_RP_NAME ?? 'DeskOS',
-      rpId: env.DESKOS_WEBAUTHN_RP_ID ?? safeHostname(env.DESKOS_PUBLIC_URL ?? 'http://localhost:5180'),
-      origin: env.DESKOS_WEBAUTHN_ORIGIN ?? (env.DESKOS_PUBLIC_URL ?? 'http://localhost:5180').replace(/\/$/, ''),
+      rpName: value('REYDESK_WEBAUTHN_RP_NAME') ?? 'ReyDesk',
+      rpId: value('REYDESK_WEBAUTHN_RP_ID') ?? safeHostname(resolvePublicUrl(nodeEnv, value('REYDESK_PUBLIC_URL'))),
+      origin: value('REYDESK_WEBAUTHN_ORIGIN') ?? resolvePublicUrl(nodeEnv, value('REYDESK_PUBLIC_URL')),
     },
     push: {
-      enabled: Boolean(env.DESKOS_VAPID_PUBLIC_KEY && env.DESKOS_VAPID_PRIVATE_KEY && env.DESKOS_VAPID_SUBJECT),
-      publicKey: env.DESKOS_VAPID_PUBLIC_KEY ?? '',
-      privateKey: env.DESKOS_VAPID_PRIVATE_KEY ?? '',
-      subject: env.DESKOS_VAPID_SUBJECT ?? 'mailto:admin@deskos.local',
-      ttlSec: Math.max(60, Number(env.DESKOS_PUSH_TTL_SEC ?? 86400)),
+      enabled: Boolean(value('REYDESK_VAPID_PUBLIC_KEY') && value('REYDESK_VAPID_PRIVATE_KEY') && value('REYDESK_VAPID_SUBJECT')),
+      publicKey: value('REYDESK_VAPID_PUBLIC_KEY') ?? '',
+      privateKey: value('REYDESK_VAPID_PRIVATE_KEY') ?? '',
+      subject: value('REYDESK_VAPID_SUBJECT') ?? 'mailto:admin@reydesk.local',
+      ttlSec: Math.max(60, Number(value('REYDESK_PUSH_TTL_SEC') ?? 86400)),
     },
   }
 }
@@ -273,6 +289,22 @@ function safeHostname(url: string): string {
   } catch {
     return 'localhost'
   }
+}
+
+function resolvePublicUrl(env: AppConfig['env'], raw: string | undefined): string {
+  const value = (raw ?? 'http://localhost:5180').replace(/\/$/, '')
+  if (env === 'production' && !value.startsWith('https://')) {
+    throw new Error('REYDESK_PUBLIC_URL must use https:// in production')
+  }
+  return value
+}
+
+function resolveRelayUrl(env: AppConfig['env'], raw: string | undefined): string {
+  const value = raw ?? 'ws://localhost:4100/ws'
+  if (env === 'production' && !value.startsWith('wss://')) {
+    throw new Error('REYDESK_RELAY_URL must use wss:// in production')
+  }
+  return value
 }
 
 function splitCsv(raw: string | undefined, fallback = ''): string[] {

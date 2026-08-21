@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Shell } from '../components/Shell.js'
-import { Alert, Field, Modal, PageHeader, Panel } from '../components/ui.js'
+import { Alert, Field, Modal, PageHeader, Panel, useConfirm } from '../components/ui.js'
+import { MfaQrCode } from '../components/MfaQrCode.js'
 import { useAuth } from '../lib/auth.js'
+import { api } from '../lib/api.js'
+import { Icon } from '../components/Icons.js'
 import {
   createAsset, createLicence, deleteAsset, deleteLicence, listAssets, listLicences, updateAsset,
   type Asset, type AssetStatus, type AssetType, type Licence,
@@ -25,10 +28,12 @@ interface AssetForm {
   location: string
   supplier: string
   warrantyUntil: string
+  ownerId: string
+  deviceId: string
 }
 
 const EMPTY_ASSET: AssetForm = {
-  tag: '', name: '', type: 'hardware', status: 'in_use', location: '', supplier: '', warrantyUntil: '',
+  tag: '', name: '', type: 'hardware', status: 'in_use', location: '', supplier: '', warrantyUntil: '', ownerId: '', deviceId: '',
 }
 
 interface LicenceForm {
@@ -42,6 +47,7 @@ const EMPTY_LICENCE: LicenceForm = { name: '', keyRef: '', seatsTotal: '', expir
 
 export default function AssetsPage() {
   const canManage = useAuth((s) => s.memberships.some((m) => m.permissions.includes('asset.manage')))
+  const confirm = useConfirm()
   const [assets, setAssets] = useState<Asset[] | null>(null)
   const [licences, setLicences] = useState<Licence[]>([])
   const [q, setQ] = useState('')
@@ -55,6 +61,9 @@ export default function AssetsPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [qrAsset, setQrAsset] = useState<Asset | null>(null)
+  const [deviceOptions, setDeviceOptions] = useState<Array<{ id: string; name: string; hostname: string }>>([])
+  const [memberOptions, setMemberOptions] = useState<Array<{ id: string; name: string; email: string }>>([])
 
   const load = useCallback(async () => {
     try {
@@ -74,6 +83,17 @@ export default function AssetsPage() {
     return () => clearTimeout(timer)
   }, [load])
 
+  useEffect(() => {
+    if (!canManage) return
+    void Promise.all([
+      api<{ devices: Array<{ id: string; name: string; hostname: string }> }>('/devices?limit=200'),
+      api<{ members: Array<{ user_id: string; name: string | null; email: string }> }>('/members?status=active'),
+    ]).then(([devices, members]) => {
+      setDeviceOptions(devices.devices)
+      setMemberOptions(members.members.map((member) => ({ id: member.user_id, name: member.name || member.email, email: member.email })))
+    }).catch(() => { setDeviceOptions([]); setMemberOptions([]) })
+  }, [canManage])
+
   const openCreate = () => {
     setEditing(null)
     setForm(EMPTY_ASSET)
@@ -91,6 +111,8 @@ export default function AssetsPage() {
       location: asset.location ?? '',
       supplier: asset.supplier ?? '',
       warrantyUntil: asset.warranty_until ?? '',
+      ownerId: asset.owner_id ?? '',
+      deviceId: asset.device_id ?? '',
     })
     setError(null)
     setAssetOpen(true)
@@ -116,13 +138,15 @@ export default function AssetsPage() {
       location: form.location || undefined,
       supplier: form.supplier || undefined,
       warrantyUntil: form.warrantyUntil || undefined,
+      ownerId: editing ? (form.ownerId || null) : undefined,
+      deviceId: editing ? (form.deviceId || null) : undefined,
     }
     try {
       if (editing) {
         await updateAsset(editing.id, payload)
         setNotice('Asset updated.')
       } else {
-        await createAsset(payload)
+        await createAsset({ ...payload, ownerId: form.ownerId || undefined, deviceId: form.deviceId || undefined })
         setNotice('Asset created.')
       }
       setAssetOpen(false)
@@ -161,7 +185,7 @@ export default function AssetsPage() {
   }
 
   async function removeAsset(asset: Asset) {
-    if (!confirm(`Delete asset "${asset.name}"?`)) return
+    if (!await confirm(`Delete asset “${asset.name}”?`, { title: 'Delete asset', confirmLabel: 'Delete', destructive: true })) return
     setError(null)
     try {
       await deleteAsset(asset.id)
@@ -172,7 +196,7 @@ export default function AssetsPage() {
   }
 
   async function removeLicence(licence: Licence) {
-    if (!confirm(`Delete licence "${licence.name}"?`)) return
+    if (!await confirm(`Delete licence “${licence.name}”?`, { title: 'Delete licence', confirmLabel: 'Delete', destructive: true })) return
     setError(null)
     try {
       await deleteLicence(licence.id)
@@ -191,8 +215,8 @@ export default function AssetsPage() {
         subtitle="Hardware, software, and licences across your estate."
         actions={canManage ? (
           <>
-            <button className="btn btn-ghost btn-sm" onClick={openLicence}>Add licence</button>
-            <button className="btn btn-primary btn-sm" onClick={openCreate}>New asset</button>
+            <button className="btn btn-ghost btn-sm" onClick={openLicence}><Icon name="add" size={14} />Add licence</button>
+            <button className="btn btn-primary btn-sm" onClick={openCreate}><Icon name="add" size={14} />New asset</button>
           </>
         ) : undefined}
       />
@@ -227,14 +251,16 @@ export default function AssetsPage() {
                   <span className="channel-name">{a.name}</span>
                   <span className="channel-meta mono">
                     {a.tag} · {a.type} · {STATUS_LABELS[a.status] ?? a.status}
-                    {a.owner_name ? ` · ${a.owner_name}` : ''}
+                    {a.owner_name ? ` · asset owner ${a.owner_name}` : ''}
                     {a.device_name ? ` · ${a.device_name}` : ''}
+                    {a.assigned_user_name ? ` · assigned to ${a.assigned_user_name}` : a.assignment_status === 'shared' ? ' · shared device' : ''}
                   </span>
                 </div>
                 {canManage ? (
                   <div className="channel-actions">
-                    <button className="btn btn-ghost btn-sm" onClick={() => openEdit(a)}>Edit</button>
-                    <button className="btn btn-ghost btn-sm" onClick={() => void removeAsset(a)}>Delete</button>
+                    {a.qr_payload ? <button className="btn btn-ghost btn-sm" onClick={() => setQrAsset(a)}><Icon name="eye" size={14} />Label</button> : null}
+                    <button className="btn btn-ghost btn-sm" onClick={() => openEdit(a)}><Icon name="edit" size={14} />Edit</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => void removeAsset(a)}><Icon name="delete" size={14} />Delete</button>
                   </div>
                 ) : null}
               </li>
@@ -262,7 +288,7 @@ export default function AssetsPage() {
               </div>
               {canManage ? (
                 <div className="channel-actions">
-                  <button className="btn btn-ghost btn-sm" onClick={() => void removeLicence(l)}>Delete</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => void removeLicence(l)}><Icon name="delete" size={14} />Delete</button>
                 </div>
               ) : null}
             </li>
@@ -278,7 +304,7 @@ export default function AssetsPage() {
           <>
             <button type="button" className="btn btn-ghost" onClick={() => { setAssetOpen(false); setEditing(null); setForm(EMPTY_ASSET) }} disabled={busy}>Cancel</button>
             <button type="submit" form="asset-form" className="btn btn-primary" disabled={busy || !form.tag.trim() || !form.name.trim()}>
-              {busy ? 'Saving…' : editing ? 'Save changes' : 'Create asset'}
+              <Icon name="save" size={14} />{busy ? 'Saving…' : editing ? 'Save changes' : 'Create asset'}
             </button>
           </>
         }
@@ -304,6 +330,14 @@ export default function AssetsPage() {
               </select>
             </Field>
           </div>
+          <div className="form-row">
+            <Field label="Primary owner" hint="Optional IT owner">
+              <select className="field-input" value={form.ownerId} onChange={(e) => setForm({ ...form, ownerId: e.target.value })}><option value="">No owner</option>{memberOptions.map((member) => <option key={member.id} value={member.id}>{member.name} · {member.email}</option>)}</select>
+            </Field>
+            <Field label="Linked endpoint" hint="Optional enrolled device">
+              <select className="field-input" value={form.deviceId} onChange={(e) => setForm({ ...form, deviceId: e.target.value })}><option value="">No device link</option>{deviceOptions.map((device) => <option key={device.id} value={device.id}>{device.name}{device.hostname ? ` · ${device.hostname}` : ''}</option>)}</select>
+            </Field>
+          </div>
           <Field label="Location">
             <input className="field-input" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} maxLength={200} />
           </Field>
@@ -316,6 +350,10 @@ export default function AssetsPage() {
             </Field>
           </div>
         </form>
+      </Modal>
+
+      <Modal open={Boolean(qrAsset)} onClose={() => setQrAsset(null)} title={qrAsset ? `Asset label · ${qrAsset.tag}` : 'Asset label'} width={360}>
+        {qrAsset ? <div className="asset-label-preview"><MfaQrCode value={qrAsset.qr_payload ?? `deskos://asset/${qrAsset.id}/${qrAsset.tag}`} /><strong className="mono">{qrAsset.tag}</strong><span>{qrAsset.name}</span><small>Scan to identify this asset in ReyDesk.</small></div> : null}
       </Modal>
 
       <Modal

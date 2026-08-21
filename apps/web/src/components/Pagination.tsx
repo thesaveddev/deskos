@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { Icon } from './Icons.js'
 
 const PAGE_SIZES = [5, 10, 20, 50, 100]
 
@@ -52,19 +53,22 @@ export function Pagination({ page, pageSize, totalItems, loading, onPageChange, 
 
       <div className="pagination-pages">
         <button
-          className="btn btn-ghost btn-sm"
+          className="btn btn-ghost btn-sm pagination-nav-btn"
           onClick={() => onPageChange(0)}
           disabled={page === 0 || loading}
           title="First page"
+          aria-label="First page"
         >
-          «
+          <Icon name="chevron-left" size={14} /><Icon name="chevron-left" size={14} />
         </button>
         <button
-          className="btn btn-ghost btn-sm"
+          className="btn btn-ghost btn-sm pagination-nav-btn"
           onClick={() => onPageChange(page - 1)}
           disabled={page === 0 || loading}
+          title="Previous page"
+          aria-label="Previous page"
         >
-          ‹
+          <Icon name="chevron-left" size={15} />
         </button>
         {pageNumbers.map((p, i) =>
           p === '...' ? (
@@ -81,19 +85,22 @@ export function Pagination({ page, pageSize, totalItems, loading, onPageChange, 
           )
         )}
         <button
-          className="btn btn-ghost btn-sm"
+          className="btn btn-ghost btn-sm pagination-nav-btn"
           onClick={() => onPageChange(page + 1)}
           disabled={page >= totalPages - 1 || loading}
+          title="Next page"
+          aria-label="Next page"
         >
-          ›
+          <Icon name="chevron-right" size={15} />
         </button>
         <button
-          className="btn btn-ghost btn-sm"
+          className="btn btn-ghost btn-sm pagination-nav-btn"
           onClick={() => onPageChange(totalPages - 1)}
           disabled={page >= totalPages - 1 || loading}
           title="Last page"
+          aria-label="Last page"
         >
-          »
+          <Icon name="chevron-right" size={14} /><Icon name="chevron-right" size={14} />
         </button>
       </div>
     </div>

@@ -1,6 +1,6 @@
 # 01 — Competitive Analysis & Product Research
 
-Purpose: ground DeskOS in what actually happens in a technician's day, not in feature-list copying. Method: capability/workflow analysis of leading ITSM and remote-support products, with emphasis on friction, buried features, consent patterns, and enterprise controls. (Sources: vendor documentation, published admin guides, practitioner communities — r/sysadmin, r/msp, SpiceWorks, Gartner Peer Insights patterns. No fabricated statistics; qualitative claims below are industry-consensus observations.)
+Purpose: ground ReyDesk in what actually happens in a technician's day, not in feature-list copying. Method: capability/workflow analysis of leading ITSM and remote-support products, with emphasis on friction, buried features, consent patterns, and enterprise controls. (Sources: vendor documentation, published admin guides, practitioner communities — r/sysadmin, r/msp, SpiceWorks, Gartner Peer Insights patterns. No fabricated statistics; qualitative claims below are industry-consensus observations.)
 
 ---
 
@@ -14,7 +14,7 @@ Purpose: ground DeskOS in what actually happens in a technician's day, not in fe
 
 ## 2. Capability matrix — ITSM
 
-| Capability | ServiceNow | HaloITSM | Freshservice | JSM | Zendesk | ManageEngine SDP | SysAid | TOPdesk | Ivanti | SolarWinds SD | **DeskOS MVP** |
+| Capability | ServiceNow | HaloITSM | Freshservice | JSM | Zendesk | ManageEngine SDP | SysAid | TOPdesk | Ivanti | SolarWinds SD | **ReyDesk MVP** |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | Incident / request / problem / change | ✅ full ITIL | ✅ full ITIL | ✅ strong | ✅ (ITSM add-on) | ⚠️ incident-centric | ✅ full ITIL | ✅ | ✅ full ITIL | ✅ | ⚠️ incident+change | Incident+request+problem+change (lean) |
 | Technician workspace quality | ❌ dense, dated | ✅ modern | ✅ polished | ⚠️ Jira-shaped | ✅ polished | ⚠️ dated | ⚠️ | ⚠️ | ⚠️ | ⚠️ | **Primary design target** |
@@ -32,7 +32,7 @@ Purpose: ground DeskOS in what actually happens in a technician's day, not in fe
 
 ## 3. Capability matrix — Remote support
 
-| Capability | BeyondTrust RS | AnyDesk | TeamViewer Tensor | ScreenConnect | Splashtop | Zoho Assist | LogMeIn Rescue | Quick Assist | RustDesk | **DeskOS MVP** |
+| Capability | BeyondTrust RS | AnyDesk | TeamViewer Tensor | ScreenConnect | Splashtop | Zoho Assist | LogMeIn Rescue | Quick Assist | RustDesk | **ReyDesk MVP** |
 |---|---|---|---|---|---|---|---|---|---|---|
 | Unattended agent | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
 | Attended via code/link | ✅ jump client | ✅ | ✅ QuickJoin | ✅ | ✅ SOS | ✅ | ✅ | ✅ (6-digit code) | ✅ | ✅ |
@@ -114,7 +114,7 @@ What practitioners actually value (or would): summarising long threads; classify
 
 ---
 
-## 7. DeskOS opportunities (synthesis)
+## 7. ReyDesk opportunities (synthesis)
 
 | Opportunity | Basis |
 |---|---|

@@ -28,9 +28,79 @@ describe('ad-hoc (unmanaged) support sessions', () => {
       payload: { permissions: ['view_screen', 'control_input'], reason: 'Printer help' },
     })
     expect(res.statusCode).toBe(201)
-    expect(res.json().code).toMatch(/^\d{8}$/)
+    expect(res.json().code).toMatch(/^\d{10}$/)
+    expect(res.json().codeLength).toBe(10)
     expect(res.json().connectUrl).toContain(`/connect/${res.json().code}`)
     expect(res.json().expiresAt).toBeTruthy()
+  })
+
+  it('supports selecting a 12-digit support code', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/adhoc-sessions',
+      headers: authHeaders(owner),
+      payload: { permissions: ['view_screen'], codeLength: 12 },
+    })
+    expect(res.statusCode).toBe(201)
+    expect(res.json().code).toMatch(/^\d{12}$/)
+    expect(res.json().codeLength).toBe(12)
+  })
+
+  it('sends one-time email links and requires a claim fingerprint', async () => {
+    const emailApp = await createTestApp({ DESKOS_SMTP_JSON: 'true', DESKOS_SMTP_FROM: 'ReyDesk <support@example.com>' })
+    try {
+      const emailOwner = await signupOwner(emailApp, { tenantName: 'Secure Link Org' })
+      const created = await emailApp.inject({
+        method: 'POST',
+        url: '/api/v1/adhoc-sessions',
+        headers: authHeaders(emailOwner),
+        payload: { permissions: ['view_screen'] },
+      })
+      const { id, code } = created.json()
+      const queued = await emailApp.inject({
+        method: 'POST',
+        url: `/api/v1/adhoc-sessions/${id}/email`,
+        headers: authHeaders(emailOwner),
+        payload: { to: 'user@example.com', code, mode: 'email_link' },
+      })
+      expect(queued.statusCode).toBe(202)
+      await emailApp.emailQueue.drain()
+      const mail = emailApp.mailer.sent[0]
+      expect(mail.text).not.toContain(`Support code: ${code}`)
+      const match = mail.text.match(/\/connect\/(\d{10})\?claimToken=(deskos_link_[A-Za-z0-9_-]+)/)
+      expect(match).toBeTruthy()
+      const secureCode = match![1]
+      const claimToken = match![2]
+
+      const info = await emailApp.inject({ method: 'GET', url: `/api/connect/${secureCode}?claimToken=${claimToken}` })
+      expect(info.statusCode).toBe(200)
+      expect(info.json().claimMode).toBe('email_link')
+
+      const missingFingerprint = await emailApp.inject({
+        method: 'POST',
+        url: `/api/connect/${secureCode}/claim?claimToken=${claimToken}`,
+        payload: { name: 'secure-link-device' },
+      })
+      expect(missingFingerprint.statusCode).toBe(404)
+
+      const claim = await emailApp.inject({
+        method: 'POST',
+        url: `/api/connect/${secureCode}/claim?claimToken=${claimToken}`,
+        headers: { 'x-deskos-claim-fingerprint': 'helper-fingerprint-a' },
+        payload: { name: 'secure-link-device' },
+      })
+      expect(claim.statusCode).toBe(201)
+
+      const reuse = await emailApp.inject({
+        method: 'POST',
+        url: `/api/connect/${secureCode}/claim?claimToken=${claimToken}`,
+        headers: { 'x-deskos-claim-fingerprint': 'helper-fingerprint-b' },
+        payload: { name: 'another-device' },
+      })
+      expect(reuse.statusCode).toBe(404)
+    } finally {
+      await emailApp.close()
+    }
   })
 
   it('requires remote.attended permission to generate a code', async () => {
@@ -58,7 +128,7 @@ describe('ad-hoc (unmanaged) support sessions', () => {
     expect(info.json().state).toBe('open')
     expect(info.json().reason).toBe('Screen share')
 
-    const missing = await app.inject({ method: 'GET', url: '/api/connect/00000000' })
+    const missing = await app.inject({ method: 'GET', url: '/api/connect/0000000000' })
     expect(missing.statusCode).toBe(404)
   })
 
@@ -160,6 +230,36 @@ describe('ad-hoc (unmanaged) support sessions', () => {
     expect(claim.statusCode).toBe(404)
   })
 
+  it('expires the unmanaged agent credential when the session ends', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/v1/adhoc-sessions',
+      headers: authHeaders(owner),
+      payload: { permissions: ['view_screen'], reason: 'Credential lifetime test' },
+    })
+    const { code } = created.json()
+    const claim = await app.inject({ method: 'POST', url: `/api/connect/${code}/claim`, payload: { name: 'temporary-device' } })
+    expect(claim.statusCode).toBe(201)
+    const deviceToken = claim.json().deviceToken as string
+    const sessionId = claim.json().session.id as string
+    const agentHeaders = { authorization: `Bearer ${deviceToken}` }
+
+    const ended = await app.inject({ method: 'POST', url: `/api/v1/agent/sessions/${sessionId}/end`, headers: agentHeaders })
+    expect(ended.statusCode).toBe(200)
+
+    const heartbeat = await app.inject({ method: 'POST', url: '/api/v1/agent/heartbeat', headers: agentHeaders, payload: {} })
+    expect(heartbeat.statusCode).toBe(401)
+  })
+
+  it('does not query the database for malformed public support codes', async () => {
+    const info = await app.inject({ method: 'GET', url: '/api/connect/not-a-code' })
+    expect(info.statusCode).toBe(404)
+    const download = await app.inject({ method: 'GET', url: '/api/connect/123/download' })
+    expect(download.statusCode).toBe(404)
+    const claim = await app.inject({ method: 'POST', url: '/api/connect/123/claim', payload: { name: 'invalid' } })
+    expect(claim.statusCode).toBe(404)
+  })
+
   it('rejects helper download when no binary is configured', async () => {
     const noHelperApp = await createTestApp({ DESKOS_HELPER_BINARY: '' })
     try {
@@ -181,7 +281,7 @@ describe('ad-hoc (unmanaged) support sessions', () => {
   })
 
   it('rejects helper download for an unknown code', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/connect/00000000/download' })
+    const res = await app.inject({ method: 'GET', url: '/api/connect/0000000000/download' })
     expect(res.statusCode).toBe(404)
     expect(res.json().error.code).toBe('not_found')
   })

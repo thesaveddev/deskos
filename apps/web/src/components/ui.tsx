@@ -1,4 +1,6 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Icon } from './Icons.js'
+import { BRAND } from '../lib/brand.js'
 
 export function Alert({ kind, children }: { kind: 'error' | 'info'; children: ReactNode }) {
   return (
@@ -29,7 +31,7 @@ export function Field({
 export function SubmitButton({ busy, children }: { busy: boolean; children: string }) {
   return (
     <button type="submit" className="btn btn-primary btn-block" disabled={busy}>
-      {busy ? <span className="spinner" aria-hidden="true" /> : null}
+      {busy ? <span className="spinner" aria-hidden="true" /> : <Icon name="check" size={15} />}
       {children}
     </button>
   )
@@ -38,7 +40,7 @@ export function SubmitButton({ busy, children }: { busy: boolean; children: stri
 export function BrandRow() {
   return (
     <div className="brand-row">
-      <span className="brand">DeskOS</span>
+      <span className="brand">{BRAND.name}</span>
       <span className="etch">IT Support OS</span>
     </div>
   )
@@ -101,6 +103,53 @@ export function Panel({
 }
 
 /** Accessible modal dialog — forms live here so lists stay clean and primary. */
+export interface ConfirmOptions {
+  title?: string
+  confirmLabel?: string
+  cancelLabel?: string
+  destructive?: boolean
+}
+
+type ConfirmRequest = ConfirmOptions & { message: string; resolve: (confirmed: boolean) => void }
+
+const ConfirmContext = createContext<((message: string, options?: ConfirmOptions) => Promise<boolean>) | null>(null)
+
+/** App-level confirmation dialog. Use this instead of browser confirm() so confirmations are accessible and consistent. */
+export function ConfirmProvider({ children }: { children: ReactNode }) {
+  const [request, setRequest] = useState<ConfirmRequest | null>(null)
+
+  const confirm = useCallback((message: string, options: ConfirmOptions = {}) => new Promise<boolean>((resolve) => {
+    setRequest({ message, resolve, ...options })
+  }), [])
+
+  const finish = (confirmed: boolean) => {
+    if (!request) return
+    request.resolve(confirmed)
+    setRequest(null)
+  }
+
+  return (
+    <ConfirmContext.Provider value={confirm}>
+      {children}
+      <Modal open={Boolean(request)} onClose={() => finish(false)} title={request?.title ?? 'Please confirm'} width={440}>
+        {request ? <>
+          <p className="confirm-dialog-message">{request.message}</p>
+          <div className="form-actions confirm-dialog-actions">
+            <button type="button" className="btn btn-ghost" onClick={() => finish(false)}>{request.cancelLabel ?? 'Cancel'}</button>
+            <button type="button" className={`btn ${request.destructive ? 'btn-danger' : 'btn-primary'}`} onClick={() => finish(true)}>{request.confirmLabel ?? 'Confirm'}</button>
+          </div>
+        </> : null}
+      </Modal>
+    </ConfirmContext.Provider>
+  )
+}
+
+export function useConfirm() {
+  const confirm = useContext(ConfirmContext)
+  if (!confirm) throw new Error('useConfirm must be used within ConfirmProvider')
+  return confirm
+}
+
 export function Modal({
   open,
   onClose,
@@ -117,12 +166,14 @@ export function Modal({
   width?: number
 }) {
   const panelRef = useRef<HTMLDivElement>(null)
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
 
   useEffect(() => {
     if (!open) return
     const panel = panelRef.current
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { onClose(); return }
+      if (e.key === 'Escape') { onCloseRef.current(); return }
       // Focus trap: Tab cycles within the modal
       if (e.key === 'Tab' && panel) {
         const focusable = panel.querySelectorAll<HTMLElement>(
@@ -139,7 +190,15 @@ export function Modal({
       }
     }
     document.addEventListener('keydown', onKey)
-    panel?.focus()
+    // Do not focus the dialog on every render. The parent often re-renders
+    // when a controlled input changes; stealing focus here made text fields
+    // accept exactly one character before losing focus. Preserve autofocus
+    // and only focus the first control when the modal opens without one.
+    if (panel && !panel.contains(document.activeElement)) {
+      const autofocus = panel.querySelector<HTMLElement>('[autofocus]')
+      const first = panel.querySelector<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
+      ;(autofocus ?? first ?? panel).focus()
+    }
     // Prevent body scroll while modal is open
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -147,7 +206,7 @@ export function Modal({
       document.removeEventListener('keydown', onKey)
       document.body.style.overflow = prev
     }
-  }, [open, onClose])
+  }, [open])
 
   if (!open) return null
 
@@ -169,7 +228,7 @@ export function Modal({
       >
         <div className="modal-head">
           <h2 className="modal-title">{title}</h2>
-          <button type="button" className="modal-close" onClick={onClose} aria-label="Close dialog">×</button>
+          <button type="button" className="modal-close" onClick={onClose} aria-label="Close dialog"><Icon name="close" size={17} /></button>
         </div>
         <div className="modal-body">{children}</div>
         {footer ? <div className="modal-foot">{footer}</div> : null}

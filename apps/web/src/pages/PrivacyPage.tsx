@@ -3,8 +3,8 @@ import LandingLayout from '../components/LandingLayout'
 export default function PrivacyPage() {
   return (
     <LandingLayout
-      title="Privacy Policy — DeskOS"
-      description="DeskOS Privacy Policy — how we collect, use, protect, and share your data. GDPR and UK GDPR compliant."
+      title="Privacy Policy — ReyDesk"
+      description="ReyDesk Privacy Policy — how we collect, use, protect, and share your data. GDPR and UK GDPR compliant."
     >
       <section className="landing-section legal-page">
         <div className="legal-content">
@@ -13,7 +13,7 @@ export default function PrivacyPage() {
 
           <h2>1. Introduction</h2>
           <p>
-            DeskOS ("we", "us", "our") is an IT support platform operated by Clean IT Ltd. This Privacy Policy explains how we collect, use, protect, and share information when you use our website, console, and services ("Service").
+            ReyDesk ("we", "us", "our") is an IT support platform operated by Clean IT Ltd. This Privacy Policy explains how we collect, use, protect, and share information when you use our website, console, and services ("Service").
           </p>
           <p>
             By using the Service you agree to this policy. If you do not agree, please do not use the Service.
@@ -53,7 +53,7 @@ export default function PrivacyPage() {
           <ul>
             <li>With your explicit consent.</li>
             <li>To comply with a legal obligation or lawful request.</li>
-            <li>To protect the rights, property, or safety of DeskOS, our users, or the public.</li>
+            <li>To protect the rights, property, or safety of ReyDesk, our users, or the public.</li>
           </ul>
 
           <h2>6. Data residency</h2>
@@ -70,7 +70,7 @@ export default function PrivacyPage() {
             <li>Restrict or object to processing.</li>
             <li>Data portability — export your data in a machine-readable format.</li>
           </ul>
-          <p>To exercise these rights, contact us at <a href="mailto:privacy@deskos.com">privacy@deskos.com</a>.</p>
+          <p>To exercise these rights, contact us at <a href="mailto:privacy@reydesk.com">privacy@reydesk.com</a>.</p>
 
           <h2>8. Data retention</h2>
           <ul>
@@ -82,7 +82,7 @@ export default function PrivacyPage() {
 
           <h2>9. Cookies</h2>
           <p>
-            DeskOS uses only strictly necessary cookies: a session token for authentication and a preference cookie for your active tenant. We do not use tracking cookies or third-party analytics scripts.
+            ReyDesk uses only strictly necessary cookies: a session token for authentication and a preference cookie for your active tenant. We do not use tracking cookies or third-party analytics scripts.
           </p>
 
           <h2>10. Changes to this policy</h2>
@@ -92,7 +92,7 @@ export default function PrivacyPage() {
           <p>
             Data Protection Officer<br />
             Clean IT Ltd<br />
-            <a href="mailto:privacy@deskos.com">privacy@deskos.com</a>
+            <a href="mailto:privacy@reydesk.com">privacy@reydesk.com</a>
           </p>
         </div>
       </section>

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { Shell } from '../components/Shell.js'
-import { Alert, Field, Modal, SubmitButton } from '../components/ui.js'
+import { Alert, Field, Modal, SubmitButton, useConfirm } from '../components/ui.js'
+import { Icon } from '../components/Icons.js'
 import { useAuth } from '../lib/auth.js'
 import {
   createDeviceGroup,
@@ -13,6 +14,7 @@ import {
 
 export default function DeviceGroupsPage() {
   const canManage = useAuth((state) => state.memberships.some((membership) => membership.permissions.includes('device.manage')))
+  const confirm = useConfirm()
   const [groups, setGroups] = useState<DeviceGroup[] | null>(null)
   const [name, setName] = useState('')
   const [parentId, setParentId] = useState('')
@@ -92,7 +94,7 @@ export default function DeviceGroupsPage() {
   }
 
   const removeGroup = async (group: DeviceGroup) => {
-    if (busy || !window.confirm(`Delete “${group.name}”? Devices will remain and become ungrouped.`)) return
+    if (busy || !await confirm(`Delete “${group.name}”? Devices will remain and become ungrouped.`, { title: 'Delete device group', confirmLabel: 'Delete', destructive: true })) return
     setBusy(true)
     setError(null)
     setNotice(null)
@@ -115,7 +117,7 @@ export default function DeviceGroupsPage() {
           <h1 className="page-title">Device groups</h1>
           <p className="page-subtitle">Organize endpoints by team, location, or ownership.</p>
         </div>
-        <Link to="/devices" className="btn btn-ghost btn-sm">Back to devices</Link>
+        <Link to="/devices" className="btn btn-ghost btn-sm"><Icon name="back" size={14} />Back to devices</Link>
       </div>
 
       {error ? <Alert kind="error">{error}</Alert> : null}
@@ -123,7 +125,7 @@ export default function DeviceGroupsPage() {
 
       {canManage && (
         <div style={{ marginBottom: 16 }}>
-          <button className="btn btn-primary btn-sm" onClick={() => { setShowCreate(true); setName(''); setParentId('') }}>+ New group</button>
+          <button className="btn btn-primary btn-sm" onClick={() => { setShowCreate(true); setName(''); setParentId('') }}><Icon name="add" size={14} />New group</button>
         </div>
       )}
 
@@ -139,7 +141,7 @@ export default function DeviceGroupsPage() {
             </select>
           </Field>
           <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '1rem' }}>
-            <button type="button" className="btn btn-ghost" onClick={() => setShowCreate(false)} disabled={busy}>Cancel</button>
+            <button type="button" className="btn btn-ghost" onClick={() => setShowCreate(false)} disabled={busy}><Icon name="close" size={14} />Cancel</button>
             <SubmitButton busy={busy}>Create group</SubmitButton>
           </div>
         </form>
@@ -158,8 +160,8 @@ export default function DeviceGroupsPage() {
                     <option value="">No parent</option>
                     {groups.filter((candidate) => candidate.id !== group.id).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
                   </select>
-                  <button className="btn btn-primary btn-sm" onClick={() => void saveEdit(group)} disabled={busy || !editingName.trim()}>Save</button>
-                  <button className="btn btn-ghost btn-sm" onClick={cancelEdit} disabled={busy}>Cancel</button>
+                  <button className="btn btn-primary btn-sm" onClick={() => void saveEdit(group)} disabled={busy || !editingName.trim()}><Icon name="save" size={14} />Save</button>
+                  <button className="btn btn-ghost btn-sm" onClick={cancelEdit} disabled={busy}><Icon name="close" size={14} />Cancel</button>
                 </div>
               ) : (
                 <>
@@ -169,8 +171,8 @@ export default function DeviceGroupsPage() {
                   </div>
                   {canManage ? (
                     <div className="group-card-actions">
-                      <button className="btn btn-ghost btn-sm" onClick={() => startEdit(group)} disabled={busy}>Edit</button>
-                      <button className="btn btn-ghost btn-sm" onClick={() => void removeGroup(group)} disabled={busy}>Delete</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => startEdit(group)} disabled={busy}><Icon name="edit" size={14} />Edit</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => void removeGroup(group)} disabled={busy}><Icon name="delete" size={14} />Delete</button>
                     </div>
                   ) : null}
                 </>

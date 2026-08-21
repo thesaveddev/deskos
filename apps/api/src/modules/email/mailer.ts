@@ -37,6 +37,14 @@ export interface EmailMessage {
   html: string
 }
 
+export interface InvitationMailContext {
+  to: string
+  tenantName: string
+  role: string
+  inviteUrl: string
+  expiresInDays?: number
+}
+
 export interface BrandedEmailOptions {
   tenantName?: string
   eyebrow?: string
@@ -71,12 +79,12 @@ function paragraphHtml(value: string): string {
 /**
  * Shared, table-based email shell. Styles are intentionally inline so the
  * message renders consistently in Outlook, Gmail, and mobile clients while
- * matching DeskOS' dark workspace and amber accent.
+ * matching ReyDesk' dark workspace and amber accent.
  */
 export function renderBrandedEmail(options: BrandedEmailOptions): string {
-  const tenantName = safeText(options.tenantName ?? 'DeskOS') || 'DeskOS'
+  const tenantName = safeText(options.tenantName ?? 'ReyDesk') || 'ReyDesk'
   const preheader = escapeHtml(safeText(options.preheader ?? options.title))
-  const eyebrow = escapeHtml(safeText(options.eyebrow ?? 'DeskOS'))
+  const eyebrow = escapeHtml(safeText(options.eyebrow ?? 'ReyDesk'))
   const title = escapeHtml(options.title)
   const greeting = options.greeting ? `<p style="margin:0 0 18px;color:#e6e9ec;font-size:15px;line-height:1.6;">${escapeHtml(options.greeting)}</p>` : ''
   const body = options.htmlBody ?? (options.paragraphs ?? []).map(paragraphHtml).join('')
@@ -86,7 +94,7 @@ export function renderBrandedEmail(options: BrandedEmailOptions): string {
   const action = options.action
     ? `<p style="margin:26px 0 24px;"><a href="${escapeHtml(options.action.url)}" style="display:inline-block;padding:12px 18px;background:#e8a33d;color:#17120a;text-decoration:none;font-weight:600;font-size:14px;border-radius:6px;">${escapeHtml(options.action.label)}</a></p>`
     : ''
-  const footer = escapeHtml(options.footer ?? `This message was sent by ${tenantName} through DeskOS.`)
+  const footer = escapeHtml(options.footer ?? `This message was sent by ${tenantName} through ReyDesk.`)
 
   return `<!doctype html>
 <html lang="en">
@@ -99,8 +107,8 @@ export function renderBrandedEmail(options: BrandedEmailOptions): string {
         <tr><td style="height:4px;background:#e8a33d;font-size:0;line-height:0;">&nbsp;</td></tr>
         <tr><td style="padding:24px 30px 20px;border-bottom:1px solid #242b33;">
           <table role="presentation" width="100%"><tr><td>
-            <span style="display:inline-block;width:26px;height:26px;line-height:26px;text-align:center;background:#e8a33d;color:#17120a;border-radius:5px;font-weight:700;font-size:14px;vertical-align:middle;">D</span>
-            <span style="margin-left:9px;color:#e6e9ec;font-size:17px;font-weight:700;vertical-align:middle;">DeskOS</span>
+            <span style="display:inline-block;width:26px;height:26px;line-height:26px;text-align:center;background:#e8a33d;color:#17120a;border-radius:5px;font-weight:700;font-size:14px;vertical-align:middle;">R</span>
+            <span style="margin-left:9px;color:#e6e9ec;font-size:17px;font-weight:700;vertical-align:middle;">ReyDesk</span>
           </td><td align="right" style="color:#6f7b87;font-family:monospace;font-size:11px;">${eyebrow}</td></tr></table>
         </td></tr>
         <tr><td style="padding:30px;">
@@ -108,7 +116,7 @@ export function renderBrandedEmail(options: BrandedEmailOptions): string {
           ${greeting}${body}${metadata}${action}
           <p style="margin:24px 0 0;color:#7f8a96;font-size:12px;line-height:1.6;">${footer}</p>
         </td></tr>
-        <tr><td style="padding:16px 30px;border-top:1px solid #242b33;color:#5f6b77;font-size:11px;line-height:1.5;">DeskOS · IT support operations</td></tr>
+        <tr><td style="padding:16px 30px;border-top:1px solid #242b33;color:#5f6b77;font-size:11px;line-height:1.5;">ReyDesk · IT support operations</td></tr>
       </table>
     </td></tr>
   </table>
@@ -162,7 +170,7 @@ export class Mailer {
 
   async verifyConnection(): Promise<{ ok: boolean; error?: string }> {
     if (!this.transport) return { ok: false, error: 'SMTP transport is not configured' }
-    if (!this.config.from) return { ok: false, error: 'DESKOS_SMTP_FROM is not configured' }
+    if (!this.config.from) return { ok: false, error: 'REYDESK_SMTP_FROM (or legacy DESKOS_SMTP_FROM) is not configured' }
     try {
       await this.transport.verify()
       this.lastError = null
@@ -185,8 +193,8 @@ export class Mailer {
     }
     if (!this.config.from) {
       this.lastFailureAt = new Date()
-      this.lastError = 'DESKOS_SMTP_FROM is not configured'
-      console.warn('[mailer] DESKOS_SMTP_FROM is not configured; cannot send mail')
+      this.lastError = 'REYDESK_SMTP_FROM (or legacy DESKOS_SMTP_FROM) is not configured'
+      console.warn('[mailer] REYDESK_SMTP_FROM (or legacy DESKOS_SMTP_FROM) is not configured; cannot send mail')
       return false
     }
     try {
@@ -265,11 +273,11 @@ export class Mailer {
   }
 
   /** Build a branded email for notification preferences that include email. */
-  buildNotificationMail(ctx: { to: string; tenantName: string; kind: string; body: string }): { to: string; subject: string; text: string; html: string } {
+  buildNotificationMail(ctx: { to: string; tenantName: string; kind: string; body: string; action?: { label: string; url: string }; settingsUrl?: string }): { to: string; subject: string; text: string; html: string } {
     const labels: Record<string, string> = {
       'ticket.replied': 'Ticket update',
       'ticket.requester_replied': 'Requester replied',
-      'ticket.ai_triage': 'DeskOS assistant update',
+      'ticket.ai_triage': 'ReyDesk assistant update',
       'ticket.resolved': 'Ticket resolved',
       'sla.breached': 'SLA breach',
       'service.approval': 'Approval needed',
@@ -288,26 +296,56 @@ export class Mailer {
     return {
       to: ctx.to,
       subject: `${label} · ${ctx.tenantName}`,
-      text: [`${label} from ${ctx.tenantName}`, '', ctx.body, '', 'Manage notification preferences in DeskOS Settings.'].join('\n'),
+      text: [`${label} from ${ctx.tenantName}`, '', ctx.body, '', ctx.action ? `${ctx.action.label}: ${ctx.action.url}` : '', '', `Manage notification preferences: ${ctx.settingsUrl ?? 'https://www.reydesk.com/settings/notifications'}`].join('\n'),
       html: renderBrandedEmail({
         tenantName: ctx.tenantName,
         eyebrow: label,
         preheader: ctx.body,
         title: label,
-        greeting: 'You have a new DeskOS notification.',
+        greeting: 'You have a new ReyDesk notification.',
         paragraphs: [ctx.body],
-        footer: `You received this because email notifications are enabled for this event in ${ctx.tenantName}.`,
+        action: ctx.action,
+        footer: `You received this because email notifications are enabled for this event in ${ctx.tenantName}. Manage preferences in ReyDesk Settings.`,
+      }),
+    }
+  }
+
+  buildInvitationMail(ctx: InvitationMailContext): EmailMessage {
+    const tenantName = safeText(ctx.tenantName) || 'your organisation'
+    const role = safeText(ctx.role) || 'team member'
+    const expiry = ctx.expiresInDays ?? 7
+    return {
+      to: ctx.to,
+      subject: `You’re invited to join ${tenantName} on ReyDesk`,
+      text: [
+        `You’ve been invited to join ${tenantName} on ReyDesk as ${role}.`,
+        '',
+        `Accept your invitation: ${ctx.inviteUrl}`,
+        '',
+        `This invitation expires in ${expiry} days and can only be used once.`,
+        'If you were not expecting this invitation, you can ignore this email.',
+      ].join('\n'),
+      html: renderBrandedEmail({
+        tenantName,
+        eyebrow: 'Workspace invitation',
+        preheader: `Join ${tenantName} on ReyDesk`,
+        title: 'You’re invited to join a workspace',
+        greeting: `You’ve been invited to join ${tenantName} on ReyDesk as ${role}.`,
+        paragraphs: [`Accept the invitation to set up your access. This link expires in ${expiry} days and can only be used once.`, 'If you were not expecting this invitation, you can ignore this email.'],
+        action: { label: 'Accept invitation', url: ctx.inviteUrl },
+        metadata: [{ label: 'Organisation', value: tenantName }, { label: 'Role', value: role }],
+        footer: `This invitation was sent by ${tenantName} through ReyDesk.`,
       }),
     }
   }
 
   buildMagicLinkMail(to: string, signInUrl: string, tenantName: string): EmailMessage {
-    const displayName = safeText(tenantName) || 'DeskOS'
+    const displayName = safeText(tenantName) || 'ReyDesk'
     return {
       to,
-      subject: `Your ${displayName} DeskOS sign-in link`,
+      subject: `Your ${displayName} ReyDesk sign-in link`,
       text: [
-        `Use this one-time link to sign in to ${displayName} DeskOS:`,
+        `Use this one-time link to sign in to ${displayName} ReyDesk:`,
         '',
         signInUrl,
         '',
@@ -317,11 +355,11 @@ export class Mailer {
       html: renderBrandedEmail({
         tenantName: displayName,
         eyebrow: 'Secure sign-in',
-        preheader: 'Your one-time DeskOS sign-in link',
+        preheader: 'Your one-time ReyDesk sign-in link',
         title: 'Sign in securely',
-        greeting: `Use this one-time link to sign in to ${displayName} DeskOS.`,
+        greeting: `Use this one-time link to sign in to ${displayName} ReyDesk.`,
         paragraphs: ['The link expires in 15 minutes and can only be used once. If you did not request it, you can safely ignore this email.'],
-        action: { label: 'Sign in to DeskOS', url: signInUrl },
+        action: { label: 'Sign in to ReyDesk', url: signInUrl },
       }),
     }
   }
@@ -329,9 +367,9 @@ export class Mailer {
   buildPasswordResetMail(to: string, resetUrl: string): EmailMessage {
     return {
       to,
-      subject: 'Reset your DeskOS password',
+      subject: 'Reset your ReyDesk password',
       text: [
-        'We received a request to reset your DeskOS password.',
+        'We received a request to reset your ReyDesk password.',
         '',
         `Use this link within the next hour: ${resetUrl}`,
         '',
@@ -339,9 +377,9 @@ export class Mailer {
       ].join('\n'),
       html: renderBrandedEmail({
         eyebrow: 'Account security',
-        preheader: 'Reset your DeskOS password',
+        preheader: 'Reset your ReyDesk password',
         title: 'Reset your password',
-        greeting: 'We received a request to reset your DeskOS password.',
+        greeting: 'We received a request to reset your ReyDesk password.',
         paragraphs: ['This link expires in one hour. If you did not request this, you can safely ignore this email.'],
         action: { label: 'Reset password', url: resetUrl },
       }),
@@ -351,13 +389,13 @@ export class Mailer {
   buildVerificationMail(to: string, verifyUrl: string): EmailMessage {
     return {
       to,
-      subject: 'Verify your DeskOS email address',
-      text: [`Verify your DeskOS email address: ${verifyUrl}`, '', 'If you did not create this account, you can ignore this email.'].join('\n'),
+      subject: 'Verify your ReyDesk email address',
+      text: [`Verify your ReyDesk email address: ${verifyUrl}`, '', 'If you did not create this account, you can ignore this email.'].join('\n'),
       html: renderBrandedEmail({
         eyebrow: 'Account setup',
-        preheader: 'Verify your DeskOS email address',
+        preheader: 'Verify your ReyDesk email address',
         title: 'Verify your email address',
-        greeting: 'Please verify your DeskOS email address to finish setting up your account.',
+        greeting: 'Please verify your ReyDesk email address to finish setting up your account.',
         paragraphs: ['If you did not create this account, you can safely ignore this email.'],
         action: { label: 'Verify email address', url: verifyUrl },
       }),
@@ -366,10 +404,10 @@ export class Mailer {
 
   buildRemoteSupportMail(ctx: { to: string; connectUrl: string; code: string; mode: 'code' | 'email_link' }): EmailMessage {
     const isLink = ctx.mode === 'email_link'
-    const subject = isLink ? 'Your secure DeskOS support link' : 'DeskOS remote support request'
+    const subject = isLink ? 'Your secure ReyDesk support link' : 'ReyDesk remote support request'
     const text = isLink
-      ? ['A DeskOS technician has requested temporary access to your device.', '', 'Open this one-time secure link to continue:', ctx.connectUrl, '', 'The first helper that presents this link is bound to the claim. The link expires automatically and access starts only after you approve the request.'].join('\n')
-      : ['A DeskOS technician has requested temporary access to your device.', '', `Support code: ${ctx.code}`, `Open this link to continue: ${ctx.connectUrl}`, '', 'The code expires automatically and access starts only after you approve the request.'].join('\n')
+      ? ['A ReyDesk technician has requested temporary access to your device.', '', 'Open this one-time secure link to continue:', ctx.connectUrl, '', 'The first helper that presents this link is bound to the claim. The link expires automatically and access starts only after you approve the request.'].join('\n')
+      : ['A ReyDesk technician has requested temporary access to your device.', '', `Support code: ${ctx.code}`, `Open this link to continue: ${ctx.connectUrl}`, '', 'The code expires automatically and access starts only after you approve the request.'].join('\n')
     return {
       to: ctx.to,
       subject,
@@ -379,7 +417,7 @@ export class Mailer {
         preheader: subject,
         title: 'A technician requested support access',
         greeting: 'Only continue if you expected help from your IT support team.',
-        paragraphs: [isLink ? 'Use the secure link below to open the support page.' : `Enter this support code on the DeskOS support page: ${ctx.code}`, 'Access begins only after you review and approve the request.'],
+        paragraphs: [isLink ? 'Use the secure link below to open the support page.' : `Enter this support code on the ReyDesk support page: ${ctx.code}`, 'Access begins only after you review and approve the request.'],
         metadata: isLink ? undefined : [{ label: 'Support code', value: ctx.code }],
         action: { label: 'Open secure support page', url: ctx.connectUrl },
         footer: 'Never share a support code with someone you do not trust.',

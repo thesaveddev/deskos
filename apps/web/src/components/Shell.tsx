@@ -3,13 +3,15 @@ import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { CommandPalette } from './CommandPalette.js'
 import { MobileShell } from './MobileShell.js'
 import { NotesDropdown } from './NotesDropdown.js'
-import { Icon } from './Icons.js'
+import { QuickTicketModal } from './QuickTicketModal.js'
 import { useAuth } from '../lib/auth.js'
 import { isNative } from '../lib/capacitor.js'
-import { lockScreen } from '../lib/lock.js'
+import { lockScreen, rememberLockedUser } from '../lib/lock.js'
 import { createAdhocSession } from '../lib/sessions.js'
+import { Icon } from './Icons.js'
 import { readSessionDock, sessionDockEventName, type SessionDockEntry } from '../lib/sessions.js'
 import { listNotifications, markNotificationsRead, openNotificationStream, type AppNotification } from '../lib/notifications.js'
+import { BRAND } from '../lib/brand.js'
 
 function tenantColor(id?: string): string {
   if (!id) return 'var(--accent)'
@@ -17,6 +19,7 @@ function tenantColor(id?: string): string {
   for (let i = 0; i < id.length; i += 1) h = (h * 31 + id.charCodeAt(i)) % 360
   return `hsl(${h} 55% 45%)`
 }
+
 function notificationLabel(kind: string): string {
   const labels: Record<string, string> = {
     'ticket.replied': 'Ticket update',
@@ -53,7 +56,6 @@ function notificationAge(value: string): string {
   if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`
   return `${Math.floor(seconds / 86400)}d ago`
 }
-
 
 interface NavItem {
   to: string
@@ -106,13 +108,13 @@ function NavIcon({ name }: { name: string }) {
 const NAV_ICON_MAP: Record<string, string> = {
   '/': 'dashboard', '/tickets': 'tickets', '/approvals': 'approvals',
   '/devices': 'devices', '/sessions': 'sessions', '/rmm': 'endpoints', '/monitoring': 'monitoring',
-  '/kb': 'kb', '/automations': 'automations', '/scripts': 'scripts',
+  '/kb': 'kb', '/learn': 'kb', '/automations': 'automations', '/scripts': 'scripts',
   '/assets': 'assets', '/services': 'services', '/incidents': 'incidents', '/patches': 'patches',
   '/reports': 'reports', '/compliance': 'compliance',
   '/chat': 'chat', '/calls': 'calls',
   '/msp': 'msp', '/grants': 'access', '/ai-agent': 'ai', '/integrations': 'integrations',
   '/developer': 'developer', '/marketplace': 'marketplace',
-  '/staff': 'staff', '/support': 'support',
+  '/staff': 'staff', '/teams': 'staff', '/support': 'support',
   '/profile': 'profile', '/billing': 'billing', '/settings': 'settings',
 }
 
@@ -146,6 +148,7 @@ function NavSections() {
       label: 'Knowledge & automation',
       items: [
         { to: '/kb', label: 'Knowledge base', show: can('kb.read') },
+        { to: '/learn', label: 'Learn', show: true },
         { to: '/automations', label: 'Automations', show: can('automation.read') },
         { to: '/scripts', label: 'Scripts', show: can('script.read') },
       ],
@@ -228,13 +231,15 @@ export function Shell({ children }: { children: ReactNode }) {
   if (isNative()) return <MobileShell>{children}</MobileShell>
   const auth = useAuth()
   const navigate = useNavigate()
+  const displayName = auth.user?.name?.trim() || auth.user?.email?.split('@')[0] || 'User'
   const [navOpen, setNavOpen] = useState(false)
   const [sessionDock, setSessionDock] = useState<SessionDockEntry | null>(() => readSessionDock())
   const [notesOpen, setNotesOpen] = useState(false)
-  const [showSessionKey, setShowSessionKey] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [notifications, setNotifications] = useState<AppNotification[]>([])
   const [notificationsLoading, setNotificationsLoading] = useState(false)
+  const [quickTicketOpen, setQuickTicketOpen] = useState(false)
+  const [showSessionKey, setShowSessionKey] = useState(false)
   const [sessionKey, setSessionKey] = useState<string | null>(null)
   const [sessionKeyExpires, setSessionKeyExpires] = useState<string | null>(null)
   const [sessionKeyBusy, setSessionKeyBusy] = useState(false)
@@ -318,22 +323,22 @@ export function Shell({ children }: { children: ReactNode }) {
       {navOpen ? <div className="nav-backdrop" onClick={() => setNavOpen(false)} aria-hidden="true" /> : null}
       <aside className={`nav-rail${navOpen ? ' open' : ''}`} role="navigation" aria-label="Main navigation">
         <div className="nav-brand">
-          <span className="brand">DeskOS</span>
+          <span className="brand">{BRAND.name}</span>
         </div>
         <nav className="nav-items" onClick={() => setNavOpen(false)}>
           <NavSections />
         </nav>
         <div className="nav-footer">
-          <span className="etch">DeskOS IT Support OS</span>
+          <span className="etch">{BRAND.name} IT Support OS</span>
         </div>
       </aside>
       <div className="app-main">
         <header className="topbar">
           <button className="btn btn-ghost btn-sm nav-toggle" onClick={() => setNavOpen((open) => !open)} aria-label="Open navigation" aria-expanded={navOpen}>
-            ☰
+            <Icon name="menu" size={18} />
           </button>
           <span className="topbar-org">
-            {(auth.memberships.find((m) => m.tenant.id === auth.activeTenantId) ?? auth.memberships[0])?.tenant.name ?? 'DeskOS'}
+            {(auth.memberships.find((m) => m.tenant.id === auth.activeTenantId) ?? auth.memberships[0])?.tenant.name ?? BRAND.name}
           </span>
           <span className="topbar-slug">/{(auth.memberships.find((m) => m.tenant.id === auth.activeTenantId) ?? auth.memberships[0])?.tenant.slug ?? ''}</span>
           {auth.memberships.length > 1 ? (
@@ -352,6 +357,11 @@ export function Shell({ children }: { children: ReactNode }) {
             </select>
           ) : null}
           <div className="topbar-spacer" />
+
+          <div className="topbar-user-chip" title={auth.user?.email ?? undefined}>
+            <span className="topbar-user-avatar" aria-hidden="true">{displayName.slice(0, 1).toUpperCase()}</span>
+            <span className="topbar-user-copy"><strong>{displayName}</strong><small>{auth.user?.email ?? ''}</small></span>
+          </div>
 
           {/* Remote Session button + key dropdown */}
           <div className="topbar-remote-wrap">
@@ -390,7 +400,7 @@ export function Shell({ children }: { children: ReactNode }) {
                       className="session-key-email"
                       onClick={() => {
                         const url = `${window.location.origin}/connect/${sessionKey}`
-                        window.open(`mailto:?subject=DeskOS Support Session&body=Join my support session:%0A%0A${url}%0A%0ACode: ${sessionKey}`, '_blank')
+                        window.open(`mailto:?subject=${BRAND.name} Support Session&body=Join my support session:%0A%0A${url}%0A%0ACode: ${sessionKey}`, '_blank')
                       }}
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
@@ -404,10 +414,10 @@ export function Shell({ children }: { children: ReactNode }) {
             )}
           </div>
 
-          <Link to="/tickets/new" className="btn btn-new-ticket">
+          <button type="button" className="btn btn-new-ticket" onClick={() => setQuickTicketOpen(true)}>
             <Icon name="ticket" size={16} />
             New Ticket
-          </Link>
+          </button>
 
           <div className="topbar-icons">
             <div className="topbar-notifications-wrap">
@@ -464,11 +474,15 @@ export function Shell({ children }: { children: ReactNode }) {
             title="Lock screen (Ctrl+L)"
             aria-label="Lock screen"
           >
-            🔒
+            <Icon name="lock" size={16} />
           </button>
           <button
             className="btn btn-ghost btn-sm topbar-icon-btn"
-            onClick={() => { void auth.logout().then(() => navigate('/')) }}
+            onClick={() => {
+              if (!auth.user) return
+              rememberLockedUser(auth.user)
+              void auth.logout().then(() => navigate('/lock'))
+            }}
             title="Sign out"
             aria-label="Sign out"
           >
@@ -499,6 +513,7 @@ export function Shell({ children }: { children: ReactNode }) {
           </div>
         ) : null}
         <main className="app-content" id="main-content" tabIndex={-1}>{children}</main>
+        <QuickTicketModal open={quickTicketOpen} onClose={() => setQuickTicketOpen(false)} />
       </div>
     </div>
   )

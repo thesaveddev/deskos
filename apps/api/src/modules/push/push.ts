@@ -37,6 +37,7 @@ const KIND_TITLES: Record<string, string> = {
   'service.approval': 'Approval needed',
   'service.approval_decided': 'Approval decided',
   'change.approval': 'Change approval',
+  'telephony.call_received': 'Inbound call',
 }
 
 /** Validate + canonicalise a browser subscription before storing it. */
@@ -136,7 +137,7 @@ export async function sendPushToUser(
   http: PushHttp,
 ): Promise<{ delivered: number; removed: number }> {
   if (!config.enabled) return { delivered: 0, removed: 0 }
-  const title = KIND_TITLES[kind] ?? 'DeskOS'
+  const title = KIND_TITLES[kind] ?? 'ReyDesk'
   return withTenant(pool, tenantId, async (client) => {
     const { rows } = await client.query(
       'SELECT id, endpoint, p256dh_enc, auth_enc FROM push_subscriptions WHERE user_id = $1',

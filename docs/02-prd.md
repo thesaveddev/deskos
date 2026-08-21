@@ -2,9 +2,9 @@
 
 ## 1. Vision
 
-DeskOS is the working environment of an IT support professional: helpdesk, ITSM, remote support, endpoint visibility, collaboration, knowledge, and an AI copilot in one coherent, fast, keyboard-driven product.
+ReyDesk is the working environment of an IT support professional: helpdesk, ITSM, remote support, endpoint visibility, collaboration, knowledge, and an AI copilot in one coherent, fast, keyboard-driven product.
 
-**North-star statement:** a technician resolves an incident — from request to documented resolution — without leaving DeskOS and without retyping what the platform already knows.
+**North-star statement:** a technician resolves an incident — from request to documented resolution — without leaving ReyDesk and without retyping what the platform already knows.
 
 **Positioning:** "The ticket *is* the troubleshooting console." For SMB IT teams and MSPs that need enterprise-grade remote support and auditability without enterprise weight.
 
@@ -48,7 +48,7 @@ Quarterly evidence reviews. Needs: tamper-evident audit of every remote connecti
 3. AI summary + suggested diagnosis (e.g. DNS failures in device diagnostics). Ada runs an approved *Network diagnostics* script — result posts into timeline.
 4. Deeper work needed → Ada clicks **Remote Control** → user gets consent prompt (technician name, org, permissions) → grants view+control.
 5. In-session: terminal → diagnostic commands (each audited) → restart network service → verify. Session dock persists while she checks KB in another tab.
-6. End session → DeskOS drafts structured notes (duration, commands, changes) from actual activity → Ada reviews, edits, clicks **Resolve**.
+6. End session → ReyDesk drafts structured notes (duration, commands, changes) from actual activity → Ada reviews, edits, clicks **Resolve**.
 7. AI offers: "Create a knowledge article from this resolution?" → draft created, queued for approval.
 
 ### J2 — "I'm locked out" (identity context)

@@ -186,7 +186,7 @@ export default function AdSettingsPage() {
         <Field label="Base DN" hint="e.g. DC=corp,DC=local">
           <input className="field-input" value={form.baseDn} onChange={(e) => setField('baseDn', e.target.value)} required />
         </Field>
-        <Field label="Bind DN" hint="e.g. CN=DeskOS Service,OU=Service Accounts,DC=corp,DC=local">
+        <Field label="Bind DN" hint="e.g. CN=ReyDesk Service,OU=Service Accounts,DC=corp,DC=local">
           <input className="field-input" value={form.bindDn} onChange={(e) => setField('bindDn', e.target.value)} required />
         </Field>
         <PasswordField label="Bind password" hint={editing ? 'Leave blank to keep the existing password' : undefined} className="field-input" value={form.bindPassword} onChange={(e) => setField('bindPassword', e.target.value)} required={!editing} />

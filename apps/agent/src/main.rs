@@ -24,7 +24,7 @@ use std::{
     process::Stdio,
     sync::Arc,
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 #[cfg(target_os = "windows")]
 use std::{ffi::OsString, process::Command as ProcessCommand};
@@ -56,7 +56,7 @@ use windows::Win32::{
     Graphics::Gdi::{GetSysColorBrush, COLOR_WINDOW},
     UI::WindowsAndMessaging::{
         DestroyWindow, GetDlgItem, GetWindowLongPtrW, GetWindowTextW, LoadCursorW,
-        SetWindowLongPtrW, SetWindowTextW, ShowWindow, CW_USEDEFAULT, ES_CENTER, ES_NUMBER,
+        SetWindowLongPtrW, SetWindowTextW, ShowWindow, CW_USEDEFAULT, ES_CENTER,
         GWLP_USERDATA, HMENU, IDC_ARROW, SW_SHOW, WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_DESTROY,
         WS_CHILD, WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE,
     },
@@ -109,14 +109,17 @@ use xcap::Monitor;
 
 const SERVICE_NAME: &str = "DeskOSAgent";
 
-/// Base64 ed25519 public key baked at build time (`DESKOS_UPDATE_PUBLIC_KEY`).
+/// Base64 ed25519 public key baked at build time (`REYDESK_UPDATE_PUBLIC_KEY`, with the legacy name accepted).
 /// When set, update artifacts must carry a signature over `<version>:<sha256>`.
 /// When unset (development builds), signature verification is skipped but the
 /// SHA-256 check is always enforced.
-const UPDATE_PUBLIC_KEY: Option<&str> = option_env!("DESKOS_UPDATE_PUBLIC_KEY");
+const UPDATE_PUBLIC_KEY: Option<&str> = match option_env!("REYDESK_UPDATE_PUBLIC_KEY") {
+    Some(value) => Some(value),
+    None => option_env!("DESKOS_UPDATE_PUBLIC_KEY"),
+};
 
 #[derive(Parser, Debug)]
-#[command(name = "deskos-agent", about = "DeskOS endpoint agent")]
+#[command(name = "deskos-agent", about = "ReyDesk endpoint agent")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -149,7 +152,7 @@ enum Command {
         /// Optional override; defaults to the deployment-baked or registered endpoint.
         #[arg(long, default_value = "")]
         relay_url: String,
-        /// The eight-digit support code from the technician. Omit it to open a code-entry window instead.
+        /// The 8–12 digit support code from the technician. Omit it to open a code-entry window instead.
         code: Option<String>,
         #[arg(long)]
         name: Option<String>,
@@ -249,7 +252,7 @@ enum Command {
         #[arg(long, default_value = "deskos-agent.json")]
         config: PathBuf,
     },
-    /// Remove the DeskOS Windows service registration.
+    /// Remove the ReyDesk Windows service registration.
     UninstallService,
 }
 
@@ -263,6 +266,8 @@ struct AgentConfig {
     name: String,
     hostname: String,
     agent_version: String,
+    #[serde(default = "default_device_type")]
+    device_type: String,
     #[serde(default = "default_interval")]
     heartbeat_interval_sec: u64,
 }
@@ -271,19 +276,29 @@ fn default_interval() -> u64 {
     30
 }
 
+fn default_device_type() -> String {
+    "workstation".to_owned()
+}
+
 fn default_relay_url() -> String {
     "ws://localhost:4100/ws".to_owned()
 }
 
 /// Compile-time deployment defaults so a portable helper can be built with the
 /// API/relay endpoints baked in, letting the endpoint user enter only the code.
-const BAKED_API_URL: &str = match option_env!("DESKOS_API_URL") {
+const BAKED_API_URL: &str = match option_env!("REYDESK_API_URL") {
     Some(url) => url,
-    None => "",
+    None => match option_env!("DESKOS_API_URL") {
+        Some(url) => url,
+        None => "",
+    },
 };
-const BAKED_RELAY_URL: &str = match option_env!("DESKOS_RELAY_URL") {
+const BAKED_RELAY_URL: &str = match option_env!("REYDESK_RELAY_URL") {
     Some(url) => url,
-    None => "",
+    None => match option_env!("DESKOS_RELAY_URL") {
+        Some(url) => url,
+        None => "",
+    },
 };
 
 #[derive(Debug, Deserialize)]
@@ -320,6 +335,8 @@ struct EnrollRequest {
     arch: String,
     ip: String,
     agent_version: String,
+    #[serde(default = "default_device_type")]
+    device_type: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -370,6 +387,14 @@ struct InventoryRequest {
     arch: String,
     ip: String,
     agent_version: String,
+    device_type: String,
+    power_source: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    battery_pct: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    battery_health_pct: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    uptime_seconds: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -378,6 +403,17 @@ struct MetricsRequest {
     cpu_pct: f32,
     mem_pct: f32,
     disk_pct: f32,
+    disk_free_bytes: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    network_latency_ms: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    battery_pct: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    battery_health_pct: Option<f32>,
+    uptime_seconds: u64,
+    process_count: usize,
+    service_states: HashMap<String, String>,
+    reason: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -525,11 +561,12 @@ impl AgentClient {
         Ok(())
     }
 
-    async fn heartbeat(&self) -> Result<()> {
+    async fn heartbeat(&self) -> Result<f32> {
+        let started = Instant::now();
         let _: serde_json::Value = self
             .post_json("/api/v1/agent/heartbeat", serde_json::json!({}))
             .await?;
-        Ok(())
+        Ok(started.elapsed().as_secs_f32() * 1_000.0)
     }
 
     async fn inventory(&self, body: &InventoryRequest) -> Result<()> {
@@ -745,6 +782,136 @@ fn load_config(path: &Path) -> Result<AgentConfig> {
     }
 }
 
+#[cfg(target_os = "windows")]
+fn battery_percentage() -> Option<f32> {
+    use windows::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
+    let mut status = SYSTEM_POWER_STATUS::default();
+    let ok = unsafe { GetSystemPowerStatus(&mut status).is_ok() };
+    if !ok || status.BatteryLifePercent == 255 {
+        return None;
+    }
+    Some(status.BatteryLifePercent as f32)
+}
+
+#[cfg(target_os = "linux")]
+fn battery_percentage() -> Option<f32> {
+    let entries = fs::read_dir("/sys/class/power_supply").ok()?;
+    for entry in entries.flatten() {
+        if !entry.file_name().to_string_lossy().starts_with("BAT") {
+            continue;
+        }
+        let value = fs::read_to_string(entry.path().join("capacity")).ok()?;
+        if let Ok(percent) = value.trim().parse::<f32>() {
+            return (0.0..=100.0).contains(&percent).then_some(percent);
+        }
+    }
+    None
+}
+
+#[cfg(target_os = "macos")]
+fn battery_percentage() -> Option<f32> {
+    let output = std::process::Command::new("pmset")
+        .args(["-g", "batt"])
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    let percent_end = text.find('%')?;
+    let digits = text[..percent_end]
+        .chars()
+        .rev()
+        .take_while(|character| character.is_ascii_digit())
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect::<String>();
+    digits.parse::<f32>().ok().filter(|percent| *percent <= 100.0)
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+fn battery_percentage() -> Option<f32> {
+    None
+}
+
+#[cfg(target_os = "windows")]
+fn power_source() -> String {
+    use windows::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
+    let mut status = SYSTEM_POWER_STATUS::default();
+    if unsafe { GetSystemPowerStatus(&mut status).is_ok() } {
+        return match status.ACLineStatus {
+            0 => "battery".to_owned(),
+            1 => "ac".to_owned(),
+            _ => "unknown".to_owned(),
+        };
+    }
+    "unknown".to_owned()
+}
+
+#[cfg(not(target_os = "windows"))]
+fn power_source() -> String {
+    if battery_percentage().is_some() {
+        "battery".to_owned()
+    } else {
+        "unknown".to_owned()
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn battery_health_percentage() -> Option<f32> {
+    let output = std::process::Command::new("powershell.exe")
+        .args(["-NoProfile", "-NonInteractive", "-Command", "$b=Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue | Select-Object -First 1; if ($b -and $b.DesignCapacity -gt 0) {[math]::Round(($b.FullChargeCapacity / $b.DesignCapacity) * 100, 2)}"])
+        .output()
+        .ok()?;
+    String::from_utf8_lossy(&output.stdout).trim().parse::<f32>().ok().filter(|value| (0.0..=100.0).contains(value))
+}
+
+#[cfg(target_os = "linux")]
+fn battery_health_percentage() -> Option<f32> {
+    let entries = fs::read_dir("/sys/class/power_supply").ok()?;
+    for entry in entries.flatten() {
+        if !entry.file_name().to_string_lossy().starts_with("BAT") { continue; }
+        let design = fs::read_to_string(entry.path().join("energy_full_design")).ok()
+            .or_else(|| fs::read_to_string(entry.path().join("charge_full_design")).ok())?.trim().parse::<f32>().ok()?;
+        let full = fs::read_to_string(entry.path().join("energy_full")).ok()
+            .or_else(|| fs::read_to_string(entry.path().join("charge_full")).ok())?.trim().parse::<f32>().ok()?;
+        if design > 0.0 { return Some((full / design * 100.0).clamp(0.0, 100.0)); }
+    }
+    None
+}
+
+#[cfg(target_os = "macos")]
+fn battery_health_percentage() -> Option<f32> {
+    let output = std::process::Command::new("ioreg").args(["-rn", "AppleSmartBattery"]).output().ok()?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    let design = text.lines().find_map(|line| line.split('=').nth(1)?.trim().parse::<f32>().ok().filter(|_| line.contains("DesignCapacity")))?;
+    let full = text.lines().find_map(|line| line.split('=').nth(1)?.trim().parse::<f32>().ok().filter(|_| line.contains("AppleRawMaxCapacity") || line.contains("FullChargeCapacity")))?;
+    (design > 0.0).then_some((full / design * 100.0).clamp(0.0, 100.0))
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+fn battery_health_percentage() -> Option<f32> { None }
+
+#[cfg(target_os = "windows")]
+fn service_states() -> HashMap<String, String> {
+    let mut states = HashMap::new();
+    let output = match std::process::Command::new("sc.exe").args(["query", "state=", "all"]).output() { Ok(output) => output, Err(_) => return states };
+    let mut name: Option<String> = None;
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        let trimmed = line.trim();
+        if let Some(value) = trimmed.strip_prefix("SERVICE_NAME:") { name = Some(value.trim().to_owned()); }
+        else if trimmed.starts_with("STATE") {
+            if let Some(service) = name.take() {
+                let state = if trimmed.contains("RUNNING") { "running" } else if trimmed.contains("PAUSED") { "paused" } else if trimmed.contains("STOPPED") { "stopped" } else { "unknown" };
+                states.insert(service, state.to_owned());
+                if states.len() >= 200 { break; }
+            }
+        }
+    }
+    states
+}
+
+#[cfg(not(target_os = "windows"))]
+fn service_states() -> HashMap<String, String> { HashMap::new() }
+
 fn inventory(config: &AgentConfig) -> InventoryRequest {
     InventoryRequest {
         hostname: config.hostname.clone(),
@@ -755,12 +922,18 @@ fn inventory(config: &AgentConfig) -> InventoryRequest {
         arch: std::env::consts::ARCH.to_owned(),
         ip: String::new(),
         agent_version: config.agent_version.clone(),
+        device_type: config.device_type.clone(),
+        power_source: power_source(),
+        battery_pct: battery_percentage(),
+        battery_health_pct: battery_health_percentage(),
+        uptime_seconds: Some(System::uptime()),
     }
 }
 
-fn metrics(system: &mut System, disks: &mut Disks) -> MetricsRequest {
+fn metrics(system: &mut System, disks: &mut Disks, network_latency_ms: Option<f32>) -> MetricsRequest {
     system.refresh_cpu();
     system.refresh_memory();
+    system.refresh_processes();
     disks.refresh();
     let total_disk = disks
         .list()
@@ -784,6 +957,14 @@ fn metrics(system: &mut System, disks: &mut Disks) -> MetricsRequest {
         } else {
             ((total_disk - available_disk) as f32 / total_disk as f32) * 100.0
         },
+        disk_free_bytes: available_disk,
+        network_latency_ms,
+        battery_pct: battery_percentage(),
+        battery_health_pct: battery_health_percentage(),
+        uptime_seconds: System::uptime(),
+        process_count: system.processes().len(),
+        service_states: service_states(),
+        reason: "periodic".to_owned(),
     }
 }
 
@@ -796,6 +977,7 @@ async fn enroll(
     agent_version: String,
     config_path: PathBuf,
 ) -> Result<()> {
+    validate_endpoints(&api_url, &relay_url)?;
     let hostname = provided_hostname.unwrap_or_else(hostname);
     let device_name = name.unwrap_or_else(|| hostname.clone());
     let request = EnrollRequest {
@@ -809,6 +991,7 @@ async fn enroll(
         arch: std::env::consts::ARCH.to_owned(),
         ip: String::new(),
         agent_version: agent_version.clone(),
+        device_type: default_device_type(),
     };
     let response = Client::new()
         .post(format!(
@@ -832,6 +1015,7 @@ async fn enroll(
         name: response.device.name,
         hostname,
         agent_version,
+        device_type: default_device_type(),
         heartbeat_interval_sec: response.heartbeat_interval_sec,
     };
     save_config(&config_path, &config)?;
@@ -846,6 +1030,8 @@ async fn claim_code(
     code: &str,
     name: &str,
     hostname: &str,
+    claim_token: Option<&str>,
+    fingerprint: Option<&str>,
 ) -> Result<ClaimResponse> {
     let body = ClaimRequest {
         name: name.to_owned(),
@@ -856,12 +1042,19 @@ async fn claim_code(
             .unwrap_or_default(),
         arch: std::env::consts::ARCH.to_owned(),
     };
-    Client::new()
+    let mut request = Client::new()
         .post(format!(
             "{}/api/connect/{code}/claim",
             api_url.trim_end_matches('/')
         ))
-        .json(&body)
+        .json(&body);
+    if let Some(claim_token) = claim_token {
+        request = request.query(&[("claimToken", claim_token)]);
+    }
+    if let Some(fingerprint) = fingerprint {
+        request = request.header("x-deskos-claim-fingerprint", fingerprint);
+    }
+    request
         .send()
         .await
         .context("support-code claim request failed")?
@@ -872,17 +1065,69 @@ async fn claim_code(
         .context("invalid claim response")
 }
 
+fn parse_support_input(raw: &str) -> Result<(String, Option<String>)> {
+    let value = raw.trim();
+    if let Some(connect_start) = value.find("/connect/") {
+        let after = &value[connect_start + "/connect/".len()..];
+        let (code, query) = after.split_once('?').unwrap_or((after, ""));
+        if !(8..=12).contains(&code.len()) || !code.chars().all(|character| character.is_ascii_digit()) {
+            return Err(anyhow!("the secure link does not contain a valid 8-12 digit support code"));
+        }
+        let token = query
+            .split('&')
+            .find_map(|part| part.strip_prefix("claimToken="))
+            .filter(|token| token.starts_with("deskos_link_") && token.len() <= 200)
+            .map(str::to_owned)
+            .ok_or_else(|| anyhow!("the secure link is missing its one-time claim token"))?;
+        return Ok((code.to_owned(), Some(token)));
+    }
+    if (8..=12).contains(&value.len()) && value.chars().all(|character| character.is_ascii_digit()) {
+        return Ok((value.to_owned(), None));
+    }
+    Err(anyhow!("enter an 8-12 digit support code or paste the complete secure ReyDesk link"))
+}
+
+fn new_claim_fingerprint() -> String {
+    let mut bytes = [0u8; 32];
+    if getrandom::getrandom(&mut bytes).is_ok() {
+        return format!("deskos_fp_{}", hex::encode(bytes));
+    }
+    let fallback = format!(
+        "{}:{}:{}:{}",
+        hostname(),
+        std::process::id(),
+        std::env::consts::OS,
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or_default(),
+    );
+    format!("deskos_fp_{}", hex::encode(Sha256::digest(fallback.as_bytes())))
+}
+
 async fn claim_and_save(
     api_url: String,
     relay_url: String,
     code: String,
+    claim_token: Option<String>,
+    fingerprint: Option<String>,
     name: Option<String>,
     config_path: PathBuf,
 ) -> Result<(ClaimedSession, AgentConfig)> {
-    let (api_url, _fallback_relay) = helper_endpoint_defaults(api_url, relay_url);
+    let (api_url, fallback_relay) = helper_endpoint_defaults(api_url, relay_url);
+    validate_endpoints(&api_url, &fallback_relay)?;
     let hostname = hostname();
     let device_name = name.unwrap_or_else(|| hostname.clone());
-    let claimed = claim_code(&api_url, &code, &device_name, &hostname).await?;
+    let claimed = claim_code(
+        &api_url,
+        &code,
+        &device_name,
+        &hostname,
+        claim_token.as_deref(),
+        fingerprint.as_deref(),
+    )
+    .await?;
+    validate_endpoint(&claimed.relay_url, true)?;
     let config = AgentConfig {
         api_url,
         relay_url: claimed.relay_url,
@@ -891,6 +1136,7 @@ async fn claim_and_save(
         name: claimed.device.name,
         hostname,
         agent_version: "deskos-helper".to_owned(),
+        device_type: default_device_type(),
         heartbeat_interval_sec: 30,
     };
     save_config(&config_path, &config)?;
@@ -904,8 +1150,18 @@ async fn run_helper(
     name: Option<String>,
     config_path: PathBuf,
 ) -> Result<()> {
-    let (session, _config) =
-        claim_and_save(api_url, relay_url, code, name, config_path.clone()).await?;
+    let (code, claim_token) = parse_support_input(&code)?;
+    let fingerprint = claim_token.as_ref().map(|_| new_claim_fingerprint());
+    let (session, config) = claim_and_save(
+        api_url,
+        relay_url,
+        code,
+        claim_token,
+        fingerprint,
+        name,
+        config_path.clone(),
+    )
+    .await?;
     println!(
         "Support session {} ({}) — saved helper credentials to {}",
         session.id,
@@ -915,7 +1171,9 @@ async fn run_helper(
     println!(
         "A consent prompt will appear when your technician requests access. Keep this window open; close it to end the helper."
     );
-    run_agent(config_path, None, true, None).await
+    let result = run_agent(config_path, None, true, None).await;
+    let _ = AgentClient::new(&config).end_session(&session.id).await;
+    result
 }
 
 async fn helper_ui(
@@ -966,7 +1224,7 @@ unsafe extern "system" fn helper_window_proc(
             let state = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const HelperWindowState;
             if !state.is_null() {
                 let edit = GetDlgItem(hwnd, IDC_HELPER_CODE);
-                let mut buffer = [0u16; 16];
+                let mut buffer = [0u16; 512];
                 let len = GetWindowTextW(edit, &mut buffer);
                 let code = String::from_utf16_lossy(&buffer[..len as usize]);
                 if let Ok(mut status) = (*state).status.lock() {
@@ -1016,7 +1274,7 @@ fn run_helper_window(
         status: status.clone(),
     }));
 
-    let title = tray_wide("DeskOS support");
+    let title = tray_wide("ReyDesk support");
     let hwnd = unsafe {
         CreateWindowExW(
             WINDOW_EX_STYLE::default(),
@@ -1035,7 +1293,7 @@ fn run_helper_window(
     };
     if hwnd.0 == 0 {
         let _ = unsafe { Box::from_raw(state) };
-        return Err(anyhow!("create DeskOS helper window failed"));
+        return Err(anyhow!("create ReyDesk helper window failed"));
     }
     unsafe { SetWindowLongPtrW(hwnd, GWLP_USERDATA, state as isize) };
 
@@ -1046,7 +1304,7 @@ fn run_helper_window(
         CreateWindowExW(
             WINDOW_EX_STYLE::default(),
             PCWSTR(static_class.as_ptr()),
-            PCWSTR(tray_wide("Enter your 8-digit support code").as_ptr()),
+            PCWSTR(tray_wide("Enter an 8-12 digit support code or paste a secure link").as_ptr()),
             WS_CHILD | WS_VISIBLE,
             24,
             24,
@@ -1064,7 +1322,6 @@ fn run_helper_window(
             WS_CHILD
                 | WS_VISIBLE
                 | WS_TABSTOP
-                | WINDOW_STYLE(ES_NUMBER as u32)
                 | WINDOW_STYLE(ES_CENTER as u32),
             24,
             54,
@@ -1144,7 +1401,7 @@ async fn run_helper_native(
 ) -> Result<()> {
     let (submit, mut receiver) = tokio::sync::mpsc::unbounded_channel::<HelperEvent>();
     let (shutdown_tx, shutdown_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
-    let status = Arc::new(StdMutex::new("Enter your 8-digit support code".to_owned()));
+    let status = Arc::new(StdMutex::new("Enter an 8-12 digit code or paste a secure link".to_owned()));
 
     let window_submit = submit.clone();
     let window_status = status.clone();
@@ -1157,30 +1414,35 @@ async fn run_helper_native(
         match event {
             HelperEvent::Closed => break,
             HelperEvent::SubmitCode(raw) => {
-                let code: String = raw
-                    .chars()
-                    .filter(|character| character.is_ascii_digit())
-                    .collect();
-                if code.len() != 8 {
-                    if let Ok(mut current) = status.lock() {
-                        *current = "Enter exactly 8 digits".to_owned();
+                let parsed = parse_support_input(&raw);
+                let (code, claim_token) = match parsed {
+                    Ok(value) => value,
+                    Err(error) => {
+                        if let Ok(mut current) = status.lock() {
+                            *current = error.to_string();
+                        }
+                        continue;
                     }
-                    continue;
-                }
+                };
+                let fingerprint = claim_token.as_ref().map(|_| new_claim_fingerprint());
                 match claim_and_save(
                     api_url.clone(),
                     String::new(),
                     code,
+                    claim_token,
+                    fingerprint,
                     name.clone(),
                     config_path.clone(),
                 )
                 .await
                 {
-                    Ok((session, _config)) => {
+                    Ok((session, config)) => {
                         if let Ok(mut current) = status.lock() {
                             *current = format!("Connected — session {}", session.state);
                         }
-                        run_agent(config_path, None, true, Some(shutdown_rx)).await?;
+                        let result = run_agent(config_path, None, true, Some(shutdown_rx)).await;
+                        let _ = AgentClient::new(&config).end_session(&session.id).await;
+                        result?;
                         return Ok(());
                     }
                     Err(error) => {
@@ -1202,10 +1464,10 @@ fn helper_html(message: Option<&str>) -> String {
         .map(|message| format!("<div class=notice>{}</div>", html_escape(message)))
         .unwrap_or_default();
     format!(
-        r#"<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DeskOS support</title>
+        r#"<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ReyDesk support</title>
 <style>body{{font-family:Segoe UI,sans-serif;background:#f4f7fb;color:#182230;margin:0;padding:32px}}main{{max-width:560px;margin:auto;background:white;border:1px solid #d9e2ef;border-radius:14px;padding:28px;box-shadow:0 8px 28px #12263b18}}h1{{margin-top:0}}label{{display:block;margin:16px 0 6px;font-weight:600}}input{{box-sizing:border-box;width:100%;padding:11px;border:1px solid #b9c7d8;border-radius:8px;font:inherit}}button{{margin-top:24px;padding:11px 18px;background:#1769e0;color:#fff;border:0;border-radius:8px;font-weight:600;cursor:pointer}}.muted{{color:#64748b;font-size:.94rem}}.notice{{background:#eef6ff;border:1px solid #b9dcff;border-radius:8px;padding:12px;margin-bottom:18px}}</style></head>
-<body><main><h1>DeskOS support</h1><p class=muted>Enter the eight-digit support code your technician gave you. No installation or login is needed.</p>{notice}
-<form method=post action=/connect><label for=code>Support code</label><input id=code name=code inputmode=numeric pattern="[0-9]{{8}}" maxlength=8 placeholder="12345678" autocomplete=one-time-code autofocus required><button type=submit>Connect</button></form></main></body></html>"#,
+<body><main><h1>ReyDesk support</h1><p class=muted>Enter the 8-12 digit support code or paste the complete secure link your technician gave you. No installation or login is needed.</p>{notice}
+<form method=post action=/connect><label for=code>Support code or secure link</label><input id=code name=code placeholder="1234567890 or https://…" autocomplete=one-time-code autofocus required><button type=submit>Connect</button></form></main></body></html>"#,
         notice = notice,
     )
 }
@@ -1223,7 +1485,7 @@ async fn helper_ui_browser(
         .context("bind local helper UI")?;
     let address = listener.local_addr().context("read helper UI address")?;
     let url = format!("http://{address}/");
-    println!("Opening DeskOS helper UI at {url}");
+    println!("Opening ReyDesk helper UI at {url}");
     open_enrollment_browser(&url)?;
 
     loop {
@@ -1278,18 +1540,30 @@ async fn helper_ui_browser(
             .await?;
             continue;
         }
+        let parsed = parse_support_input(&code)
+            .map_err(|error| anyhow!("support input rejected: {error}"));
+        let (code, claim_token) = match parsed {
+            Ok(value) => value,
+            Err(error) => {
+                http_response(stream, "400 Bad Request", helper_html(Some(&error.to_string()))).await?;
+                continue;
+            }
+        };
+        let fingerprint = claim_token.as_ref().map(|_| new_claim_fingerprint());
         match claim_and_save(
             api_url.clone(),
             String::new(),
             code,
+            claim_token,
+            fingerprint,
             name.clone(),
             config_path.clone(),
         )
         .await
         {
-            Ok((session, _config)) => {
-                let page = format!(
-                    "<!doctype html><meta charset=utf-8><title>DeskOS connected</title><h1>Support session {}</h1><p>You can close this window. A consent prompt will appear when your technician requests access.</p>",
+            Ok((session, config)) => {
+                let page = format(
+                    "<!doctype html><meta charset=utf-8><title>ReyDesk connected</title><h1>Support session {}</h1><p>You can close this window. A consent prompt will appear when your technician requests access.</p>",
                     html_escape(&session.state)
                 );
                 http_response(stream, "200 OK", page).await?;
@@ -1297,7 +1571,9 @@ async fn helper_ui_browser(
                     "Support session {} ({}) — keep this window open; close it to end the helper.",
                     session.id, session.state
                 );
-                run_agent(config_path, None, true, None).await?;
+                let result = run_agent(config_path, None, true, None).await;
+                let _ = AgentClient::new(&config).end_session(&session.id).await;
+                result?;
                 return Ok(());
             }
             Err(error) => {
@@ -1319,7 +1595,7 @@ fn show_consent_prompt(message: &str) -> Result<bool> {
             .encode_utf16()
             .chain(std::iter::once(0))
             .collect::<Vec<_>>();
-        let title = "DeskOS remote-support consent"
+        let title = "ReyDesk remote-support consent"
             .encode_utf16()
             .chain(std::iter::once(0))
             .collect::<Vec<_>>();
@@ -1369,7 +1645,7 @@ fn session_consent_prompt(session: &AgentSession) -> Result<bool> {
         permissions.join(", ")
     };
     let message = format!(
-        "DeskOS is requesting remote support for this endpoint.\n\nReason: {}\nRequested permissions: {}\n\nAllow this session?",
+        "ReyDesk is requesting remote support for this endpoint.\n\nReason: {}\nRequested permissions: {}\n\nAllow this session?",
         if session.reason.is_empty() { "Not provided" } else { &session.reason },
         permissions,
     );
@@ -1389,7 +1665,7 @@ fn session_elevation_prompt(session: &AgentSession) -> Result<bool> {
         .collect();
     let capabilities = capabilities.join(", ");
     let message = format!(
-        "DeskOS is requesting ELEVATED access to this endpoint.\n\nElevated capabilities: {}\n\nThis grants full system privileges for the session. If you decline, the session will continue with screen sharing only.\n\nAllow elevated access?",
+        "ReyDesk is requesting ELEVATED access to this endpoint.\n\nElevated capabilities: {}\n\nThis grants full system privileges for the session. If you decline, the session will continue with screen sharing only.\n\nAllow elevated access?",
         capabilities,
     );
     show_consent_prompt(&message)
@@ -1689,7 +1965,7 @@ fn enrollment_endpoints(api_url: String, relay_url: String) -> (String, String) 
 
 /// Resolve the portable helper's endpoints: explicit flag → build-time baked
 /// default → fleet registry → localhost. This lets a deployment ship a helper
-/// whose users only ever enter the eight-digit code.
+/// whose users only ever enter the 10–12 digit support code.
 fn helper_endpoint_defaults(api_url: String, relay_url: String) -> (String, String) {
     let (registry_api, registry_relay) = enrollment_endpoints(String::new(), String::new());
     (
@@ -1708,6 +1984,29 @@ fn helper_endpoint_defaults(api_url: String, relay_url: String) -> (String, Stri
             registry_relay
         },
     )
+}
+
+fn endpoint_is_local(url: &reqwest::Url) -> bool {
+    matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]" | "::1"))
+}
+
+fn validate_endpoint(raw: &str, relay: bool) -> Result<()> {
+    let parsed = reqwest::Url::parse(raw).with_context(|| format!("invalid {} endpoint", if relay { "relay" } else { "API" }))?;
+    let secure_scheme = if relay { parsed.scheme() == "wss" } else { parsed.scheme() == "https" };
+    if !secure_scheme && !endpoint_is_local(&parsed) {
+        return Err(anyhow!(
+            "refusing insecure {} endpoint {}; use {} outside localhost",
+            if relay { "relay" } else { "API" },
+            raw,
+            if relay { "wss://" } else { "https://" },
+        ));
+    }
+    Ok(())
+}
+
+fn validate_endpoints(api_url: &str, relay_url: &str) -> Result<()> {
+    validate_endpoint(api_url, false)?;
+    validate_endpoint(relay_url, true)
 }
 
 fn html_escape(value: &str) -> String {
@@ -1752,10 +2051,10 @@ fn enrollment_html(message: Option<&str>) -> String {
         .map(|message| format!("<div class=notice>{}</div>", html_escape(message)))
         .unwrap_or_default();
     format!(
-        r#"<!doctype html><html><head><meta charset="utf-8"><title>DeskOS enrollment</title>
+        r#"<!doctype html><html><head><meta charset="utf-8"><title>ReyDesk enrollment</title>
 <style>body{{font-family:Segoe UI,sans-serif;background:#f4f7fb;color:#182230;margin:0;padding:32px}}main{{max-width:560px;margin:auto;background:white;border:1px solid #d9e2ef;border-radius:14px;padding:28px;box-shadow:0 8px 28px #12263b18}}h1{{margin-top:0}}label{{display:block;margin:16px 0 6px;font-weight:600}}input{{box-sizing:border-box;width:100%;padding:11px;border:1px solid #b9c7d8;border-radius:8px;font:inherit}}button{{margin-top:24px;padding:11px 18px;background:#1769e0;color:#fff;border:0;border-radius:8px;font-weight:600;cursor:pointer}}.muted{{color:#64748b;font-size:.94rem}}.notice{{background:#eef6ff;border:1px solid #b9dcff;border-radius:8px;padding:12px;margin-bottom:18px}}</style></head>
-<body><main><h1>Connect this device to DeskOS</h1><p class=muted>Enter the one-time enrollment code provided by your IT technician. The DeskOS connection settings are already configured for this installer.</p>{notice}
-<form method=post action=/enroll><label for=token>Eight-digit enrollment code</label><input id=token name=token inputmode=numeric pattern="[0-9]{{8}}" maxlength=8 placeholder="12345678" autocomplete=one-time-code autofocus required><button type=submit>Enroll this device</button></form></main></body></html>"#,
+<body><main><h1>Connect this device to ReyDesk</h1><p class=muted>Enter the one-time enrollment code provided by your IT technician. The ReyDesk connection settings are already configured for this installer.</p>{notice}
+<form method=post action=/enroll><label for=token>Enrollment code (8–12 digits)</label><input id=token name=token inputmode=numeric pattern="[0-9]{{8,12}}" maxlength=12 placeholder="12345678" autocomplete=one-time-code autofocus required><button type=submit>Enroll this device</button></form></main></body></html>"#,
         notice = notice,
     )
 }
@@ -1820,9 +2119,9 @@ fn list_inbox_messages(session_id: &str) -> Vec<serde_json::Value> {
 }
 
 fn chat_page_html(session_id: &str) -> String {
-    const PAGE: &str = r#"<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DeskOS support chat</title>
-<style>body{font-family:Segoe UI,sans-serif;background:#f4f7fb;color:#182230;margin:0;padding:24px}main{max-width:640px;margin:auto}h1{font-size:1.2rem;margin-top:0}#log{background:#fff;border:1px solid #d9e2ef;border-radius:10px;padding:12px;min-height:180px;max-height:420px;overflow:auto;margin:16px 0}#log .row{margin-bottom:10px;padding:8px 10px;border-radius:8px;white-space:pre-wrap;word-break:break-word}#log .tech{background:#eef6ff;border:1px solid #b9dcff}#log .agent{background:#eefaf2;border:1px solid #bfe6cf}#log .muted{color:#64748b}#log .who{font-size:.75rem;color:#64748b;display:block;margin-bottom:2px}textarea{box-sizing:border-box;width:100%;min-height:72px;padding:10px;border:1px solid #b9c7d8;border-radius:8px;font:inherit}button{margin-top:10px;padding:10px 18px;background:#1769e0;color:#fff;border:0;border-radius:8px;font-weight:600;cursor:pointer}#status{margin-top:10px;color:#1769e0;font-size:.9rem}</style></head>
-<body><main><h1>DeskOS support chat</h1><p style="color:#64748b">A technician is helping you. Read their messages below and type a reply.</p><div id="log">Loading&hellip;</div><form id="reply"><textarea id="body" placeholder="Type your reply&hellip;"></textarea><button type="submit">Send reply</button></form><div id="status"></div></main>
+    const PAGE: &str = r#"<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ReyDesk support chat</title>
+<style>:root{font-family:Segoe UI,system-ui,sans-serif;color:#172033;background:#f4f7fb}*{box-sizing:border-box}body{margin:0;min-height:100vh;padding:28px 18px;background:radial-gradient(circle at top right,#e7f1ff 0,#f4f7fb 42%,#eef3f8 100%)}main{max-width:720px;margin:auto;background:#fff;border:1px solid #d9e2ef;border-radius:18px;box-shadow:0 16px 42px #17324d18;overflow:hidden}.header{padding:24px 26px 20px;border-bottom:1px solid #e5ebf2;display:flex;align-items:flex-start;justify-content:space-between;gap:18px}.eyebrow{color:#1769e0;font-size:.72rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase}.title{margin:5px 0 4px;font-size:1.35rem;line-height:1.2}.subtitle{margin:0;color:#64748b;font-size:.9rem}.badge{flex:0 0 auto;display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border-radius:999px;background:#eefaf2;color:#197044;font-size:.78rem;font-weight:600}.badge:before{content:"";width:7px;height:7px;border-radius:50%;background:#2ca66f}.content{padding:20px 26px 24px}.privacy{margin:0 0 14px;color:#64748b;font-size:.78rem}.privacy strong{color:#334155}#log{display:flex;flex-direction:column;gap:10px;background:#f8fafc;border:1px solid #d9e2ef;border-radius:12px;padding:14px;min-height:230px;max-height:430px;overflow:auto}#log .row{padding:10px 12px;border-radius:11px;white-space:pre-wrap;word-break:break-word;line-height:1.45;box-shadow:0 1px 1px #17324d0b}#log .tech{align-self:flex-start;max-width:86%;background:#eef6ff;border:1px solid #b9dcff}#log .agent{align-self:flex-end;max-width:86%;background:#eefaf2;border:1px solid #bfe6cf}#log .muted{align-self:center;color:#64748b;font-size:.86rem}.who{font-size:.72rem;color:#64748b;display:block;margin-bottom:3px;font-weight:600}.composer{margin-top:14px}.composer-label{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;color:#334155;font-size:.82rem;font-weight:600}.counter{color:#94a3b8;font-weight:400}textarea{display:block;box-sizing:border-box;width:100%;min-height:84px;padding:12px 13px;border:1px solid #b9c7d8;border-radius:10px;font:inherit;line-height:1.45;resize:vertical;color:#172033;background:#fff}textarea:focus{outline:2px solid #8fc4ff;outline-offset:1px;border-color:#1769e0}.composer-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:9px}.hint{color:#94a3b8;font-size:.75rem}button{padding:10px 18px;background:#1769e0;color:#fff;border:0;border-radius:9px;font-weight:600;cursor:pointer;box-shadow:0 3px 8px #1769e033}button:hover{background:#1258be}button:disabled{opacity:.55;cursor:not-allowed;box-shadow:none}#status{min-height:1.2em;margin-top:10px;color:#1769e0;font-size:.82rem}@media(max-width:560px){body{padding:0}.header{padding:20px}.content{padding:16px 20px 20px}.badge{font-size:0;padding:9px}.badge:before{margin:0}.title{font-size:1.2rem}}</style></head>
+<body><main><header class="header"><div><div class="eyebrow">ReyDesk assisted support</div><h1 class="title">Chat with your technician</h1><p style="color:#64748b">Ask questions, share updates, and confirm when you are ready.</p></div><span class="badge">Secure session</span></header><section class="content"><p class="privacy"><strong>This conversation is private to your support session.</strong> Keep this window open while the technician is helping you.</p><div id="log">Loading&hellip;</div><form class="composer" id="reply"><textarea id="body" placeholder="Type your reply&hellip;"></textarea><button type="submit">Send reply</button></form><div id="status"></div></section></main>
 <script>const SESSION="__SESSION__";function esc(s){var d=document.createElement("div");d.textContent=s;return d.innerHTML}async function load(){try{var res=await fetch("/chat/messages?session="+encodeURIComponent(SESSION));var msgs=await res.json();var log=document.getElementById("log");log.innerHTML=msgs.length===0?'<span class="muted">No messages yet.</span>':msgs.map(function(m){return '<div class="row '+(m.from==="technician"?"tech":"agent")+'"><span class="who">'+(m.from==="technician"?"Technician":"You")+'</span>'+esc(m.body)+'</div>'}).join("")}catch(e){}}document.getElementById("reply").addEventListener("submit",async function(ev){ev.preventDefault();var body=document.getElementById("body").value.trim();if(!body)return;var status=document.getElementById("status");status.textContent="Sending&hellip;";try{var res=await fetch("/chat/reply",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:"session="+encodeURIComponent(SESSION)+"&body="+encodeURIComponent(body)});if(res.ok){document.getElementById("body").value="";status.textContent="Sent.";load()}else{status.textContent="Could not send your reply."}}catch(e){status.textContent="Could not send your reply."}});setInterval(load,2000);load();</script></body></html>"#;
     PAGE.replace("__SESSION__", &html_escape(session_id))
 }
@@ -1952,7 +2251,7 @@ async fn enroll_ui(api_url: String, relay_url: String, config_path: PathBuf) -> 
         .local_addr()
         .context("read enrollment UI address")?;
     let url = format!("http://{address}/");
-    println!("Opening DeskOS enrollment UI at {url}");
+    println!("Opening ReyDesk enrollment UI at {url}");
     open_enrollment_browser(&url)?;
 
     loop {
@@ -2028,7 +2327,7 @@ async fn enroll_ui(api_url: String, relay_url: String, config_path: PathBuf) -> 
                         eprintln!("consent helper: {error:#}");
                     }
                 }
-                http_response(stream, "200 OK", "<!doctype html><meta charset=utf-8><title>DeskOS enrolled</title><h1>Device enrolled</h1><p>You can close this window. DeskOS is now starting the endpoint agent and its user-session consent helper.</p>".to_owned()).await?;
+                http_response(stream, "200 OK", "<!doctype html><meta charset=utf-8><title>ReyDesk enrolled</title><h1>Device enrolled</h1><p>You can close this window. ReyDesk is now starting the endpoint agent and its user-session consent helper.</p>".to_owned()).await?;
                 return Ok(());
             }
             Err(error) => {
@@ -2078,28 +2377,40 @@ async fn run_consent_ui(config_path: PathBuf, tray_status: TrayStatus) -> Result
                 set_tray_status(
                     &tray_status,
                     if has_pending_consent {
-                        "DeskOS: consent pending"
+                        "ReyDesk: consent pending"
                     } else {
-                        "DeskOS: online"
+                        "ReyDesk: online"
                     },
                 );
-                for session_id in sessions
-                    .iter()
-                    .filter(|session| {
-                        matches!(
-                            session.state.as_str(),
-                            "connecting" | "active" | "reconnecting"
-                        )
-                    })
-                    .map(|session| session.id.as_str())
-                {
+                for session in sessions.iter().filter(|session| {
+                    matches!(
+                        session.state.as_str(),
+                        "connecting" | "active" | "reconnecting"
+                    )
+                }) {
+                    let session_id = session.id.as_str();
                     let messages = read_mailbox_messages(&chat_mailbox_dir(), session_id, "inbox");
                     let has_new = messages.iter().any(|(path, _)| !seen_inbox.contains(path));
                     for (path, _) in &messages {
                         seen_inbox.insert(path.clone());
                     }
-                    if has_new && opened_chat.insert(session_id.to_owned()) {
-                        set_tray_status(&tray_status, "DeskOS: new message");
+
+                    // Open the endpoint-user chat as soon as assistance starts,
+                    // rather than waiting for the technician to send the first
+                    // message. This makes the communication channel discoverable
+                    // and lets the user explain the issue immediately.
+                    let first_open = opened_chat.insert(session_id.to_owned());
+                    if first_open || has_new {
+                        set_tray_status(
+                            &tray_status,
+                            if first_open {
+                                "ReyDesk: session chat ready"
+                            } else {
+                                "ReyDesk: new message"
+                            },
+                        );
+                    }
+                    if first_open {
                         let url = format!("http://{chat_address}/chat?session={session_id}");
                         if let Err(error) = open_enrollment_browser(&url) {
                             eprintln!("[chat] open chat UI: {error:#}");
@@ -2161,7 +2472,7 @@ async fn run_consent_ui(config_path: PathBuf, tray_status: TrayStatus) -> Result
                     }
                 }
             }
-            Err(_) => set_tray_status(&tray_status, "DeskOS: offline"),
+            Err(_) => set_tray_status(&tray_status, "ReyDesk: offline"),
         }
 
         tokio::select! {
@@ -2194,7 +2505,7 @@ fn tray_wide(value: &str) -> Vec<u16> {
 fn acquire_tray_instance() -> Result<Option<windows::Win32::Foundation::HANDLE>> {
     let name = tray_wide("Global\\DeskOSTrayHelper");
     let handle = unsafe { CreateMutexW(None, true, PCWSTR(name.as_ptr())) }
-        .context("create DeskOS tray helper mutex")?;
+        .context("create ReyDesk tray helper mutex")?;
     let already_exists = unsafe { GetLastError() }
         .err()
         .is_some_and(|error| error.code().0 as u32 == ERROR_ALREADY_EXISTS.0);
@@ -2266,12 +2577,12 @@ fn run_tray_message_loop(status: TrayStatus) -> Result<()> {
         )
     };
     if hwnd.0 == 0 {
-        return Err(anyhow!("create DeskOS tray window failed"));
+        return Err(anyhow!("create ReyDesk tray window failed"));
     }
     let icon = unsafe { LoadIconW(None, IDI_APPLICATION) }.unwrap_or_default();
-    let mut data = tray_data(hwnd, icon, "DeskOS: starting");
+    let mut data = tray_data(hwnd, icon, "ReyDesk: starting");
     if !unsafe { Shell_NotifyIconW(NIM_ADD, &mut data) }.as_bool() {
-        return Err(anyhow!("add DeskOS tray icon failed"));
+        return Err(anyhow!("add ReyDesk tray icon failed"));
     }
 
     let update_status = status.clone();
@@ -2282,7 +2593,7 @@ fn run_tray_message_loop(status: TrayStatus) -> Result<()> {
             let current = update_status
                 .lock()
                 .map(|value| value.clone())
-                .unwrap_or_else(|_| "DeskOS: unavailable".to_owned());
+                .unwrap_or_else(|_| "ReyDesk: unavailable".to_owned());
             if current != previous {
                 let mut update = tray_data(update_hwnd, icon, &current);
                 let _ = unsafe { Shell_NotifyIconW(NIM_MODIFY, &mut update) };
@@ -2314,7 +2625,7 @@ async fn run_tray_ui(config_path: PathBuf) -> Result<()> {
         return Ok(());
     };
 
-    let status = Arc::new(StdMutex::new("DeskOS: starting".to_owned()));
+    let status = Arc::new(StdMutex::new("ReyDesk: starting".to_owned()));
     #[cfg(target_os = "windows")]
     {
         let tray_status = status.clone();
@@ -2379,8 +2690,8 @@ async fn run_agent(
             }
         }
     };
+    validate_endpoints(&config.api_url, &config.relay_url)?;
     let client = AgentClient::new(&config);
-    let inventory = inventory(&config);
     let heartbeat_seconds = interval_override.unwrap_or(config.heartbeat_interval_sec.max(5));
     let mut system = System::new_all();
     let mut disks = Disks::new_with_refreshed_list();
@@ -2392,17 +2703,21 @@ async fn run_agent(
     let mut last_reported_update: Option<String> = None;
 
     println!(
-        "DeskOS agent running for {} ({})",
+        "ReyDesk agent running for {} ({})",
         config.name, config.device_id
     );
     loop {
-        if let Err(error) = client.inventory(&inventory).await {
+        if let Err(error) = client.inventory(&inventory(&config)).await {
             eprintln!("inventory: {error:#}");
         }
-        if let Err(error) = client.heartbeat().await {
-            eprintln!("heartbeat: {error:#}");
-        }
-        if let Err(error) = client.metrics(&metrics(&mut system, &mut disks)).await {
+        let network_latency_ms = match client.heartbeat().await {
+            Ok(latency_ms) => Some(latency_ms),
+            Err(error) => {
+                eprintln!("heartbeat: {error:#}");
+                None
+            }
+        };
+        if let Err(error) = client.metrics(&metrics(&mut system, &mut disks, network_latency_ms)).await {
             eprintln!("metrics: {error:#}");
         }
         // Check the update channel on a slower cadence than heartbeats so the
@@ -2538,7 +2853,7 @@ async fn run_agent(
         tokio::select! {
             _ = ticker.tick() => {},
             _ = tokio::signal::ctrl_c(), if shutdown.is_none() => {
-                println!("Stopping DeskOS agent");
+                println!("Stopping ReyDesk agent");
                 break;
             }
             _ = async {
@@ -3172,7 +3487,7 @@ fn file_root() -> PathBuf {
 
 fn safe_file_path(relative: &str) -> Result<PathBuf> {
     let root = file_root();
-    fs::create_dir_all(&root).context("create DeskOS file root")?;
+    fs::create_dir_all(&root).context("create ReyDesk file root")?;
     let normalized = relative.replace('\\', "/");
     let path = Path::new(&normalized);
     if path.is_absolute() || normalized.len() > 512 {
@@ -3499,7 +3814,7 @@ async fn accept_webrtc_offer(
                     if !is_control_channel {
                         return;
                     }
-                    let _ = opened.send_text("DeskOS agent control channel ready").await;
+                    let _ = opened.send_text("ReyDesk agent control channel ready").await;
                     tokio::spawn(async move {
                         loop {
                             let Some((x, y)) = cursor_position() else {
@@ -4356,7 +4671,7 @@ fn verify_update_artifact(
     if !signature_b64.is_empty() {
         let public_key_b64 = public_key_b64.ok_or_else(|| {
             anyhow!(
-                "the update is signed but no DESKOS_UPDATE_PUBLIC_KEY was baked into this build"
+                "the update is signed but no REYDESK_UPDATE_PUBLIC_KEY (or legacy DESKOS_UPDATE_PUBLIC_KEY) was baked into this build"
             )
         })?;
         let public_key_bytes = BASE64
@@ -4408,7 +4723,7 @@ fn service_main(arguments: Vec<OsString>) {
         .map(|pair| PathBuf::from(&pair[1]))
         .unwrap_or_else(|| PathBuf::from("deskos-agent.json"));
     if let Err(error) = run_windows_service(config) {
-        eprintln!("DeskOS Windows service failed: {error:#}");
+        eprintln!("ReyDesk Windows service failed: {error:#}");
     }
 }
 
@@ -4486,7 +4801,7 @@ fn install_service(config: PathBuf) -> Result<()> {
             .arg("start=")
             .arg("auto")
             .arg("DisplayName=")
-            .arg("DeskOS Endpoint Agent")
+            .arg("ReyDesk Endpoint Agent")
             .status()
             .context("run sc.exe create")?;
         if !create.success() {
@@ -4511,7 +4826,7 @@ fn install_service(config: PathBuf) -> Result<()> {
         let start = ProcessCommand::new("sc.exe")
             .args(["start", SERVICE_NAME])
             .status()
-            .context("start DeskOS service")?;
+            .context("start ReyDesk service")?;
         if !start.success() {
             return Err(anyhow!("sc.exe could not start the {SERVICE_NAME} service"));
         }
@@ -4584,6 +4899,33 @@ mod tests {
     }
 
     #[test]
+    fn serializes_rich_health_telemetry_using_api_field_names() {
+        let payload = MetricsRequest {
+            cpu_pct: 12.5,
+            mem_pct: 40.0,
+            disk_pct: 60.0,
+            disk_free_bytes: 987654321,
+            network_latency_ms: Some(24.5),
+            battery_pct: Some(73.0),
+            battery_health_pct: Some(91.0),
+            uptime_seconds: 86400,
+            process_count: 142,
+            service_states: HashMap::from([(String::from("Spooler"), String::from("running"))]),
+            reason: "periodic".to_owned(),
+        };
+        let json = serde_json::to_value(payload).expect("telemetry serializes");
+        assert_eq!(json["cpuPct"], 12.5);
+        assert_eq!(json["diskFreeBytes"], 987654321u64);
+        assert_eq!(json["networkLatencyMs"], 24.5);
+        assert_eq!(json["batteryPct"], 73.0);
+        assert_eq!(json["batteryHealthPct"], 91.0);
+        assert_eq!(json["serviceStates"]["Spooler"], "running");
+        assert_eq!(json["uptimeSeconds"], 86400u64);
+        assert_eq!(json["processCount"], 142);
+        assert_eq!(json["reason"], "periodic");
+    }
+
+    #[test]
     fn parses_update_check_response_into_an_offer() {
         let available = r#"{"update":{"version":"0.1.1","minVersion":"0.1.0","url":"https://dl.example/deskos-agent.exe","sha256":"abc123","signature":"sig","rolloutPercent":50},"status":"available"}"#;
         let parsed: UpdateCheckResponse = serde_json::from_str(available).expect("update parses");
@@ -4650,6 +4992,16 @@ mod tests {
     }
 
     #[test]
+    fn parses_numeric_codes_and_secure_claim_links() {
+        assert_eq!(parse_support_input("1234567890").unwrap(), ("1234567890".to_owned(), None));
+        let parsed = parse_support_input("https://support.example/connect/123456789012?claimToken=deskos_link_secret").unwrap();
+        assert_eq!(parsed.0, "123456789012");
+        assert_eq!(parsed.1.as_deref(), Some("deskos_link_secret"));
+        assert!(parse_support_input("1234").is_err());
+        assert!(parse_support_input("https://support.example/connect/1234567890").is_err());
+    }
+
+    #[test]
     fn parses_support_code_claim_response() {
         let json = r#"{"device":{"id":"dev-1","name":"customer-laptop"},"deviceToken":"deskos_dev_abc123","session":{"id":"sess-1","state":"consent_pending"},"relayUrl":"ws://relay.example/ws"}"#;
         let parsed: ClaimResponse = serde_json::from_str(json).expect("claim response parses");
@@ -4675,6 +5027,7 @@ mod tests {
             name: "test-endpoint".to_owned(),
             hostname: "test-host".to_owned(),
             agent_version: "test".to_owned(),
+            device_type: default_device_type(),
             heartbeat_interval_sec: 30,
         };
         save_config(&path, &config).expect("save config");
@@ -4711,8 +5064,9 @@ mod tests {
     #[test]
     fn enrollment_page_only_requests_the_one_time_code() {
         let page = enrollment_html(None);
-        assert!(page.contains("Eight-digit enrollment code"));
-        assert!(!page.contains("DeskOS API URL"));
+        assert!(page.contains("Enrollment code (8–12 digits)"));
+        assert!(page.contains("pattern=\"[0-9]{8,12}\""));
+        assert!(!page.contains("ReyDesk API URL"));
         assert!(!page.contains("Relay URL"));
     }
 
@@ -4728,6 +5082,15 @@ mod tests {
             Some(&"ws://deskos:4100/ws".to_owned())
         );
         assert_eq!(fields.get("token"), Some(&"deskos_demo+code".to_owned()));
+    }
+
+    #[test]
+    fn support_helper_accepts_web_generated_code_lengths() {
+        assert_eq!(parse_support_input("12345678").unwrap().0, "12345678");
+        assert_eq!(parse_support_input("1234567890").unwrap().0, "1234567890");
+        assert_eq!(parse_support_input("123456789012").unwrap().0, "123456789012");
+        assert!(parse_support_input("1234567").is_err());
+        assert!(parse_support_input("1234567890123").is_err());
     }
 
     #[test]
@@ -4866,7 +5229,7 @@ async fn main() -> Result<()> {
             interactive_consent,
         } => run_agent(config, interval_sec, interactive_consent, None).await,
         Command::ConsentUi { config } => {
-            run_consent_ui(config, Arc::new(StdMutex::new("DeskOS: online".to_owned()))).await
+            run_consent_ui(config, Arc::new(StdMutex::new("ReyDesk: online".to_owned()))).await
         }
         Command::TrayUi { config } => run_tray_ui(config).await,
         Command::Consent {

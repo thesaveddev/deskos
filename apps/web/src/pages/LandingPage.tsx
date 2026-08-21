@@ -45,7 +45,7 @@ const DEPLOYMENTS = [
   {
     tag: 'One-time code',
     title: 'No pre-install needed',
-    body: 'User runs a small helper, enters an 8-digit code you give them over the phone. Done.',
+    body: 'User runs a small helper, enters a 10-digit code you give them over the phone. Done.',
   },
   {
     tag: 'Silent install',
@@ -62,7 +62,7 @@ const DEPLOYMENTS = [
 export default function LandingPage() {
   return (
     <LandingLayout
-      title="DeskOS — Remote Support, Endpoint Management & Ticketing"
+      title="ReyDesk — Remote Support, Endpoint Management & Ticketing"
       description="One app for remote desktop support, device management, and IT tickets. Consent-first. Self-hostable. No vendor lock-in."
     >
       {/* ---- hero ---- */}
@@ -73,7 +73,7 @@ export default function LandingPage() {
             Fix things remotely.<br />Track everything.
           </h1>
           <p className="landing-sub landing-animate landing-animate-delay-2">
-            DeskOS gives your IT team remote desktop access, device monitoring, and a ticketing system in one app. Every session requires user consent. Every action is logged. You can self-host it.
+            ReyDesk gives your IT team remote desktop access, device monitoring, and a ticketing system in one app. Every session requires user consent. Every action is logged. You can self-host it.
           </p>
           <div className="landing-cta landing-animate landing-animate-delay-3">
             <Link className="btn btn-primary" to="/signup" style={{ height: 44, padding: '0 28px', fontSize: 15 }}>
@@ -94,7 +94,7 @@ export default function LandingPage() {
             <span className="landing-dot" style={{ background: 'var(--crit)' }} />
             <span className="landing-dot" style={{ background: 'var(--warn)' }} />
             <span className="landing-dot" style={{ background: 'var(--ok)' }} />
-            <span className="landing-console-title mono">DeskOS — technician console</span>
+            <span className="landing-console-title mono">ReyDesk — technician console</span>
           </div>
           <div className="landing-console-body">
             <div className="landing-console-rail">
@@ -227,7 +227,7 @@ export default function LandingPage() {
             Most IT teams use three to five tools: a remote control app, a ticketing system, a monitoring platform. Each one has its own login, its own billing, its own data model. Integrations between them are fragile and expensive.
           </p>
           <p>
-            We built DeskOS to replace that stack. One app. One database. One login. Remote sessions, tickets, devices, automation, knowledge base, patch tracking — sharing the same data and the same audit chain.
+            We built ReyDesk to replace that stack. One app. One database. One login. Remote sessions, tickets, devices, automation, knowledge base, patch tracking — sharing the same data and the same audit chain.
           </p>
           <p>
             We think the important things are: your data stays yours (self-host if you want), every remote session requires explicit consent (no way around it), and the audit log is tamper-evident (so you can actually trust it).

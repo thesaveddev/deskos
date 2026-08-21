@@ -12,6 +12,7 @@ import '../../types.js'
 const devicePatchSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   groupId: z.string().uuid().nullable().optional(),
+  deviceType: z.enum(['laptop', 'workstation', 'server', 'network_device', 'mobile', 'other']).optional(),
 })
 
 const groupCreateSchema = z.object({
@@ -26,8 +27,29 @@ const groupPatchSchema = z.object({
   matchRules: z.array(z.unknown()).max(50).optional(),
 })
 
+const assignmentStatus = z.enum(['assigned', 'shared', 'temporary'])
+const assignmentSchema = z.object({
+  userId: z.string().uuid().nullable().optional(),
+  assignmentStatus: assignmentStatus.default('assigned'),
+  department: z.string().trim().max(160).default(''),
+  teamId: z.string().uuid().nullable().optional(),
+  location: z.string().trim().max(160).default(''),
+  expectedReturnAt: z.string().datetime({ offset: true }).nullable().optional(),
+  reason: z.string().trim().max(500).default(''),
+  notes: z.string().trim().max(5_000).default(''),
+})
+
+const returnAssignmentSchema = z.object({
+  notes: z.string().trim().max(5_000).optional(),
+})
+
 const OFFLINE_SQL = (secs: number) =>
   `CASE
+     WHEN EXISTS (
+       SELECT 1 FROM remote_sessions rs
+        WHERE rs.device_id = d.id
+          AND rs.state IN ('active', 'connecting', 'consent_pending')
+     ) THEN 'online'
      WHEN d.last_seen_at IS NULL THEN 'never'
      WHEN d.last_seen_at >= now() - make_interval(secs => ${secs}) THEN 'online'
      ELSE 'offline'
@@ -43,7 +65,168 @@ function isUuid(value: string | undefined): boolean {
  */
 export async function deviceRoutes(app: FastifyInstance): Promise<void> {
   const guards = [authenticate, requireTenant] as const
-  const offlineSec = app.config.deviceOfflineSec
+  const tenantOfflineSec = async (tenantId: string): Promise<number> => {
+    const settings = (await app.db.query('SELECT settings FROM tenants WHERE id = $1', [tenantId])).rows[0]?.settings ?? {}
+    const minutes = Number(settings.endpoints?.offline_after_minutes)
+    return Number.isFinite(minutes) && minutes > 0 ? Math.round(minutes * 60) : app.config.deviceOfflineSec
+  }
+
+  // -- Device assignment lifecycle -------------------------------------------
+  app.get('/members/:userId/device-assignments', { preHandler: [...guards, requirePermission('member.read')] }, async (request) => {
+    const ctx = request.tenantCtx!
+    const { userId } = request.params as { userId: string }
+    return withTenant(app.db, ctx.tenantId, async (client) => {
+      const member = (await client.query('SELECT u.id, u.name, u.email, m.status FROM users u JOIN memberships m ON m.user_id = u.id WHERE u.id = $1 AND m.tenant_id = $2', [userId, ctx.tenantId])).rows[0]
+      if (!member) throw AppError.notFound('Staff member not found')
+      const devices = (await client.query(
+        `SELECT a.*, d.name AS device_name, d.hostname, d.ip_address, d.last_seen_at, d.device_type, t.name AS team_name
+           FROM device_assignments a JOIN devices d ON d.id = a.device_id
+           LEFT JOIN teams t ON t.id = a.team_id
+          WHERE a.user_id = $1 ORDER BY a.assigned_at DESC`,
+        [userId],
+      )).rows
+      const assets = (await client.query(
+        `SELECT id, tag, name, type, status, device_id, location, warranty_until
+           FROM assets WHERE owner_id = $1 ORDER BY name`,
+        [userId],
+      )).rows
+      const licences = (await client.query(
+        `SELECT la.id AS assignment_id, la.licence_id, l.name, la.seats, la.assigned_at, la.reason
+           FROM licence_assignments la JOIN licences l ON l.id = la.licence_id
+          WHERE la.user_id = $1 AND la.ended_at IS NULL ORDER BY l.name`,
+        [userId],
+      )).rows
+      return { member, assignedDevices: devices, ownedAssets: assets, assignedLicences: licences, offboarding: { activeAssignments: devices.filter((item) => !item.ended_at).length, activeLicences: licences.length, lastDeviceCheckIn: devices.map((item) => item.last_seen_at).filter(Boolean).sort().at(-1) ?? null } }
+    })
+  })
+
+  app.get('/device-assignments', { preHandler: [...guards, requirePermission('device.read')] }, async (request) => {
+    const ctx = request.tenantCtx!
+    const query = request.query as { status?: string; unassigned?: string; limit?: string }
+    const limit = Math.min(Math.max(Number(query.limit ?? 100) || 100, 1), 500)
+    const clauses = ['d.tenant_id = $1']
+    const values: unknown[] = [ctx.tenantId]
+    if (query.status === 'active') clauses.push('da.ended_at IS NULL')
+    if (query.status === 'returned') clauses.push("da.assignment_status = 'returned'")
+    if (query.unassigned === 'true' || query.unassigned === '1') {
+      clauses.push('da.id IS NULL')
+    }
+    const rows = await withTenant(app.db, ctx.tenantId, (client) => client.query(
+      `SELECT d.id AS device_id, d.name AS device_name, d.hostname, d.ip_address, d.device_type,
+              a.id AS assignment_id, a.assignment_status, a.assigned_at, a.returned_at,
+              a.expected_return_at, a.department, a.location, a.reason, a.notes,
+              u.id AS user_id, u.name AS user_name, u.email AS user_email,
+              ab.name AS assigned_by_name, t.name AS team_name
+         FROM devices d
+         LEFT JOIN device_assignments a ON a.device_id = d.id AND a.ended_at IS NULL
+         LEFT JOIN users u ON u.id = a.user_id
+         LEFT JOIN users ab ON ab.id = a.assigned_by
+         LEFT JOIN teams t ON t.id = a.team_id
+        WHERE ${clauses.join(' AND ')}
+        ORDER BY d.name ASC LIMIT $2`,
+      [...values, limit],
+    ).then((result) => result.rows))
+    return { assignments: rows }
+  })
+
+  app.get('/devices/:id/assignments', { preHandler: [...guards, requirePermission('device.read')] }, async (request) => {
+    const ctx = request.tenantCtx!
+    const { id } = request.params as { id: string }
+    return withTenant(app.db, ctx.tenantId, async (client) => {
+      const device = (await client.query('SELECT id, name FROM devices WHERE id = $1', [id])).rows[0]
+      if (!device) throw AppError.notFound('Device not found')
+      const result = await client.query(
+        `SELECT a.*, u.name AS user_name, u.email AS user_email,
+                ab.name AS assigned_by_name, t.name AS team_name
+           FROM device_assignments a
+           LEFT JOIN users u ON u.id = a.user_id
+           LEFT JOIN users ab ON ab.id = a.assigned_by
+           LEFT JOIN teams t ON t.id = a.team_id
+          WHERE a.device_id = $1
+          ORDER BY a.assigned_at DESC`,
+        [id],
+      )
+      return { device, current: result.rows.find((row) => !row.ended_at) ?? null, assignments: result.rows }
+    })
+  })
+
+  app.post('/devices/:id/assignments', { preHandler: [...guards, requirePermission('device.manage')] }, async (request, reply) => {
+    const ctx = request.tenantCtx!
+    const { id } = request.params as { id: string }
+    const body = assignmentSchema.parse(request.body)
+    if (body.assignmentStatus === 'shared' && body.userId) throw AppError.badRequest('A shared device cannot have a primary user', 'shared_assignment_user')
+    if (body.assignmentStatus !== 'shared' && !body.userId) throw AppError.badRequest('Select a staff member or choose Shared device', 'assignment_user_required')
+
+    const created = await withTenant(app.db, ctx.tenantId, async (client) => {
+      const device = (await client.query('SELECT id FROM devices WHERE id = $1', [id])).rows[0]
+      if (!device) throw AppError.notFound('Device not found')
+      if (body.userId) {
+        const member = (await client.query("SELECT 1 FROM memberships WHERE tenant_id = $1 AND user_id = $2 AND status = 'active'", [ctx.tenantId, body.userId])).rows[0]
+        if (!member) throw AppError.badRequest('The selected staff member is not active in this organization', 'assignment_user_invalid')
+      }
+      if (body.teamId) {
+        const team = (await client.query('SELECT 1 FROM teams WHERE tenant_id = $1 AND id = $2', [ctx.tenantId, body.teamId])).rows[0]
+        if (!team) throw AppError.badRequest('The selected team does not belong to this organization', 'assignment_team_invalid')
+      }
+      await client.query(
+        `UPDATE device_assignments
+            SET ended_at = COALESCE(ended_at, now()), returned_at = COALESCE(returned_at, now()), assignment_status = CASE WHEN ended_at IS NULL THEN 'returned' ELSE assignment_status END,
+                audit_event = CASE WHEN ended_at IS NULL THEN 'device.assignment.replaced' ELSE audit_event END
+          WHERE device_id = $1 AND ended_at IS NULL`,
+        [id],
+      )
+      const result = await client.query(
+        `INSERT INTO device_assignments
+           (tenant_id, device_id, user_id, assigned_by, department, team_id, location,
+            assignment_status, expected_return_at, reason, notes, audit_event)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'device.assignment.created')
+         RETURNING *`,
+        [ctx.tenantId, id, body.userId ?? null, request.user!.id, body.department, body.teamId ?? null,
+          body.location, body.assignmentStatus, body.expectedReturnAt ?? null, body.reason, body.notes],
+      )
+      await recordAudit(client, ctx.tenantId, {
+        actorId: request.user!.id,
+        action: 'device.assignment.created',
+        objectType: 'device_assignment',
+        objectId: result.rows[0].id,
+        ip: request.ip,
+        payload: { deviceId: id, userId: body.userId ?? null, assignmentStatus: body.assignmentStatus, reason: body.reason },
+      })
+      return result.rows[0]
+    })
+    return reply.code(201).send({ assignment: created })
+  })
+
+  app.post('/devices/:id/assignments/:assignmentId/return', { preHandler: [...guards, requirePermission('device.manage')] }, async (request) => {
+    const ctx = request.tenantCtx!
+    const { id, assignmentId } = request.params as { id: string; assignmentId: string }
+    const body = returnAssignmentSchema.parse(request.body ?? {})
+    return withTenant(app.db, ctx.tenantId, async (client) => {
+      const current = (await client.query(
+        'SELECT id FROM device_assignments WHERE id = $1 AND device_id = $2 AND ended_at IS NULL',
+        [assignmentId, id],
+      )).rows[0]
+      if (!current) throw AppError.notFound('Active device assignment not found')
+      const result = await client.query(
+        `UPDATE device_assignments
+            SET ended_at = now(), returned_at = now(), assignment_status = 'returned',
+                notes = CASE WHEN $3::text IS NULL OR $3::text = '' THEN notes ELSE $3::text END,
+                audit_event = 'device.assignment.returned'
+          WHERE id = $1 AND device_id = $2
+          RETURNING *`,
+        [assignmentId, id, body.notes ?? null],
+      )
+      await recordAudit(client, ctx.tenantId, {
+        actorId: request.user!.id,
+        action: 'device.assignment.returned',
+        objectType: 'device_assignment',
+        objectId: assignmentId,
+        ip: request.ip,
+        payload: { deviceId: id },
+      })
+      return { assignment: result.rows[0] }
+    })
+  })
 
   // -- Devices ---------------------------------------------------------------
   app.get('/devices', { preHandler: [...guards, requirePermission('device.read')] }, async (request) => {
@@ -59,7 +242,7 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
       values.push(q.groupId)
       clauses.push(`d.group_id = $${values.length}`)
     }
-    const statusExpr = OFFLINE_SQL(offlineSec)
+    const statusExpr = OFFLINE_SQL(await tenantOfflineSec(ctx.tenantId))
     if (q.status === 'online' || q.status === 'offline' || q.status === 'never') {
       clauses.push(`${statusExpr} = $${values.length + 1}`)
       values.push(q.status)
@@ -79,11 +262,16 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
       client
         .query(
           `SELECT d.id, d.name, d.hostname, d.os, d.os_version, d.arch, d.ip_address,
-                  d.agent_version, d.group_id, d.enrolled_at, d.last_seen_at, d.created_at,
+                  d.agent_version, d.device_type, d.power_source, d.battery_pct, d.battery_health_pct, d.uptime_seconds, d.last_inventory_at,
+                  d.group_id, d.enrolled_at, d.last_seen_at, d.created_at,
                   g.name AS group_name,
+                  a.tag AS asset_tag, da.assignment_status, au.name AS assigned_user_name,
                   ${statusExpr} AS status
              FROM devices d
              LEFT JOIN device_groups g ON g.id = d.group_id
+             LEFT JOIN assets a ON a.device_id = d.id
+             LEFT JOIN device_assignments da ON da.device_id = d.id AND da.ended_at IS NULL
+             LEFT JOIN users au ON au.id = da.user_id
              ${where}
             ORDER BY d.created_at DESC
             LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
@@ -99,11 +287,12 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
     const { id } = request.params as { id: string }
 
     return withTenant(app.db, ctx.tenantId, async (client) => {
-      const statusExpr = OFFLINE_SQL(offlineSec)
+      const statusExpr = OFFLINE_SQL(await tenantOfflineSec(ctx.tenantId))
       const device = (
         await client.query(
           `SELECT d.id, d.tenant_id, d.group_id, d.name, d.hostname, d.os, d.os_version,
-                  d.arch, d.ip_address, d.agent_version, NULL::text AS agent_token_hash,
+                  d.arch, d.ip_address, d.agent_version, d.device_type, d.power_source, d.battery_pct, d.battery_health_pct, d.uptime_seconds, d.last_inventory_at,
+                  NULL::text AS agent_token_hash,
                   d.enrolled_at, d.last_seen_at, d.created_at, d.updated_at,
                   g.name AS group_name,
                   ${statusExpr} AS status
@@ -116,8 +305,8 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
       if (!device) throw AppError.notFound('Device not found')
 
       const metrics = (
-        await client.query(
-          `SELECT id, cpu_pct, mem_pct, disk_pct, recorded_at
+        await client.query(            `SELECT id, cpu_pct, mem_pct, disk_pct, disk_free_bytes, network_latency_ms, network_packet_loss_pct,
+                    battery_pct, battery_health_pct, uptime_seconds, process_count, service_states, recorded_reason, recorded_at
              FROM device_metrics
             WHERE device_id = $1
             ORDER BY recorded_at DESC
@@ -129,6 +318,13 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
         cpu_pct: Number(row.cpu_pct),
         mem_pct: Number(row.mem_pct),
         disk_pct: Number(row.disk_pct),
+        disk_free_bytes: row.disk_free_bytes == null ? null : Number(row.disk_free_bytes),
+        network_latency_ms: row.network_latency_ms == null ? null : Number(row.network_latency_ms),
+        network_packet_loss_pct: row.network_packet_loss_pct == null ? null : Number(row.network_packet_loss_pct),
+        battery_pct: row.battery_pct == null ? null : Number(row.battery_pct),
+        battery_health_pct: row.battery_health_pct == null ? null : Number(row.battery_health_pct),
+        uptime_seconds: row.uptime_seconds == null ? null : Number(row.uptime_seconds),
+        process_count: row.process_count == null ? null : Number(row.process_count),
       }))
       const alerts = (
         await client.query(
@@ -151,7 +347,27 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
           [id],
         )
       ).rows
-      return { device, metrics: metrics.reverse(), alerts, tickets }
+      const assignments = (
+        await client.query(
+          `SELECT a.*, u.name AS user_name, u.email AS user_email,
+                  ab.name AS assigned_by_name, t.name AS team_name
+             FROM device_assignments a
+             LEFT JOIN users u ON u.id = a.user_id
+             LEFT JOIN users ab ON ab.id = a.assigned_by
+             LEFT JOIN teams t ON t.id = a.team_id
+            WHERE a.device_id = $1
+            ORDER BY a.assigned_at DESC`,
+          [id],
+        )
+      ).rows
+      const asset = (
+        await client.query(
+          `SELECT id, tag, name, type, status, qr_payload, barcode_value, warranty_until
+             FROM assets WHERE device_id = $1 ORDER BY created_at DESC LIMIT 1`,
+          [id],
+        )
+      ).rows[0] ?? null
+      return { device, metrics: metrics.reverse(), alerts, tickets, assignment: assignments.find((row) => !row.ended_at) ?? null, assignments, asset }
     })
   })
 
@@ -173,6 +389,10 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
       if (body.groupId !== undefined) {
         values.push(body.groupId)
         sets.push(`group_id = $${values.length}`)
+      }
+      if (body.deviceType !== undefined) {
+        values.push(body.deviceType)
+        sets.push(`device_type = $${values.length}`)
       }
       if (sets.length === 0) throw AppError.badRequest('Nothing to update')
       values.push(id)
@@ -344,6 +564,29 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
         .then((r) => r.rows),
     )
     return { alerts: rows }
+  })
+
+  app.post('/device-alerts/:id/acknowledge', { preHandler: [...guards, requirePermission('device.manage')] }, async (request) => {
+    const ctx = request.tenantCtx!
+    const { id } = request.params as { id: string }
+    return withTenant(app.db, ctx.tenantId, async (client) => {
+      const result = await client.query(`UPDATE device_alerts SET acknowledged_at = COALESCE(acknowledged_at, now()), acknowledged_by = COALESCE(acknowledged_by, $2) WHERE id = $1 AND resolved_at IS NULL RETURNING id, acknowledged_at, acknowledged_by`, [id, request.user!.id])
+      if (!result.rows[0]) throw AppError.notFound('Open device alert not found')
+      await recordAudit(client, ctx.tenantId, { actorId: request.user!.id, action: 'device_alert.acknowledged', objectType: 'device_alert', objectId: id, ip: request.ip })
+      return { alert: result.rows[0] }
+    })
+  })
+
+  app.post('/device-alerts/:id/snooze', { preHandler: [...guards, requirePermission('device.manage')] }, async (request) => {
+    const ctx = request.tenantCtx!
+    const { id } = request.params as { id: string }
+    const body = z.object({ minutes: z.number().int().min(5).max(43_200) }).parse(request.body)
+    return withTenant(app.db, ctx.tenantId, async (client) => {
+      const result = await client.query(`UPDATE device_alerts SET snoozed_until = now() + make_interval(mins => $2) WHERE id = $1 AND resolved_at IS NULL RETURNING id, snoozed_until`, [id, body.minutes])
+      if (!result.rows[0]) throw AppError.notFound('Open device alert not found')
+      await recordAudit(client, ctx.tenantId, { actorId: request.user!.id, action: 'device_alert.snoozed', objectType: 'device_alert', objectId: id, ip: request.ip, payload: { minutes: body.minutes } })
+      return { alert: result.rows[0] }
+    })
   })
 
   // -- Enrolment token -----------------------------------------------------------

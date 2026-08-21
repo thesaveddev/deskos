@@ -297,7 +297,7 @@ export default function ReportsPage() {
   /* ─── Export handlers ─── */
   const handleExportOverview = useCallback((format: string) => {
     if (!overview) return
-    const title = `DeskOS Overview Report`
+    const title = `ReyDesk Overview Report`
     if (format === 'csv') {
       exportCSV(
         ['Metric', 'Value'],
@@ -311,10 +311,10 @@ export default function ReportsPage() {
           ['Total Sessions', overview.sessions.total],
           ['Live Sessions', overview.sessions.live],
         ],
-        'deskos-overview',
+        'reydesk-overview',
       )
     } else if (format === 'json') {
-      exportJSON(overview, 'deskos-overview')
+      exportJSON(overview, 'reydesk-overview')
     } else if (format === 'html') {
       exportHTML(title, `
         <table><tr><th>Metric</th><th class="num">Value</th></tr>
@@ -326,7 +326,7 @@ export default function ReportsPage() {
         <tr><td>Avg Response</td><td class="num">${formatMinutes(overview.firstResponse.avg_minutes)}</td></tr>
         <tr><td>Total Sessions</td><td class="num">${overview.sessions.total}</td></tr>
         <tr><td>Live Sessions</td><td class="num">${overview.sessions.live}</td></tr>
-        </table>`, 'deskos-overview')
+        </table>`, 'reydesk-overview')
     } else if (format === 'print') {
       printReport(title, `
         <table><tr><th>Metric</th><th class="num">Value</th></tr>
@@ -345,10 +345,10 @@ export default function ReportsPage() {
       exportCSV(
         ['Status', 'Count'],
         ticketReport.byStatus.map(s => [STATUS_LABELS[s.status] ?? s.status, s.n]),
-        'deskos-ticket-status',
+        'reydesk-ticket-status',
       )
     } else if (format === 'json') {
-      exportJSON(ticketReport, 'deskos-tickets')
+      exportJSON(ticketReport, 'reydesk-tickets')
     }
   }, [ticketReport])
 
@@ -358,10 +358,10 @@ export default function ReportsPage() {
       exportCSV(
         ['Agent', 'Total', 'Open', 'Resolved', 'Avg Resolution', 'Avg Response'],
         overview.byAssignee.map(a => [a.name, a.total, a.open, a.resolved, formatMinutes(a.avg_resolution_min), formatMinutes(a.avg_response_min)]),
-        'deskos-agent-performance',
+        'reydesk-agent-performance',
       )
     } else if (format === 'json') {
-      exportJSON(overview.byAssignee, 'deskos-agents')
+      exportJSON(overview.byAssignee, 'reydesk-agents')
     }
   }, [overview])
 
@@ -381,7 +381,7 @@ export default function ReportsPage() {
       <div className="rpt-header">
         <div className="rpt-header-left">
           <h1 className="page-title">Reports & Analytics</h1>
-          <span className="rpt-header-sub">DeskOS · {datePreset === 'all' ? 'All time' : datePreset === 'custom' ? `${customFrom || '...'} to ${customTo || '...'}` : `Last ${datePreset.replace('d', ' days').replace('today', '24 hours')}`}</span>
+          <span className="rpt-header-sub">ReyDesk · {datePreset === 'all' ? 'All time' : datePreset === 'custom' ? `${customFrom || '...'} to ${customTo || '...'}` : `Last ${datePreset.replace('d', ' days').replace('today', '24 hours')}`}</span>
         </div>
         <div className="rpt-header-right">
           <ExportMenu onExport={() => handleExportOverview('csv')} />

@@ -72,7 +72,7 @@ function signPayload(secret: string, body: string): string {
 export function formatPayload(channel: WebhookChannel, event: string, payload: Record<string, unknown>): string {
   if (channel === 'slack') {
     return JSON.stringify({
-      text: `*DeskOS* — \`${event}\``,
+      text: `*ReyDesk* — \`${event}\``,
       attachments: [{ color: '#3b82f6', fields: Object.entries(payload).map(([title, value]) => ({ title, value: String(value), short: false })) }],
     })
   }
@@ -80,8 +80,8 @@ export function formatPayload(channel: WebhookChannel, event: string, payload: R
     return JSON.stringify({
       '@type': 'MessageCard',
       '@context': 'https://schema.org/extensions',
-      summary: `DeskOS ${event}`,
-      title: `DeskOS — ${event}`,
+      summary: `ReyDesk ${event}`,
+      title: `ReyDesk — ${event}`,
       sections: [{ facts: Object.entries(payload).map(([name, value]) => ({ name, value: String(value) })) }],
     })
   }
@@ -274,7 +274,7 @@ export async function testEndpoint(
   })
   const secret = endpoint.secret_enc && isEncryptedSecret(endpoint.secret_enc) ? decryptSecret(endpoint.secret_enc, key) : ''
   const event = 'webhook.test'
-  const payload = { message: 'DeskOS webhook test' }
+  const payload = { message: 'ReyDesk webhook test' }
   const result = await deliverOne(endpoint, secret, event, payload, http)
   await withTenant(pool, tenantId, async (client) => {
     await insertDelivery(client, tenantId, id, event, { status: result.status, attempts: result.attempts, lastError: result.lastError, deliveredAt: result.deliveredAt }, payload)

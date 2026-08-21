@@ -1,0 +1,19 @@
+.ticket-lock-admin-icon { display: inline-flex; align-items: center; gap: 5px; margin: 10px 0 4px; padding: 7px 9px; border: 1px solid var(--line-1); border-radius: var(--radius-sm); background: var(--bg-1); color: var(--text-2); cursor: pointer; }
+.ticket-lock-admin-icon:hover { color: var(--accent); border-color: var(--accent); }
+.ticket-lock-admin-icon .tab-count { min-width: 18px; padding: 1px 5px; font-size: 10px; }
+.ticket-lock-modal { display: grid; gap: 14px; }
+.ticket-lock-modal-state { display: flex; gap: 12px; align-items: flex-start; padding: 14px; border: 1px solid var(--line-1); border-radius: var(--radius-sm); background: var(--bg-2); color: var(--accent); }
+.ticket-lock-modal-state > div { display: grid; gap: 4px; }
+.ticket-lock-modal-state strong { color: var(--text-1); }
+.ticket-lock-modal-state span { color: var(--text-2); font-size: 12px; }
+.ticket-lock-modal-requests { display: grid; gap: 10px; padding-top: 12px; border-top: 1px solid var(--line-1); }
+.ticket-status-icon { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; color: var(--text-2); cursor: pointer; }
+.ticket-status-icon:hover, .ticket-status-icon:focus-visible { border-color: var(--accent); color: var(--accent); }
+.ticket-status-icon.is-locked { color: var(--warn); }
+.ticket-status-icon.is-unlocked { color: var(--ok); }
+.ticket-status-hint { color: var(--text-3); font-size: 11px; }
+.ticket-readonly-notice { flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--warn); }
+.ticket-readonly-notice > div { display: grid; gap: 2px; min-width: 0; }
+.ticket-readonly-notice strong { color: var(--text-1); font-size: 12px; }
+.ticket-readonly-notice span { overflow: hidden; color: var(--text-2); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 640px) { .ticket-lock-admin-row { align-items: flex-start; flex-wrap: wrap; } .ticket-status-hint { display: none; } .ticket-readonly-notice { width: 100%; flex-basis: 100%; } }

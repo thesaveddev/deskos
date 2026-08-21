@@ -1,4 +1,4 @@
-import type { Mailer } from './mailer.js'
+import type { Mailer, EmailMessage } from './mailer.js'
 
 export interface EmailJob {
   id: string
@@ -16,15 +16,27 @@ export interface EmailJob {
 
 export type EmailJobInput = Omit<EmailJob, 'id' | 'retries' | 'maxRetries' | 'createdAt' | 'status'>
 
+export interface EmailQueueStats {
+  sent: number
+  failed: number
+  dead: number
+  pending: number
+  processing: number
+  total: number
+  lastFailure: string | null
+}
+
 /**
- * Simple in-process email queue with retry logic.
- * For production, swap this with BullMQ + Redis for persistence and horizontal scaling.
+ * Small process-local delivery queue. It owns the first delivery attempt
+ * instead of relying on callers to remember to drain it.
  */
 export class EmailQueue {
   private queue: EmailJob[] = []
   private processing = false
   private drainTimer: NodeJS.Timeout | null = null
+  private drainPromise: Promise<{ sent: number; failed: number }> | null = null
   private stats = { sent: 0, failed: 0, dead: 0 }
+  private lastFailure: string | null = null
 
   constructor(
     private mailer: Mailer,
@@ -35,8 +47,7 @@ export class EmailQueue {
     this.options.batchSize ??= 5
   }
 
-  /** Add an email to the queue. Returns the job ID. */
-  add(input: EmailJobInput): string {
+  add(input: EmailJobInput | EmailMessage): string {
     const id = `email_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     const job: EmailJob = {
       id,
@@ -51,97 +62,115 @@ export class EmailQueue {
     }
     this.queue.push(job)
     console.log(`[email-queue] queued: ${job.id} → ${job.to} (${job.subject})`)
-    this.scheduleDrain()
+    this.scheduleDrain(0)
     return id
   }
 
-  /** Process pending jobs. Called automatically on a timer. */
+  async addAndSend(input: EmailJobInput | EmailMessage): Promise<string> {
+    const id = this.add(input)
+    await this.drain()
+    return id
+  }
+
   async drain(): Promise<{ sent: number; failed: number }> {
+    if (this.drainPromise) return this.drainPromise
+    this.drainPromise = this.runDrain()
+    try {
+      return await this.drainPromise
+    } finally {
+      this.drainPromise = null
+    }
+  }
+
+  private async runDrain(): Promise<{ sent: number; failed: number }> {
     if (this.processing) return { sent: 0, failed: 0 }
     this.processing = true
-
-    const pending = this.queue.filter((j) => j.status === 'pending')
+    const pending = this.queue.filter((job) => job.status === 'pending').slice(0, this.options.batchSize!)
     let sent = 0
     let failed = 0
 
-    for (const job of pending.slice(0, this.options.batchSize!)) {
+    for (const job of pending) {
       job.status = 'processing'
       job.lastAttemptAt = new Date()
       try {
-        const ok = await this.mailer.sendMail({ to: job.to, subject: job.subject, text: job.text })
+        const ok = await this.mailer.sendMail({ to: job.to, subject: job.subject, text: job.text, html: job.html })
         if (ok) {
           job.status = 'sent'
-          this.stats.sent++
-          sent++
+          this.stats.sent += 1
+          sent += 1
         } else {
-          this.retryOrDead(job, 'Mailer returned false')
-          failed++
+          this.retryOrDead(job, this.mailer.status.lastError ?? 'Mailer returned false')
+          failed += 1
         }
       } catch (err) {
-        this.retryOrDead(job, err instanceof Error ? err.message : 'Unknown error')
-        failed++
+        this.retryOrDead(job, err instanceof Error ? err.message : 'Unknown email delivery error')
+        failed += 1
       }
     }
 
     this.processing = false
-    if (sent + failed > 0) {
-      console.log(`[email-queue] drained: ${sent} sent, ${failed} failed, ${this.queue.length} remaining`)
-    }
+    if (sent + failed > 0) console.log(`[email-queue] drained: ${sent} sent, ${failed} failed, ${this.queue.length} total`)
     return { sent, failed }
   }
 
-  /** Get queue stats. */
-  getStats() {
+  getStats(): EmailQueueStats {
     return {
       ...this.stats,
-      pending: this.queue.filter((j) => j.status === 'pending').length,
-      processing: this.queue.filter((j) => j.status === 'processing').length,
-      dead: this.queue.filter((j) => j.status === 'dead').length,
+      pending: this.queue.filter((job) => job.status === 'pending').length,
+      processing: this.queue.filter((job) => job.status === 'processing').length,
       total: this.queue.length,
+      lastFailure: this.lastFailure,
     }
   }
 
-  /** Get dead letter jobs for inspection. */
-  getDeadLetters(): EmailJob[] {
-    return this.queue.filter((j) => j.status === 'dead')
+  getJob(jobId: string): EmailJob | undefined {
+    return this.queue.find((job) => job.id === jobId)
   }
 
-  /** Retry a dead letter job. */
+  getDeadLetters(): EmailJob[] {
+    return this.queue.filter((job) => job.status === 'dead')
+  }
+
   retryJob(jobId: string): boolean {
-    const job = this.queue.find((j) => j.id === jobId && j.status === 'dead')
+    const job = this.queue.find((item) => item.id === jobId && item.status === 'dead')
     if (!job) return false
     job.status = 'pending'
     job.retries = 0
     job.lastError = undefined
-    this.scheduleDrain()
+    this.scheduleDrain(0)
     return true
   }
 
-  /** Clear completed/failed jobs from memory. */
   purge(): number {
     const before = this.queue.length
-    this.queue = this.queue.filter((j) => j.status === 'pending' || j.status === 'processing')
+    this.queue = this.queue.filter((job) => job.status === 'pending' || job.status === 'processing')
     return before - this.queue.length
   }
 
   private retryOrDead(job: EmailJob, error: string): void {
-    job.retries++
+    job.retries += 1
     job.lastError = error
-    if (job.retries >= job.maxRetries) {
+    this.stats.failed += 1
+    this.lastFailure = `${job.id}: ${error}`
+    const configurationError = error === 'SMTP transport is not configured' || error === 'REYDESK_SMTP_FROM (or legacy DESKOS_SMTP_FROM) is not configured' || error === 'DESKOS_SMTP_FROM is not configured'
+    if (configurationError || job.retries >= job.maxRetries) {
       job.status = 'dead'
-      this.stats.dead++
+      this.stats.dead += 1
       console.error(`[email-queue] dead letter: ${job.id} → ${job.to} (${error})`)
-    } else {
-      job.status = 'pending'
-      console.log(`[email-queue] retry ${job.retries}/${job.maxRetries}: ${job.id} (${error})`)
+      return
     }
+    job.status = 'pending'
+    const delay = this.options.retryDelayMs! * 2 ** Math.max(0, job.retries - 1)
+    console.warn(`[email-queue] retry ${job.retries}/${job.maxRetries} in ${delay}ms: ${job.id} (${error})`)
+    this.scheduleDrain(delay)
   }
 
-  private scheduleDrain(): void {
+  private scheduleDrain(delayMs: number): void {
     if (this.drainTimer) return
     this.drainTimer = setTimeout(() => {
       this.drainTimer = null
       void this.drain()
-    }, this.options.retryDelayMs!)
+    }, delayMs)
+    this.drainTimer.unref?.()
   }
 }

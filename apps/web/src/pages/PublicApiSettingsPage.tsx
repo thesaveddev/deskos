@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { Alert, Field, Modal } from '../components/ui.js'
+import { Alert, Field, Modal, useConfirm } from '../components/ui.js'
 import { Icon } from '../components/Icons.js'
 import { createOauthClient, deleteOauthClient, listOauthClients, type OAuthClient } from '../lib/oauth.js'
 import { getDeveloperOverview, type ApiScope, type DeveloperOverview } from '../lib/developer.js'
@@ -41,6 +41,7 @@ export default function PublicApiSettingsPage() {
   const [notice, setNotice] = useState<string | null>(null)
   const [createdSecret, setCreatedSecret] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const confirm = useConfirm()
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -107,7 +108,7 @@ export default function PublicApiSettingsPage() {
   }
 
   const remove = async (client: OAuthClient) => {
-    if (busy || !window.confirm(`Delete the OAuth client “${client.name}”? Existing tokens will stop working.`)) return
+    if (busy || !await confirm(`Delete the OAuth client “${client.name}”? Existing tokens will stop working.`, { title: 'Delete OAuth client', confirmLabel: 'Delete client', destructive: true })) return
     setBusy(true)
     setError(null)
     setNotice(null)
@@ -155,7 +156,7 @@ export default function PublicApiSettingsPage() {
 
       {error ? <Alert kind="error">{error}</Alert> : null}
       {notice ? <Alert kind="info">{notice}</Alert> : null}
-      {createdSecret ? <div className="public-api-secret"><div><strong>New client secret</strong><span>Save this value now. DeskOS cannot reveal it again.</span></div><code>{createdSecret}</code><button type="button" className="btn btn-ghost btn-sm" onClick={() => void copySecret()}><Icon name="copy" size={14} />{copied ? 'Copied' : 'Copy'}</button></div> : null}
+      {createdSecret ? <div className="public-api-secret"><div><strong>New client secret</strong><span>Save this value now. ReyDesk cannot reveal it again.</span></div><code>{createdSecret}</code><button type="button" className="btn btn-ghost btn-sm" onClick={() => void copySecret()}><Icon name="copy" size={14} />{copied ? 'Copied' : 'Copy'}</button></div> : null}
 
       <div className="public-api-stat-grid">
         <div className="public-api-stat"><span>OAuth clients</span><strong>{clients.length}</strong><small>{clientCredentialCount} machine-to-machine · {delegatedCount} delegated</small></div>
@@ -196,11 +197,11 @@ function ClientsTab({ clients, busy, onCreate, onDelete }: { clients: OAuthClien
 }
 
 function ScopesTab({ scopes, clients }: { scopes: ApiScope[]; clients: OAuthClient[] }) {
-  return <div className="public-api-section"><div className="public-api-section-head"><div><h3>Scope catalog</h3><p>Scopes are the permissions an OAuth client can request. Start with read access and add write or management access only when required.</p></div></div><div className="public-api-scope-list">{scopes.map((scope) => { const usedBy = clients.filter((client) => client.scopes.includes(scope.scope)).length; return <article key={scope.scope} className="public-api-scope-card"><div><code>{scope.scope}</code><span>{scope.description}</span></div><div><small>DeskOS permission</small><code>{scope.permission}</code><small>{usedBy} client{usedBy === 1 ? '' : 's'} using this</small></div></article> })}</div></div>
+  return <div className="public-api-section"><div className="public-api-section-head"><div><h3>Scope catalog</h3><p>Scopes are the permissions an OAuth client can request. Start with read access and add write or management access only when required.</p></div></div><div className="public-api-scope-list">{scopes.map((scope) => { const usedBy = clients.filter((client) => client.scopes.includes(scope.scope)).length; return <article key={scope.scope} className="public-api-scope-card"><div><code>{scope.scope}</code><span>{scope.description}</span></div><div><small>ReyDesk permission</small><code>{scope.permission}</code><small>{usedBy} client{usedBy === 1 ? '' : 's'} using this</small></div></article> })}</div></div>
 }
 
 function DocsTab({ baseUrl, tokenUrl, authorizeUrl, specUrl, overview }: { baseUrl: string; tokenUrl: string; authorizeUrl: string; specUrl: string; overview: DeveloperOverview | null }) {
-  return <div className="public-api-section"><div className="public-api-section-head"><div><h3>Integration documentation</h3><p>OAuth2 endpoints and the live OpenAPI contract for DeskOS integrations.</p></div><a className="btn btn-primary btn-sm" href={specUrl} target="_blank" rel="noreferrer"><Icon name="download" size={14} />Download OpenAPI JSON</a></div><div className="public-api-url-grid"><div><span>API base URL</span><code>{baseUrl}/api/v1</code></div><div><span>Token endpoint</span><code>{tokenUrl}</code></div><div><span>Authorization endpoint</span><code>{authorizeUrl}</code></div></div><div className="public-api-quickstart"><h4>Client-credentials quick start</h4><p>Exchange a client ID and secret for a short-lived access token, then send it as a Bearer token.</p><pre>{`curl -X POST ${tokenUrl} \\
+  return <div className="public-api-section"><div className="public-api-section-head"><div><h3>Integration documentation</h3><p>OAuth2 endpoints and the live OpenAPI contract for ReyDesk integrations.</p></div><a className="btn btn-primary btn-sm" href={specUrl} target="_blank" rel="noreferrer"><Icon name="download" size={14} />Download OpenAPI JSON</a></div><div className="public-api-url-grid"><div><span>API base URL</span><code>{baseUrl}/api/v1</code></div><div><span>Token endpoint</span><code>{tokenUrl}</code></div><div><span>Authorization endpoint</span><code>{authorizeUrl}</code></div></div><div className="public-api-quickstart"><h4>Client-credentials quick start</h4><p>Exchange a client ID and secret for a short-lived access token, then send it as a Bearer token.</p><pre>{`curl -X POST ${tokenUrl} \\
   -H "Content-Type: application/json" \\
   -d '{"grant_type":"client_credentials","client_id":"YOUR_ID","client_secret":"YOUR_SECRET"}'`}</pre></div><div className="public-api-quickstart"><h4>Call a protected resource</h4><p>Request only the scopes assigned to the client.</p><pre>{`curl ${baseUrl}/api/v1/public/tickets \\
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN"`}</pre></div><div className="public-api-doc-links"><a className="btn btn-ghost btn-sm" href="/api-docs" target="_blank" rel="noreferrer"><Icon name="external" size={14} />Open interactive API docs</a><span>{overview?.endpoints?.length ?? 0} documented endpoint{overview?.endpoints?.length === 1 ? '' : 's'} available</span></div></div>

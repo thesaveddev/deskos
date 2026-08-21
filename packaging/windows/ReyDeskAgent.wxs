@@ -2,20 +2,20 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
      xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
   <Package
-    Name="DeskOS Endpoint Agent"
-    Manufacturer="DeskOS"
+    Name="ReyDesk Endpoint Agent"
+    Manufacturer="ReyDesk"
     Version="0.1.0.19"
     UpgradeCode="6FCD0F45-9E7D-4F4A-9A24-75AB9A0F45C1"
     Scope="perMachine">
-    <MajorUpgrade DowngradeErrorMessage="A newer DeskOS Endpoint Agent is already installed." />
+    <MajorUpgrade DowngradeErrorMessage="A newer ReyDesk Endpoint Agent is already installed." />
     <MediaTemplate EmbedCab="yes" />
     <Property Id="DESKOS_API_URL" Value="$(var.DefaultApiUrl)" Secure="yes" />
     <Property Id="DESKOS_RELAY_URL" Value="$(var.DefaultRelayUrl)" Secure="yes" />
     <Property Id="DESKOS_ENROLL_TOKEN" Secure="yes" Hidden="yes" />
     <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
-    <Property Id="WIXUI_EXITDIALOGOPTIONALTEXT" Value="DeskOS was installed. Enroll this endpoint before starting the DeskOSAgent service." />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALTEXT" Value="ReyDesk was installed. Enroll this endpoint before starting the ReyDeskAgent service." />
 
-    <Feature Id="AgentFeature" Title="DeskOS Endpoint Agent" Level="1">
+    <Feature Id="AgentFeature" Title="ReyDesk Endpoint Agent" Level="1">
       <ComponentGroupRef Id="AgentFiles" />
       <ComponentGroupRef Id="AgentData" />
       <ComponentGroupRef Id="UserConsentStartup" />
@@ -24,7 +24,7 @@
 
   <Fragment>
     <StandardDirectory Id="ProgramFiles64Folder">
-      <Directory Id="INSTALLFOLDER" Name="DeskOS Agent" />
+      <Directory Id="INSTALLFOLDER" Name="ReyDesk Agent" />
     </StandardDirectory>
 
     <StandardDirectory Id="CommonAppDataFolder">
@@ -32,7 +32,7 @@
     </StandardDirectory>
 
     <StandardDirectory Id="ProgramMenuFolder">
-      <Directory Id="DeskOSProgramsFolder" Name="DeskOS Agent" />
+      <Directory Id="ReyDeskProgramsFolder" Name="ReyDesk Agent" />
     </StandardDirectory>
 
     <StandardDirectory Id="StartupFolder" />
@@ -41,12 +41,12 @@
   <Fragment>
     <ComponentGroup Id="AgentFiles" Directory="INSTALLFOLDER">
       <Component Id="AgentExecutable" Guid="*" Bitness="always64">
-        <File Id="DeskOSAgentExe" Source="$(var.AgentBinary)" KeyPath="yes" />
+        <File Id="ReyDeskAgentExe" Source="$(var.AgentBinary)" KeyPath="yes" />
         <ServiceInstall
-          Id="DeskOSAgentServiceInstall"
+          Id="ReyDeskAgentServiceInstall"
           Name="DeskOSAgent"
-          DisplayName="DeskOS Endpoint Agent"
-          Description="DeskOS endpoint telemetry and remote-support agent."
+          DisplayName="ReyDesk Endpoint Agent"
+          Description="ReyDesk endpoint telemetry and remote-support agent."
           Type="ownProcess"
           Start="demand"
           ErrorControl="normal"
@@ -54,7 +54,7 @@
           Account="LocalSystem"
           Arguments="service --config &quot;[CommonAppDataFolder]DeskOS\deskos-agent.json&quot;" />
         <ServiceControl
-          Id="DeskOSAgentServiceControl"
+          Id="ReyDeskAgentServiceControl"
           Name="DeskOSAgent"
           Start="install"
           Stop="both"
@@ -62,23 +62,23 @@
           Wait="yes" />
       </Component>
       <Component Id="TrayHelperLauncher" Directory="INSTALLFOLDER" Guid="*">
-        <File Id="DeskOSTrayLauncher" Source="$(var.TrayLauncher)" KeyPath="yes" />
+        <File Id="ReyDeskTrayLauncher" Source="$(var.TrayLauncher)" KeyPath="yes" />
       </Component>
-      <Component Id="EnrollmentShortcut" Directory="DeskOSProgramsFolder" Guid="*">
+      <Component Id="EnrollmentShortcut" Directory="ReyDeskProgramsFolder" Guid="*">
         <Shortcut
-          Id="DeskOSEnrollmentShortcut"
-          Name="Enroll DeskOS Agent"
-          Description="Connect this endpoint to DeskOS without using a terminal."
-          Target="[INSTALLFOLDER]deskos-agent.exe"
+          Id="ReyDeskEnrollmentShortcut"
+          Name="Enroll ReyDesk Agent"
+          Description="Connect this endpoint to ReyDesk without using a terminal."
+          Target="[INSTALLFOLDER]reydesk-agent.exe"
           Arguments="enroll-ui --config &quot;[CommonAppDataFolder]DeskOS\deskos-agent.json&quot;"
           WorkingDirectory="INSTALLFOLDER" />
-        <RegistryValue Root="HKCU" Key="Software\DeskOS\Agent" Name="EnrollmentShortcut" Type="integer" Value="1" KeyPath="yes" />
+        <RegistryValue Root="HKCU" Key="Software\ReyDesk\Agent" Name="EnrollmentShortcut" Type="integer" Value="1" KeyPath="yes" />
         <RemoveFolder Id="RemoveApplicationProgramsFolder" On="uninstall" />
       </Component>
     </ComponentGroup>
 
     <ComponentGroup Id="AgentData" Directory="DESKOSDATA">
-      <Component Id="DeskOSDataDirectory" Guid="B1E9B8E6-0E42-4A42-9A50-9C7A9A5B3142">
+      <Component Id="ReyDeskDataDirectory" Guid="B1E9B8E6-0E42-4A42-9A50-9C7A9A5B3142">
         <CreateFolder />
         <RegistryKey Root="HKLM" Key="Software\DeskOS\Enrollment">
           <RegistryValue Name="ApiUrl" Type="string" Value="[DESKOS_API_URL]" />
@@ -91,13 +91,13 @@
     <ComponentGroup Id="UserConsentStartup">
       <Component Id="ConsentHelperStartup" Directory="StartupFolder" Guid="*">
         <Shortcut
-          Id="DeskOSConsentHelperStartup"
-          Name="DeskOS tray helper"
-          Description="DeskOS tray status and attended-session helper"
+          Id="ReyDeskConsentHelperStartup"
+          Name="ReyDesk tray helper"
+          Description="ReyDesk tray status and attended-session helper"
           Target="[SystemFolder]wscript.exe"
           Arguments="//B //NoLogo &quot;[INSTALLFOLDER]start-tray-helper.vbs&quot;"
           WorkingDirectory="INSTALLFOLDER" />
-        <RegistryValue Root="HKCU" Key="Software\DeskOS\Agent" Name="ConsentHelperStartup" Type="integer" Value="1" KeyPath="yes" />
+        <RegistryValue Root="HKCU" Key="Software\ReyDesk\Agent" Name="ConsentHelperStartup" Type="integer" Value="1" KeyPath="yes" />
         <RemoveFolder Id="RemoveConsentHelperStartup" On="uninstall" />
       </Component>
     </ComponentGroup>

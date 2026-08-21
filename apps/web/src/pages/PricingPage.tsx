@@ -100,11 +100,11 @@ const FAQ = [
   },
   {
     q: 'Is there a discount for education or non-profits?',
-    a: 'Yes. We offer special pricing for educational institutions and registered non-profit organizations. Contact sales@deskos.com.',
+    a: 'Yes. We offer special pricing for educational institutions and registered non-profit organizations. Contact sales@reydesk.com.',
   },
   {
-    q: 'Can I self-host DeskOS?',
-    a: 'Yes. DeskOS ships with a Dockerfile and docker-compose. Run it on your own VPS or on-premises server. Self-hosted pricing is the same as cloud.',
+    q: 'Can I self-host ReyDesk?',
+    a: 'Yes. ReyDesk ships with a Dockerfile and docker-compose. Run it on your own VPS or on-premises server. Self-hosted pricing is the same as cloud.',
   },
   {
     q: 'What payment methods do you accept?',
@@ -142,8 +142,8 @@ const COMPARE_ROWS = [
 const pricingJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'WebPage',
-  name: 'DeskOS Pricing',
-  description: 'Simple, transparent pricing for DeskOS. Start free for up to 3 technicians.',
+  name: 'ReyDesk Pricing',
+  description: 'Simple, transparent pricing for ReyDesk. Start free for up to 3 technicians.',
   offers: [
     {
       '@type': 'Offer',
@@ -172,8 +172,8 @@ const pricingJsonLd = {
 export default function PricingPage() {
   return (
     <LandingLayout
-      title="Pricing — DeskOS | IT Support OS Plans"
-      description="Simple, transparent pricing for DeskOS. Start free for up to 3 technicians. Pro plan from $79/tech/month. Enterprise with custom pricing."
+      title="Pricing — ReyDesk | IT Support OS Plans"
+      description="Simple, transparent pricing for ReyDesk. Start free for up to 3 technicians. Pro plan from $79/tech/month. Enterprise with custom pricing."
       structuredData={pricingJsonLd}
     >
       {/* hero */}

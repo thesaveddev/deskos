@@ -1,6 +1,8 @@
-# DeskOS Mobile App — Build Guide
+# ReyDesk Mobile App — Build Guide
 
-DeskOS mobile app is built with [Capacitor](https://capacitorjs.com) — a native runtime that wraps the responsive web console in a native shell.
+ReyDesk mobile app is built with [Capacitor](https://capacitorjs.com) — a native runtime that wraps the responsive web console in a native shell.
+
+The native shell now provides permission-aware primary tabs, nested-page back navigation, quick ticket creation, account actions, lock-screen access, theme switching, safe-area handling, and a More menu for secondary modules. Web Push remains a browser capability; native Android/iOS push registration and provider delivery require the FCM/APNs setup described below and are not enabled by the web service-worker path.
 
 ## Prerequisites
 
@@ -56,17 +58,17 @@ cd android
 
 1. Generate a keystore:
    ```bash
-   keytool -genkey -v -keystore deskos-release.keystore \
-     -alias deskos -keyalg RSA -keysize 2048 -validity 10000
+   keytool -genkey -v -keystore reydesk-release.keystore \
+     -alias reydesk -keyalg RSA -keysize 2048 -validity 10000
    ```
 
 2. Add to `android/app/build.gradle`:
    ```groovy
    signingConfigs {
      release {
-       storeFile file('../deskos-release.keystore')
+       storeFile file('../reydesk-release.keystore')
        storePassword 'YOUR_STORE_PASSWORD'
-       keyAlias 'deskos'
+       keyAlias 'reydesk'
        keyPassword 'YOUR_KEY_PASSWORD'
      }
    }
@@ -107,7 +109,7 @@ open App.xcworkspace
 In Xcode:
 1. Select the **App** target
 2. Set your **Team** (Apple Developer account)
-3. Update **Bundle Identifier** (e.g., `com.deskos.app`)
+3. Update **Bundle Identifier** (e.g., `com.reydesk.app`)
 4. Select a device or simulator
 5. **Product → Run** (Cmd+R)
 
@@ -148,9 +150,13 @@ To test against a local dev server:
 
 ## Push notifications
 
-Push notifications require:
-- **Android**: Firebase Cloud Messaging (FCM) — add `google-services.json` to `android/app/`
-- **iOS**: Apple Push Notification Service (APNs) — configure in Xcode Capabilities
+The web console uses Web Push with VAPID keys. The Capacitor projects include the native push plugin, but a store-ready native push implementation still requires provider configuration and native token registration:
+
+- **Android**: Firebase Cloud Messaging (FCM), `google-services.json` in `android/app/`, notification channel/icon configuration, and a server-side FCM sender.
+- **iOS**: APNs capability, a valid team/bundle signing profile, APNs authentication key or certificate, and a server-side APNs sender.
+- **Both**: request permission from an explicit in-app action, register each device token against the authenticated user, handle token rotation, and route notification taps to the relevant ReyDesk ticket/session.
+
+Do not ship the native app claiming background push is complete until those provider and server-delivery steps are implemented and tested on physical devices. Browser push can be enabled from Settings → Notifications.
 
 ---
 
@@ -170,7 +176,7 @@ Then rebuild the native project (gradlew or Xcode).
 ## Project structure
 
 ```
-deskos/
+reydesk/
 ├── apps/web/          # React web console (Capacitor webDir)
 ├── android/           # Android native project
 ├── ios/               # iOS native project

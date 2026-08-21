@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { Alert, BrandRow } from '../components/ui.js'
 
 interface ConnectInfo {
@@ -7,6 +7,7 @@ interface ConnectInfo {
   reason: string
   permissions: string[]
   helperAvailable: boolean
+  claimMode: 'code' | 'email_link'
 }
 
 const PERMISSION_LABELS: Record<string, string> = {
@@ -26,6 +27,8 @@ function permissionLabel(permission: string): string {
 
 export default function ConnectPage() {
   const { code = '' } = useParams<{ code: string }>()
+  const [searchParams] = useSearchParams()
+  const claimToken = searchParams.get('claimToken')
   const [info, setInfo] = useState<ConnectInfo | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
@@ -33,7 +36,8 @@ export default function ConnectPage() {
   const load = useCallback(async () => {
     setError(null)
     try {
-      const res = await fetch(`/api/connect/${encodeURIComponent(code)}`)
+      const query = claimToken ? `?claimToken=${encodeURIComponent(claimToken)}` : ''
+      const res = await fetch(`/api/connect/${encodeURIComponent(code)}${query}`)
       if (!res.ok) {
         setInfo(null)
         setError('This support link is invalid or has expired. Ask your technician for a new one.')
@@ -44,7 +48,7 @@ export default function ConnectPage() {
       setInfo(null)
       setError('Could not reach the support service. Please check your connection and try again.')
     }
-  }, [code])
+  }, [code, claimToken])
 
   useEffect(() => {
     void load()
@@ -64,7 +68,7 @@ export default function ConnectPage() {
     <div className="auth-screen">
       <div className="auth-panel connect-panel">
         <BrandRow />
-        <h1 className="auth-title">DeskOS support</h1>
+        <h1 className="auth-title">ReyDesk support</h1>
         <p className="auth-sub">Your support team is ready to help with this device.</p>
 
         {error ? <Alert kind="error">{error}</Alert> : null}
@@ -92,14 +96,20 @@ export default function ConnectPage() {
               </button>
             </div>
 
+            {info.claimMode === 'email_link' ? (
+              <div className="connect-secure-link">
+                <strong>This is a one-time secure link</strong>
+                <span className="muted">Use this complete link in the ReyDesk helper. The first helper that presents it is bound to the claim; later attempts are rejected.</span>
+              </div>
+            ) : null}
+
             {info.helperAvailable ? (
               <div className="connect-download">
-                <a className="btn btn-primary" href={`/api/connect/${encodeURIComponent(code)}/download`}>
-                  Download the DeskOS helper
+                <a className="btn btn-primary" href={`/api/connect/${encodeURIComponent(code)}/download${claimToken ? `?claimToken=${encodeURIComponent(claimToken)}` : ''}`}>
+                  Download the ReyDesk helper
                 </a>
                 <span className="muted">
-                  A small file — no installation. Open it, enter your support code, and approve the access request when
-                  it appears.
+                  A small file — no installation. Open it, enter the {info.claimMode === 'email_link' ? 'complete secure link' : 'support code'}, and approve the access request when it appears.
                 </span>
               </div>
             ) : (

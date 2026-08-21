@@ -25,25 +25,31 @@ export function encryptWebPushPayload(
   const serverPublicKey = ecdh.getPublicKey() // 65-byte uncompressed point
   const sharedSecret = ecdh.computeSecret(subscriberPublicKey)
 
-  // PRK = HKDF-Extract(salt, shared_secret)
-  const prk = hkdf(sharedSecret, salt, EMPTY, 32)
-  // IKM = HKDF-Expand(PRK, "Content-Encoding: auth" || 0x00 || auth_secret, 32)
-  const ikm = hkdf(prk, EMPTY, Buffer.concat([Buffer.from('Content-Encoding: auth\0'), subscriberAuth]), 32)
-  // PRK_key = HKDF-Extract(IKM, shared_secret)
-  const prkKey = hkdf(sharedSecret, ikm, EMPTY, 32)
-  // key_info = "WebPush: info" || 0x00 || ua_public || as_public
+  // RFC 8291 / aes128gcm key schedule:
+  // PRK_key = HKDF-Extract(auth_secret, ECDH secret)
+  const prkKey = hkdf(sharedSecret, subscriberAuth, EMPTY, 32)
+  // IKM = HKDF-Expand(PRK_key, "WebPush: info" || 0x00 || ua_public || as_public, 32)
   const keyInfo = Buffer.concat([Buffer.from('WebPush: info\0'), subscriberPublicKey, serverPublicKey])
-  const cek = hkdf(prkKey, EMPTY, keyInfo, 16)
-  const nonce = hkdf(prkKey, EMPTY, keyInfo, 12)
+  const ikm = hkdf(prkKey, EMPTY, keyInfo, 32)
+  // PRK = HKDF-Extract(salt, IKM)
+  const prk = hkdf(ikm, salt, EMPTY, 32)
+  const cek = hkdf(prk, EMPTY, Buffer.from('Content-Encoding: aes128gcm\0'), 16)
+  const nonce = hkdf(prk, EMPTY, Buffer.from('Content-Encoding: nonce\0'), 12)
 
-  // Record: 0x02 delimiter + plaintext + zero padding to a multiple of 16.
-  const payload = Buffer.concat([Buffer.from([0x02]), plaintext])
-  const padded = Buffer.concat([payload, Buffer.alloc((16 - (payload.length % 16)) % 16)])
+  // The record size includes the 16-byte GCM tag. The 0x02 delimiter is the
+  // final byte, after zero padding, so the browser can strip padding safely.
+  const recordSizeValue = 4096
+  const paddingLength = recordSizeValue - 16 - plaintext.length - 1
+  if (paddingLength < 0) throw new Error('push payload is too large for a single aes128gcm record')
+  const padded = Buffer.concat([plaintext, Buffer.alloc(paddingLength), Buffer.from([0x02])])
 
   const cipher = createCipheriv('aes-128-gcm', cek, nonce)
-  const ciphertext = Buffer.concat([cipher.update(padded), cipher.final()])
+  const ciphertext = Buffer.concat([cipher.update(padded), cipher.final(), cipher.getAuthTag()])
 
   const recordSize = Buffer.alloc(4)
-  recordSize.writeUInt32BE(4096, 0)
+  recordSize.writeUInt32BE(recordSizeValue, 0)
+  // aes128gcm records include the 16-byte GCM authentication tag. Omitting it
+  // produces a request that the browser push service accepts but cannot
+  // decrypt, which makes notifications appear to disappear silently.
   return Buffer.concat([salt, recordSize, Buffer.from([65]), serverPublicKey, ciphertext])
 }

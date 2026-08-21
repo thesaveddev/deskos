@@ -7,6 +7,7 @@ describe('team chat', () => {
   let owner: Awaited<ReturnType<typeof signupOwner>>
   let analyst: Awaited<ReturnType<typeof seedActiveMember>>
   let endUser: Awaited<ReturnType<typeof seedActiveMember>>
+  let engineer: Awaited<ReturnType<typeof seedActiveMember>>
   let foreign: Awaited<ReturnType<typeof signupOwner>>
   let roomId: string
 
@@ -15,6 +16,7 @@ describe('team chat', () => {
     owner = await signupOwner(app, { tenantName: 'Chat Org' })
     analyst = await seedActiveMember(app, owner.tenantId!, 'analyst')
     endUser = await seedActiveMember(app, owner.tenantId!, 'end_user')
+    engineer = await seedActiveMember(app, owner.tenantId!, 'desktop_engineer')
     foreign = await signupOwner(app, { tenantName: 'Chat Foreign' })
   })
 
@@ -39,6 +41,28 @@ describe('team chat', () => {
     const dup = await app.inject({ method: 'POST', url: '/api/v1/chat/rooms', headers: authHeaders(owner), payload: { name: 'General' } })
     expect(dup.statusCode).toBe(409)
     expect(dup.json().error.code).toBe('duplicate_room')
+  })
+
+  it('limits private team rooms to members and organization managers', async () => {
+    const team = await app.inject({
+      method: 'POST',
+      url: '/api/v1/teams',
+      headers: authHeaders(owner),
+      payload: { name: 'Desktop Support', memberIds: [analyst.userId], createChat: true },
+    })
+    expect(team.statusCode).toBe(201)
+    const privateRoomId = team.json().team.chat_room_id as string
+
+    const memberRooms = await app.inject({ method: 'GET', url: '/api/v1/chat/rooms', headers: authHeaders(analyst) })
+    expect(memberRooms.json().rooms.some((room: { id: string }) => room.id === privateRoomId)).toBe(true)
+
+    const nonMemberRooms = await app.inject({ method: 'GET', url: '/api/v1/chat/rooms', headers: authHeaders(engineer) })
+    expect(nonMemberRooms.json().rooms.some((room: { id: string }) => room.id === privateRoomId)).toBe(false)
+
+    const denied = await app.inject({ method: 'GET', url: `/api/v1/chat/rooms/${privateRoomId}/messages`, headers: authHeaders(engineer) })
+    expect(denied.statusCode).toBe(403)
+    expect(denied.json().error.code).toBe('permission_denied')
+    expect(denied.json().error.denied_reason).toBe('team_chat_membership_required')
   })
 
   it('posts and lists messages with sender info', async () => {

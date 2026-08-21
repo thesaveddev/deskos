@@ -1,6 +1,6 @@
 # 06 — Threat Model
 
-Scope: DeskOS control plane, remote plane, endpoint agent, browser console, tenant data. Method: asset inventory → STRIDE per component → mitigations → residual risks. Zero-trust principle: no implicit trust from network position, login state, or prior sessions.
+Scope: ReyDesk control plane, remote plane, endpoint agent, browser console, tenant data. Method: asset inventory → STRIDE per component → mitigations → residual risks. Zero-trust principle: no implicit trust from network position, login state, or prior sessions.
 
 ## 1. Crown jewels
 
@@ -51,7 +51,7 @@ Denials are actionable (tell the technician *what is missing*) and audited.
 
 ## 4. Safety constraints (non-negotiable, from product mandate §79)
 
-DeskOS MUST NOT ship functionality that: bypasses user consent outside explicit, audited enterprise policy; hides an active session from the endpoint user; evades or disables endpoint security products; harvests credentials (no keylogging, no password-field capture); bypasses MFA; reaches devices outside authorised tenant ownership; installs silent persistence beyond the declared, visible agent; conceals technician activity from the audit trail. Violations of these constraints are treated as release-blocking defects.
+ReyDesk MUST NOT ship functionality that: bypasses user consent outside explicit, audited enterprise policy; hides an active session from the endpoint user; evades or disables endpoint security products; harvests credentials (no keylogging, no password-field capture); bypasses MFA; reaches devices outside authorised tenant ownership; installs silent persistence beyond the declared, visible agent; conceals technician activity from the audit trail. Violations of these constraints are treated as release-blocking defects.
 
 ## 5. Privacy & compliance notes
 

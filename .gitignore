@@ -12,5 +12,7 @@ coverage/
 *.tsbuildinfo
 apps/api/.devdb/
 apps/api/.uploads/
+apps/api/.recordings/
 artifacts/
 deskos-agent.json
+.freebuff/

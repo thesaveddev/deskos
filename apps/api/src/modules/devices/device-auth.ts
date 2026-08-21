@@ -14,9 +14,13 @@ export function generateEnrolToken(): string {
   return `deskos_${randomBytes(24).toString('base64url')}`
 }
 
-/** Generate a phone-friendly, eight-digit code with 100 million possibilities. */
-export function generateEnrolCode(): string {
-  return randomInt(0, 100_000_000).toString().padStart(8, '0')
+/** Generate a phone-friendly numeric code. New support sessions use 10–12 digits; 8 remains available for legacy enrollment flows. */
+export function generateEnrolCode(length = 8): string {
+  if (!Number.isInteger(length) || length < 8 || length > 12) {
+    throw new Error('Enrollment code length must be between 8 and 12 digits')
+  }
+  const upperBound = 10 ** length
+  return randomInt(0, upperBound).toString().padStart(length, '0')
 }
 
 /**
@@ -66,7 +70,10 @@ async function findDeviceByToken(pool: DbPool, token: string): Promise<{ id: str
     const tokenHash = hashToken(token)
     await client.query("SELECT set_config('app.device_token_hash', $1, true)", [tokenHash])
     const { rows } = await client.query(
-      'SELECT id, tenant_id FROM devices WHERE agent_token_hash = $1',
+      `SELECT id, tenant_id
+         FROM devices
+        WHERE agent_token_hash = $1
+          AND (agent_token_expires_at IS NULL OR agent_token_expires_at > now())`,
       [tokenHash],
     )
     await client.query('COMMIT')
@@ -95,6 +102,7 @@ export async function authenticateAgent(request: FastifyRequest, _reply: Fastify
   }
   const token = header.slice('Bearer '.length).trim()
   if (token.length === 0) throw AppError.unauthorized('Missing device token')
+  if (token.length > 300) throw AppError.unauthorized('Invalid device token')
 
   const device = await findDeviceByToken(request.server.db, token)
   if (!device) throw AppError.unauthorized('Unknown or revoked device token')

@@ -26,7 +26,7 @@ export default function ForgotPasswordPage() {
     <div className="auth-screen">
       <div className="auth-panel">
         <div className="brand-row">
-          <Link to="/" className="brand" style={{ textDecoration: 'none' }}>DeskOS</Link>
+          <Link to="/" className="brand" style={{ textDecoration: 'none' }}>ReyDesk</Link>
         </div>
 
         {submitted ? (

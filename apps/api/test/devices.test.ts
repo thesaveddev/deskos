@@ -183,6 +183,39 @@ describe('devices & agent v1', () => {
       expect(d.ip_address).toBe('10.1.2.3')
     })
 
+    it('records richer endpoint health telemetry', async () => {
+      const device = await enrolDevice({ name: 'telemetry-box' })
+      const metric = await app.inject({
+        method: 'POST',
+        url: '/api/v1/agent/metrics',
+        headers: { authorization: `Bearer ${device.deviceToken}` },
+        payload: {
+          cpuPct: 12.5,
+          memPct: 40,
+          diskPct: 60,
+          diskFreeBytes: 987654321,
+          networkLatencyMs: 24.5,
+          batteryPct: 73,
+          uptimeSeconds: 86400,
+          processCount: 142,
+          reason: 'periodic',
+        },
+      })
+      expect(metric.statusCode).toBe(200)
+      const detail = await app.inject({
+        method: 'GET',
+        url: `/api/v1/devices/${device.deviceId}`,
+        headers: authHeaders(owner),
+      })
+      const sample = detail.json().metrics[0]
+      expect(sample.disk_free_bytes).toBe(987654321)
+      expect(sample.network_latency_ms).toBe(24.5)
+      expect(sample.battery_pct).toBe(73)
+      expect(sample.uptime_seconds).toBe(86400)
+      expect(sample.process_count).toBe(142)
+      expect(sample.recorded_reason).toBe('periodic')
+    })
+
     it('records metric samples', async () => {
       const device = await enrolDevice({ name: 'metrics-box' })
       for (const m of [{ cpuPct: 12.5, memPct: 40, diskPct: 60 }, { cpuPct: 20, memPct: 45, diskPct: 62 }]) {

@@ -158,6 +158,7 @@ export default function NewTicketPage() {
           {/* ── Ticket details ── */}
           <div className="ticket-form-section">
             <h3 className="ticket-form-section-title">Issue details</h3>
+            <p className="ticket-form-section-hint">This ticket will be assigned to you automatically after it is created.</p>
             <Field label="Subject">
               <input
                 className="field-input"

@@ -10,6 +10,19 @@ import '../../types.js'
 
 const roomSchema = z.object({ name: z.string().trim().min(1).max(80) })
 const messageSchema = z.object({ body: z.string().trim().min(1).max(4000) })
+const TEAM_CHAT_ADMIN_ROLES = new Set(['owner', 'it_manager', 'service_desk_manager'])
+
+async function assertRoomAccess(client: import('../../db/pool.js').DbClient, roomId: string, userId: string, orgRole: string) {
+  const room = (await client.query('SELECT id, team_id FROM chat_rooms WHERE id = $1', [roomId])).rows[0]
+  if (!room) throw AppError.notFound('Room not found')
+  if (!room.team_id || TEAM_CHAT_ADMIN_ROLES.has(orgRole)) return room
+  const member = (await client.query(
+    'SELECT 1 FROM team_members WHERE team_id = $1 AND user_id = $2',
+    [room.team_id, userId],
+  )).rows[0]
+  if (!member) throw AppError.forbidden('You are not a member of this team chat', 'team_chat_membership_required')
+  return room
+}
 
 export async function chatRoutes(app: FastifyInstance): Promise<void> {
   const read = [authenticate, requireTenant, requirePermission('chat.read')]
@@ -19,10 +32,16 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     const ctx = request.tenantCtx!
     return withTenant(app.db, ctx.tenantId, async (client) => {
       const { rows } = await client.query(
-        `SELECT r.id, r.name, r.created_at,
-                (SELECT count(*) FROM chat_messages m WHERE m.room_id = r.id) AS message_count
+        `SELECT r.id, r.name, r.team_id, r.created_at,
+                (SELECT count(*) FROM chat_messages m WHERE m.room_id = r.id) AS message_count,
+                t.name AS team_name
            FROM chat_rooms r
+           LEFT JOIN teams t ON t.id = r.team_id
+          WHERE r.team_id IS NULL
+             OR $1 IN (SELECT tm.user_id FROM team_members tm WHERE tm.team_id = r.team_id)
+             OR $2 IN ('owner', 'it_manager', 'service_desk_manager')
           ORDER BY r.created_at ASC`,
+        [request.user!.id, ctx.orgRole],
       )
       return { rooms: rows }
     })
@@ -58,8 +77,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     const ctx = request.tenantCtx!
     const { id } = request.params as { id: string }
     return withTenant(app.db, ctx.tenantId, async (client) => {
-      const room = (await client.query('SELECT id FROM chat_rooms WHERE id = $1', [id])).rows[0]
-      if (!room) throw AppError.notFound('Room not found')
+      await assertRoomAccess(client, id, request.user!.id, ctx.orgRole)
       const { rows } = await client.query(
         `SELECT m.id, m.body, m.created_at, m.sender_id, u.name AS sender_name
            FROM chat_messages m
@@ -78,8 +96,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     const { id } = request.params as { id: string }
     const body = messageSchema.parse(request.body)
     const message = await withTenant(app.db, ctx.tenantId, async (client) => {
-      const room = (await client.query('SELECT id FROM chat_rooms WHERE id = $1', [id])).rows[0]
-      if (!room) throw AppError.notFound('Room not found')
+      await assertRoomAccess(client, id, request.user!.id, ctx.orgRole)
       const { rows } = await client.query(
         `INSERT INTO chat_messages (tenant_id, room_id, sender_id, body)
          VALUES ($1, $2, $3, $4)
