@@ -18,6 +18,12 @@ export interface Device {
   arch: string
   ip_address: string
   agent_version: string
+  source?: string
+  managed_by?: string
+  serial_number?: string
+  manufacturer?: string
+  model?: string
+  directory_last_seen_at?: string | null
   device_type?: DeviceType
   power_source?: string
   battery_pct?: number | null

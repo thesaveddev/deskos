@@ -294,11 +294,14 @@ export default function DeviceDetailPage() {
           <div className="ticket-id-row">
             <span className="device-avatar device-avatar-large">{device.name.slice(0, 1).toUpperCase()}</span>
             <span className={`status-pill status-${device.status}`}>{statusLabel(device.status)}</span>
+            {device.source === 'directory' ? <span className="directory-device-badge">{device.managed_by === 'intune' ? 'Directory · Intune' : device.managed_by === 'ad' ? 'Directory · AD' : 'Directory'}</span> : null}
             <span className="mono muted">{device.agent_version ? `agent ${device.agent_version}` : 'agent version unknown'}</span>
           </div>
           <h1 className="ticket-subject">{device.name}</h1>
           <div className="ticket-meta mono">
-            {device.hostname || 'No hostname'} · {device.os || 'Unknown OS'} {device.os_version} · enrolled {formatWhen(device.enrolled_at)}
+            {device.hostname || 'No hostname'} · {device.os || 'Unknown OS'} {device.os_version} · {device.source === 'directory' ? 'discovered from directory' : `enrolled ${formatWhen(device.enrolled_at)}`}
+            {device.manufacturer || device.model ? ` · ${[device.manufacturer, device.model].filter(Boolean).join(' ')}` : ''}
+            {device.serial_number ? ` · SN ${device.serial_number}` : ''}
           </div>
         </div>
         <div className="device-detail-actions">
