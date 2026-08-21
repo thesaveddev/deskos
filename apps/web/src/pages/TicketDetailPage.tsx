@@ -69,6 +69,7 @@ export default function TicketDetailPage() {
   const [previewImage, setPreviewImage] = useState<{ id: string; filename: string; url: string } | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewZoom, setPreviewZoom] = useState(1)
+  const [previewFullscreen, setPreviewFullscreen] = useState(false)
 
   // Inline thumbnails for image attachments in the list.
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({})
@@ -570,6 +571,7 @@ export default function TicketDetailPage() {
     try {
       const url = await fetchAttachmentBlob(getAccessToken() ?? '', attachment.id)
       setPreviewZoom(1)
+      setPreviewFullscreen(false)
       setPreviewImage({ id: attachment.id, filename: attachment.filename, url })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load image')
@@ -578,11 +580,65 @@ export default function TicketDetailPage() {
     }
   }
 
+  const ZOOM_MIN = 0.25
+  const ZOOM_MAX = 3
+  const ZOOM_STEP = 0.25
+  const zoomIn = () => setPreviewZoom((z) => Math.min(ZOOM_MAX, Math.round((z + ZOOM_STEP) * 100) / 100))
+  const zoomOut = () => setPreviewZoom((z) => Math.max(ZOOM_MIN, Math.round((z - ZOOM_STEP) * 100) / 100))
+  const zoomReset = () => setPreviewZoom(1)
+
   const closeImagePreview = () => {
     if (previewImage) URL.revokeObjectURL(previewImage.url)
     setPreviewImage(null)
     setPreviewZoom(1)
+    setPreviewFullscreen(false)
   }
+
+  // Keyboard shortcuts for the image viewer: Escape closes (or exits full
+  // screen), F toggles full screen, +/- zoom, 0 resets.
+  useEffect(() => {
+    if (!previewImage || previewLoading) return
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      const tag = target?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        if (previewFullscreen) setPreviewFullscreen(false)
+        else closeImagePreview()
+      } else if (event.key === 'f' || event.key === 'F') {
+        setPreviewFullscreen((value) => !value)
+      } else if (event.key === '+' || event.key === '=') {
+        event.preventDefault()
+        zoomIn()
+      } else if (event.key === '-' || event.key === '_') {
+        event.preventDefault()
+        zoomOut()
+      } else if (event.key === '0') {
+        zoomReset()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewImage, previewLoading, previewFullscreen])
+
+  const viewerStage = previewImage ? (
+    <div className="image-viewer-stage" onDoubleClick={() => setPreviewFullscreen((value) => !value)}>
+      <img src={previewImage.url} alt={previewImage.filename} style={{ width: `${previewZoom * 100}%` }} draggable={false} />
+    </div>
+  ) : null
+
+  const viewerToolbar = previewImage ? (
+    <div className="image-viewer-toolbar">
+      <button type="button" className="btn btn-ghost btn-sm" onClick={zoomOut} title="Zoom out (−)" aria-label="Zoom out"><Icon name="minus" size={14} /></button>
+      <span className="mono">{Math.round(previewZoom * 100)}%</span>
+      <button type="button" className="btn btn-ghost btn-sm" onClick={zoomIn} title="Zoom in (+)" aria-label="Zoom in"><Icon name="add" size={14} /></button>
+      <button type="button" className="btn btn-ghost btn-sm" onClick={zoomReset} title="Reset zoom (0)">Reset</button>
+      <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPreviewFullscreen((value) => !value)} title={previewFullscreen ? 'Exit full screen (F)' : 'Full screen (F)'} aria-label="Toggle full screen"><Icon name="external" size={14} /></button>
+      <button type="button" className="btn btn-primary btn-sm" onClick={() => void downloadAttachment(getAccessToken() ?? '', previewImage.id, previewImage.filename)}><Icon name="download" size={14} />Download</button>
+    </div>
+  ) : null
 
   const runAiSummary = async () => {
     if (!ticket || aiSummaryBusy) return
@@ -1106,24 +1162,26 @@ export default function TicketDetailPage() {
       </div>
       </div>{/* end ticket-detail-scroll */}
 
-      <Modal open={Boolean(previewImage) || previewLoading} onClose={closeImagePreview} title={previewImage?.filename ?? 'Attachment preview'} width={980}>
-        {previewLoading ? (
-          <div className="image-viewer-state">Loading image…</div>
-        ) : previewImage ? (
-          <div className="image-viewer">
-            <div className="image-viewer-stage">
-              <img src={previewImage.url} alt={previewImage.filename} style={{ width: `${previewZoom * 100}%` }} draggable={false} />
-            </div>
-            <div className="image-viewer-toolbar">
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPreviewZoom((z) => Math.max(0.25, Math.round((z - 0.25) * 100) / 100))} title="Zoom out" aria-label="Zoom out"><Icon name="minus" size={14} /></button>
-              <span className="mono">{Math.round(previewZoom * 100)}%</span>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPreviewZoom((z) => Math.min(3, Math.round((z + 0.25) * 100) / 100))} title="Zoom in" aria-label="Zoom in"><Icon name="add" size={14} /></button>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPreviewZoom(1)} title="Reset zoom">Reset</button>
-              <button type="button" className="btn btn-primary btn-sm" onClick={() => void downloadAttachment(getAccessToken() ?? '', previewImage.id, previewImage.filename)}><Icon name="download" size={14} />Download</button>
-            </div>
+      {previewFullscreen && previewImage ? (
+        <div className="image-lightbox" role="dialog" aria-modal="true" aria-label="Image preview">
+          <button type="button" className="image-lightbox-close" onClick={closeImagePreview} title="Close (Esc)" aria-label="Close"><Icon name="close" size={20} /></button>
+          <div className="image-viewer image-viewer-lightbox">
+            {viewerStage}
+            {viewerToolbar}
           </div>
-        ) : null}
-      </Modal>
+        </div>
+      ) : (
+        <Modal open={Boolean(previewImage) || previewLoading} onClose={closeImagePreview} title={previewImage?.filename ?? 'Attachment preview'} width={980}>
+          {previewLoading ? (
+            <div className="image-viewer-state">Loading image…</div>
+          ) : previewImage ? (
+            <div className="image-viewer">
+              {viewerStage}
+              {viewerToolbar}
+            </div>
+          ) : null}
+        </Modal>
+      )}
 
       <div className="composer ticket-composer-fixed">
         {readOnlyForLock ? (
