@@ -115,18 +115,26 @@ export function LockScreen({ user, onUnlock, onGoToLogin }: Props) {
               Open the full sign-in page to finish setup →
             </button>
           )}
-          {!requiresMfa ? (
-            <PasswordField
-              className="lock-screen-input"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoFocus
-              disabled={loading}
-              autoComplete="current-password"
-            />
-          ) : (
-            <div className="lock-screen-input-wrap">
+          <div className="lock-screen-input-wrap">
+            <button
+              className="lock-screen-submit"
+              type="submit"
+              disabled={loading || (requiresMfa ? mfaCode.length < 6 : !password)}
+              aria-label={requiresMfa ? 'Verify and unlock' : 'Unlock'}
+            >
+              {loading ? '…' : '→'}
+            </button>
+            {!requiresMfa ? (
+              <PasswordField
+                className="lock-screen-input"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoFocus
+                disabled={loading}
+                autoComplete="current-password"
+              />
+            ) : (
               <input
                 className="lock-screen-input"
                 placeholder={useRecoveryCode ? 'Recovery code (for example, A1B2C-3D4E5)' : 'Authenticator code'}
@@ -138,16 +146,8 @@ export function LockScreen({ user, onUnlock, onGoToLogin }: Props) {
                 disabled={loading}
                 required
               />
-            </div>
-          )}
-          <button
-            className="lock-screen-submit"
-            type="submit"
-            disabled={loading || (requiresMfa ? mfaCode.length < 6 : !password)}
-            aria-label={requiresMfa ? 'Verify and unlock' : 'Unlock'}
-          >
-            {loading ? '…' : '→'}
-          </button>
+            )}
+          </div>
           <div className="lock-screen-hint">
             {requiresMfa
               ? useRecoveryCode
