@@ -10,6 +10,20 @@ function makeMockGraph(users: EntraUser[]): EntraGraphClient {
     async listUsers() {
       return users
     },
+    async listDevices() {
+      return [
+        {
+          objectId: 'intune-device-1',
+          name: 'LAPTOP-01',
+          os: 'Windows',
+          osVersion: '11 23H2',
+          serialNumber: 'SN123',
+          manufacturer: 'Dell',
+          model: 'Latitude 5540',
+          lastSyncDateTime: new Date().toISOString(),
+        },
+      ]
+    },
     async runAccountAction(_connection, action, upn, _newPassword) {
       return `${action} applied to ${upn}`
     },
@@ -32,6 +46,8 @@ describe('Entra / Microsoft 365 integration', () => {
           displayName: 'Alice Example',
           mail: 'alice@contoso.com',
           department: 'Finance',
+          jobTitle: 'Financial Controller',
+          employeeId: 'EMP-001',
           accountEnabled: true,
         },
         {
@@ -111,6 +127,31 @@ describe('Entra / Microsoft 365 integration', () => {
     const sync2 = await app.inject({ method: 'POST', url: `/api/v1/entra/connections/${connectionId}/sync`, headers: authHeaders(owner), payload: {} })
     expect(sync2.statusCode).toBe(200)
     expect(sync2.json()).toEqual({ fetched: 2, created: 0, updated: 2 })
+  })
+
+  it('syncs directory devices and finds contacts by staff id', async () => {
+    const deviceSync = await app.inject({ method: 'POST', url: `/api/v1/entra/connections/${connectionId}/sync-devices`, headers: authHeaders(owner), payload: {} })
+    expect(deviceSync.statusCode).toBe(200)
+    expect(deviceSync.json()).toEqual({ fetched: 1, created: 1, updated: 0 })
+
+    const devices = await app.inject({ method: 'GET', url: '/api/v1/devices', headers: authHeaders(owner) })
+    expect(devices.statusCode).toBe(200)
+    const synced = devices.json().devices.find((d: { name: string }) => d.name === 'LAPTOP-01')
+    expect(synced).toBeTruthy()
+    expect(synced.source).toBe('directory')
+    expect(synced.managed_by).toBe('intune')
+    expect(synced.serial_number).toBe('SN123')
+
+    // A second device sync updates rather than duplicates.
+    const deviceSync2 = await app.inject({ method: 'POST', url: `/api/v1/entra/connections/${connectionId}/sync-devices`, headers: authHeaders(owner), payload: {} })
+    expect(deviceSync2.json()).toEqual({ fetched: 1, created: 0, updated: 1 })
+
+    const search = await app.inject({ method: 'GET', url: '/api/v1/directory/search?q=EMP-001', headers: authHeaders(owner) })
+    expect(search.statusCode).toBe(200)
+    const hit = search.json().contacts.find((c: { email: string }) => c.email === 'alice@contoso.com')
+    expect(hit).toBeTruthy()
+    expect(hit.staffId).toBe('EMP-001')
+    expect(hit.jobTitle).toBe('Financial Controller')
   })
 
   it('runs gated account actions and records them', async () => {

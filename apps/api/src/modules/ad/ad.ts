@@ -2,7 +2,7 @@ import { AppError } from '../../core/errors.js'
 import { decryptSecret, encryptSecret, isEncryptedSecret, maskSecret } from '../../core/crypto.js'
 import type { DbPool } from '../../db/pool.js'
 import { withTenant } from '../../db/pool.js'
-import { adClient, type AdAction, type AdClient, type AdConnectionSecrets } from './ldap.js'
+import { adClient, type AdAction, type AdClient, type AdComputer, type AdConnectionSecrets } from './ldap.js'
 
 export interface AdConnectionInput {
   name: string
@@ -181,16 +181,17 @@ export async function syncDirectory(
         const ext = JSON.stringify({ objectId: u.objectId, upn: u.upn, source: 'ad' })
         if (existing.rows[0]) {
           await db.query(
-            `UPDATE contacts SET name = $3, department = $4, account_status = $5, ext_identity = $6::jsonb, updated_at = now()
+            `UPDATE contacts SET name = $3, department = $4, account_status = $5, ext_identity = $6::jsonb,
+                    staff_id = $7, updated_at = now()
               WHERE id = $1 AND tenant_id = $2`,
-            [existing.rows[0].id, tenantId, u.displayName, u.department ?? null, u.accountEnabled ? 'active' : 'disabled', ext],
+            [existing.rows[0].id, tenantId, u.displayName, u.department ?? null, u.accountEnabled ? 'active' : 'disabled', ext, u.employeeId ?? null],
           )
           updated += 1
         } else {
           await db.query(
-            `INSERT INTO contacts (tenant_id, type, name, email, department, account_status, ext_identity)
-             VALUES ($1, 'end_user', $2, $3, $4, $5, $6::jsonb)`,
-            [tenantId, u.displayName, email, u.department ?? null, u.accountEnabled ? 'active' : 'disabled', ext],
+            `INSERT INTO contacts (tenant_id, type, name, email, department, account_status, ext_identity, staff_id)
+             VALUES ($1, 'end_user', $2, $3, $4, $5, $6::jsonb, $7)`,
+            [tenantId, u.displayName, email, u.department ?? null, u.accountEnabled ? 'active' : 'disabled', ext, u.employeeId ?? null],
           )
           created += 1
         }
@@ -205,6 +206,51 @@ export async function syncDirectory(
       await db.query(`UPDATE ad_sync_runs SET status = 'error', error = $2, finished_at = now() WHERE id = $1`, [runId, message.slice(0, 1000)])
       throw err
     }
+  })
+}
+
+export interface DeviceSyncResult {
+  fetched: number
+  created: number
+  updated: number
+}
+
+/** Pull on-prem AD computer objects and upsert them as directory-discovered devices. */
+export async function syncDevices(
+  pool: DbPool,
+  tenantId: string,
+  connectionId: string,
+  emailKey: string,
+  client: AdClient = adClient,
+): Promise<DeviceSyncResult> {
+  const row = await getConnection(pool, tenantId, connectionId)
+  return withTenant(pool, tenantId, async (db) => {
+    const computers: AdComputer[] = await client.listComputers(secretsFor(row, emailKey))
+    let created = 0
+    let updated = 0
+    for (const c of computers) {
+      if (!c.objectId || !c.name) continue
+      const existing = await db.query(
+        'SELECT id FROM devices WHERE tenant_id = $1 AND managed_by = $2 AND directory_object_id = $3',
+        [tenantId, 'ad', c.objectId],
+      )
+      if (existing.rows[0]) {
+        await db.query(
+          `UPDATE devices SET name = $4, hostname = $5, os = $6, os_version = $7, serial_number = $8, updated_at = now()
+            WHERE id = $1 AND tenant_id = $2 AND managed_by = $3`,
+          [existing.rows[0].id, tenantId, 'ad', c.name, c.dnsHostName || c.name, c.os, c.osVersion, c.serialNumber ?? ''],
+        )
+        updated += 1
+      } else {
+        await db.query(
+          `INSERT INTO devices (tenant_id, name, hostname, os, os_version, source, managed_by, directory_object_id, serial_number)
+           VALUES ($1, $2, $3, $4, $5, 'directory', 'ad', $6, $7)`,
+          [tenantId, c.name, c.dnsHostName || c.name, c.os, c.osVersion, c.objectId, c.serialNumber ?? ''],
+        )
+        created += 1
+      }
+    }
+    return { fetched: computers.length, created, updated }
   })
 }
 

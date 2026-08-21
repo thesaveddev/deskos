@@ -263,6 +263,7 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
         .query(
           `SELECT d.id, d.name, d.hostname, d.os, d.os_version, d.arch, d.ip_address,
                   d.agent_version, d.device_type, d.power_source, d.battery_pct, d.battery_health_pct, d.uptime_seconds, d.last_inventory_at,
+                  d.source, d.managed_by, d.serial_number, d.manufacturer, d.model, d.directory_last_seen_at,
                   d.group_id, d.enrolled_at, d.last_seen_at, d.created_at,
                   g.name AS group_name,
                   a.tag AS asset_tag, da.assignment_status, au.name AS assigned_user_name,
@@ -292,6 +293,7 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
         await client.query(
           `SELECT d.id, d.tenant_id, d.group_id, d.name, d.hostname, d.os, d.os_version,
                   d.arch, d.ip_address, d.agent_version, d.device_type, d.power_source, d.battery_pct, d.battery_health_pct, d.uptime_seconds, d.last_inventory_at,
+                  d.source, d.managed_by, d.serial_number, d.manufacturer, d.model, d.directory_last_seen_at,
                   NULL::text AS agent_token_hash,
                   d.enrolled_at, d.last_seen_at, d.created_at, d.updated_at,
                   g.name AS group_name,

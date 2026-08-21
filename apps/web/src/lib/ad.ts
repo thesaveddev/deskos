@@ -56,6 +56,7 @@ export interface Contact {
   email: string
   department: string | null
   account_status: string
+  staff_id?: string | null
 }
 
 export function listAdConnections(): Promise<{ connections: AdConnection[] }> {
@@ -80,6 +81,10 @@ export function testAdConnection(id: string): Promise<{ ok: boolean; users?: num
 
 export function syncAdDirectory(id: string): Promise<{ fetched: number; created: number; updated: number }> {
   return api(`/ad/connections/${id}/sync`, { method: 'POST', body: {} })
+}
+
+export function syncAdDevices(id: string): Promise<{ fetched: number; created: number; updated: number }> {
+  return api(`/ad/connections/${id}/sync-devices`, { method: 'POST', body: {} })
 }
 
 export function runAdAction(id: string, body: { action: AdActionType; upn: string; newPassword?: string }): Promise<{ id: string; status: string; detail: string }> {

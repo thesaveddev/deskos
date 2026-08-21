@@ -13,13 +13,28 @@ export interface EntraUser {
   mail?: string
   department?: string
   jobTitle?: string
+  employeeId?: string
   accountEnabled: boolean
   mfaRegistered?: boolean
+}
+
+/** A device discovered from Entra/Intune (inventory only; no agent). */
+export interface EntraDevice {
+  objectId: string
+  name: string
+  os: string
+  osVersion: string
+  serialNumber?: string
+  manufacturer?: string
+  model?: string
+  lastSyncDateTime?: string
 }
 
 export interface EntraGraphClient {
   /** List tenant users (the production impl pages through `/v1.0/users`). */
   listUsers(connection: EntraConnectionSecrets): Promise<EntraUser[]>
+  /** List managed devices from Intune (`/deviceManagement/managedDevices`). */
+  listDevices(connection: EntraConnectionSecrets): Promise<EntraDevice[]>
   /** Perform a gated account action, returning a short human-readable result. */
   runAccountAction(
     connection: EntraConnectionSecrets,
@@ -42,7 +57,7 @@ export interface EntraConnectionSecrets {
 export const graphClient: EntraGraphClient = {
   async listUsers(connection) {
     const token = await acquireToken(connection)
-    const users = await graphGet<{ value: Array<Record<string, unknown>> }>(token, '/v1.0/users?$top=200&$select=id,userPrincipalName,displayName,mail,department,jobTitle,accountEnabled')
+    const users = await graphGet<{ value: Array<Record<string, unknown>> }>(token, '/v1.0/users?$top=200&$select=id,userPrincipalName,displayName,mail,department,jobTitle,employeeId,accountEnabled')
     return users.value.map((u) => ({
       objectId: String(u.id ?? ''),
       upn: String(u.userPrincipalName ?? u.mail ?? ''),
@@ -50,7 +65,22 @@ export const graphClient: EntraGraphClient = {
       mail: u.mail ? String(u.mail) : undefined,
       department: u.department ? String(u.department) : undefined,
       jobTitle: u.jobTitle ? String(u.jobTitle) : undefined,
+      employeeId: u.employeeId ? String(u.employeeId) : undefined,
       accountEnabled: u.accountEnabled !== false,
+    }))
+  },
+  async listDevices(connection) {
+    const token = await acquireToken(connection)
+    const devices = await graphGet<{ value: Array<Record<string, unknown>> }>(token, '/v1.0/deviceManagement/managedDevices?$top=200&$select=id,deviceName,serialNumber,manufacturer,model,operatingSystem,osVersion,lastSyncDateTime')
+    return devices.value.map((d) => ({
+      objectId: String(d.id ?? ''),
+      name: String(d.deviceName ?? ''),
+      os: String(d.operatingSystem ?? ''),
+      osVersion: String(d.osVersion ?? ''),
+      serialNumber: d.serialNumber ? String(d.serialNumber) : undefined,
+      manufacturer: d.manufacturer ? String(d.manufacturer) : undefined,
+      model: d.model ? String(d.model) : undefined,
+      lastSyncDateTime: d.lastSyncDateTime ? String(d.lastSyncDateTime) : undefined,
     }))
   },
   async runAccountAction(connection, action, upn, newPassword) {

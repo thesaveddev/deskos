@@ -9,6 +9,7 @@ import {
   listAdContacts,
   listAdSyncRuns,
   runAdAction,
+  syncAdDevices,
   syncAdDirectory,
   testAdConnection,
   updateAdConnection,
@@ -126,6 +127,21 @@ export default function AdSettingsPage() {
     }
   }
 
+  async function handleSyncDevices(id: string, name: string) {
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      const r = await syncAdDevices(id)
+      setNotice(`Device sync of "${name}" complete: ${r.created} discovered, ${r.updated} updated.`)
+      refresh()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Device sync failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function handleAction(id: string) {
     const upn = window.prompt('User principal name (e.g. user@corp.local):')
     if (!upn) return
@@ -229,6 +245,7 @@ export default function AdSettingsPage() {
             <div className="channel-actions">
               <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => handleTest(c.id, c.name)}>Test</button>
               <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => handleSync(c.id, c.name)}>Sync</button>
+              <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => handleSyncDevices(c.id, c.name)}>Sync devices</button>
               <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => handleAction(c.id)}>Action</button>
               <button
                 type="button"
@@ -254,7 +271,7 @@ export default function AdSettingsPage() {
           <div key={c.id} className="channel-card">
             <div className="channel-main">
               <div className="channel-title"><span className="channel-name">{c.name}</span></div>
-              <div className="channel-meta muted">{c.email} · {c.department ?? '—'} · {c.account_status}</div>
+              <div className="channel-meta muted">{c.email}{c.staff_id ? ` · ${c.staff_id}` : ''} · {c.department ?? '—'} · {c.account_status}</div>
             </div>
           </div>
         ))}

@@ -10,6 +10,7 @@ import {
   listEntraConnections,
   listSyncRuns,
   runEntraAction,
+  syncEntraDevices,
   syncEntraDirectory,
   testEntraConnection,
   updateEntraConnection,
@@ -167,6 +168,21 @@ export default function EntraSettingsPage() {
     }
   }
 
+  async function handleSyncDevices(id: string, name: string) {
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      const result = await syncEntraDevices(id)
+      setNotice(`Device sync of “${name}” complete: ${result.created} discovered, ${result.updated} updated.`)
+      await refresh()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Device sync failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   function openAction(connection: EntraConnection) {
     setActionConnection(connection)
     setActionUpn('')
@@ -277,6 +293,7 @@ export default function EntraSettingsPage() {
                 <div className="directory-connection-actions">
                   <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void handleTest(connection.id, connection.name)}><Icon name="check" size={14} />Test</button>
                   <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void handleSync(connection.id, connection.name)}><Icon name="refresh" size={14} />Sync</button>
+                  <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void handleSyncDevices(connection.id, connection.name)}><Icon name="monitor" size={14} />Sync devices</button>
                   <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => openAction(connection)}><Icon name="wrench" size={14} />Action</button>
                   <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => openEdit(connection)}><Icon name="edit" size={14} />Edit</button>
                   <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void handleDelete(connection)}><Icon name="delete" size={14} />Remove</button>
@@ -292,9 +309,9 @@ export default function EntraSettingsPage() {
         <section className="directory-section" role="tabpanel">
           <div className="directory-section-head"><div><h3>Directory contacts</h3><p>People imported from Entra ID and available as ticket requesters.</p></div><span className="directory-section-count">{contacts.length} contacts</span></div>
           <div className="directory-table-wrap">
-            <table className="directory-table"><thead><tr><th>Name</th><th>Email</th><th>Department</th><th>Account status</th></tr></thead><tbody>
-              {contacts.map((contact) => <tr key={contact.id}><td><strong>{contact.name}</strong></td><td className="mono">{contact.email}</td><td>{contact.department ?? '—'}</td><td><span className="status-pill status-open">{contact.account_status}</span></td></tr>)}
-              {contacts.length === 0 ? <tr><td colSpan={4} className="directory-table-empty">No contacts synced yet. Run a directory sync from the Connections tab.</td></tr> : null}
+            <table className="directory-table"><thead><tr><th>Name</th><th>Email</th><th>Staff ID</th><th>Department</th><th>Account status</th></tr></thead><tbody>
+              {contacts.map((contact) => <tr key={contact.id}><td><strong>{contact.name}</strong></td><td className="mono">{contact.email}</td><td className="mono">{contact.staff_id ?? '—'}</td><td>{contact.department ?? '—'}</td><td><span className="status-pill status-open">{contact.account_status}</span></td></tr>)}
+              {contacts.length === 0 ? <tr><td colSpan={5} className="directory-table-empty">No contacts synced yet. Run a directory sync from the Connections tab.</td></tr> : null}
             </tbody></table>
           </div>
         </section>

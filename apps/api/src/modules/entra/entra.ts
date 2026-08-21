@@ -188,16 +188,17 @@ export async function syncDirectory(
         const ext = JSON.stringify({ objectId: u.objectId, upn: u.upn })
         if (existing.rows[0]) {
           await db.query(
-            `UPDATE contacts SET name = $3, department = $4, account_status = $5, ext_identity = $6::jsonb, updated_at = now()
+            `UPDATE contacts SET name = $3, department = $4, account_status = $5, ext_identity = $6::jsonb,
+                    staff_id = $7, job_title = $8, updated_at = now()
               WHERE id = $1 AND tenant_id = $2`,
-            [existing.rows[0].id, tenantId, u.displayName, u.department ?? null, u.accountEnabled ? 'active' : 'disabled', ext],
+            [existing.rows[0].id, tenantId, u.displayName, u.department ?? null, u.accountEnabled ? 'active' : 'disabled', ext, u.employeeId ?? null, u.jobTitle ?? null],
           )
           updated += 1
         } else {
           await db.query(
-            `INSERT INTO contacts (tenant_id, type, name, email, department, account_status, ext_identity)
-             VALUES ($1, 'end_user', $2, $3, $4, $5, $6::jsonb)`,
-            [tenantId, u.displayName, email, u.department ?? null, u.accountEnabled ? 'active' : 'disabled', ext],
+            `INSERT INTO contacts (tenant_id, type, name, email, department, account_status, ext_identity, staff_id, job_title)
+             VALUES ($1, 'end_user', $2, $3, $4, $5, $6::jsonb, $7, $8)`,
+            [tenantId, u.displayName, email, u.department ?? null, u.accountEnabled ? 'active' : 'disabled', ext, u.employeeId ?? null, u.jobTitle ?? null],
           )
           created += 1
         }
@@ -216,6 +217,62 @@ export async function syncDirectory(
       )
       throw err
     }
+  })
+}
+
+export interface DeviceSyncResult {
+  fetched: number
+  created: number
+  updated: number
+}
+
+/** Pull Intune-managed devices from Graph and upsert them as directory-discovered devices. */
+export async function syncDevices(
+  pool: DbPool,
+  tenantId: string,
+  connectionId: string,
+  emailKey: string,
+  client: EntraGraphClient = graphClient,
+): Promise<DeviceSyncResult> {
+  const row = await getConnection(pool, tenantId, connectionId)
+  return withTenant(pool, tenantId, async (db) => {
+    const devices = await client.listDevices({
+      azureTenantId: row.azure_tenant_id,
+      clientId: row.client_id,
+      clientSecret: decryptSecretChecked(row, emailKey),
+    })
+    let created = 0
+    let updated = 0
+    for (const d of devices) {
+      if (!d.objectId || !d.name) continue
+      const existing = await db.query(
+        'SELECT id FROM devices WHERE tenant_id = $1 AND managed_by = $2 AND directory_object_id = $3',
+        [tenantId, 'intune', d.objectId],
+      )
+      const lastSeen = d.lastSyncDateTime ? new Date(d.lastSyncDateTime) : null
+      if (existing.rows[0]) {
+        await db.query(
+          `UPDATE devices SET name = $4, hostname = $4, os = $5, os_version = $6, serial_number = $7,
+                  manufacturer = $8, model = $9, directory_last_seen_at = $10, updated_at = now()
+            WHERE id = $1 AND tenant_id = $2 AND managed_by = $3`,
+          [
+            existing.rows[0].id, tenantId, 'intune', d.name,
+            d.os || '', d.osVersion || '', d.serialNumber ?? '', d.manufacturer ?? '', d.model ?? '',
+            lastSeen,
+          ],
+        )
+        updated += 1
+      } else {
+        await db.query(
+          `INSERT INTO devices (tenant_id, name, hostname, os, os_version, source, managed_by, directory_object_id,
+                                serial_number, manufacturer, model, directory_last_seen_at)
+           VALUES ($1, $2, $2, $3, $4, 'directory', 'intune', $5, $6, $7, $8, $9)`,
+          [tenantId, d.name, d.os || '', d.osVersion || '', d.objectId, d.serialNumber ?? '', d.manufacturer ?? '', d.model ?? '', lastSeen],
+        )
+        created += 1
+      }
+    }
+    return { fetched: devices.length, created, updated }
   })
 }
 

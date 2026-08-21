@@ -15,6 +15,7 @@ import {
   listConnections,
   listSyncRuns,
   runAccountAction,
+  syncDevices,
   syncDirectory,
   testConnection,
   updateConnection,
@@ -130,6 +131,24 @@ export async function adRoutes(app: FastifyInstance): Promise<void> {
   app.get('/ad/sync-runs', { preHandler: read }, async (request) => {
     const ctx = request.tenantCtx!
     return { runs: await listSyncRuns(app.db, ctx.tenantId) }
+  })
+
+  app.post('/ad/connections/:id/sync-devices', { preHandler: manage }, async (request, reply) => {
+    const ctx = request.tenantCtx!
+    const { id } = request.params as { id: string }
+    const result = await syncDevices(app.db, ctx.tenantId, id, emailKey(), clientFor())
+    await withTenant(app.db, ctx.tenantId, async (client) => {
+      await recordAudit(client, ctx.tenantId, {
+        actorType: 'user',
+        actorId: request.user!.id,
+        action: 'ad.devices_synced',
+        objectType: 'ad_connection',
+        objectId: id,
+        ip: request.ip,
+        payload: { ...result },
+      })
+    })
+    return reply.code(200).send(result)
   })
 
   app.post('/ad/connections/:id/actions', { preHandler: manage }, async (request, reply) => {

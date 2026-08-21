@@ -2,6 +2,8 @@ import { useEffect, useState, useRef, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Shell } from '../components/Shell.js'
 import { Alert, Field, SubmitButton } from '../components/ui.js'
+import { DirectoryPersonPicker } from '../components/DirectoryPersonPicker.js'
+import type { DirectoryPerson } from '../lib/directory.js'
 import { listDevices, type Device } from '../lib/devices.js'
 import { createTicket, uploadAttachment } from '../lib/tickets.js'
 import { getAccessToken } from '../lib/api.js'
@@ -129,6 +131,15 @@ export default function NewTicketPage() {
           <div className="ticket-form-section">
             <h3 className="ticket-form-section-title">Requester details</h3>
             <p className="ticket-form-section-hint">Who is this ticket for? Leave blank if it's for yourself.</p>
+            <DirectoryPersonPicker
+              onSelect={(person: DirectoryPerson) => {
+                setReqName(person.name)
+                setReqEmail(person.email)
+                setReqPhone(person.phone ?? '')
+                setReqDept(person.department ?? '')
+                setReqLocation(person.site ?? '')
+              }}
+            />
             <div className="form-row">
               <Field label="Name">
                 <input className="field-input" value={reqName} onChange={(e) => setReqName(e.target.value)} placeholder="Full name" />

@@ -2,6 +2,8 @@ import { useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Alert, Field, Modal } from './ui.js'
 import { Icon } from './Icons.js'
+import { DirectoryPersonPicker } from './DirectoryPersonPicker.js'
+import type { DirectoryPerson } from '../lib/directory.js'
 import { createTicket, uploadAttachment } from '../lib/tickets.js'
 import { getAccessToken } from '../lib/api.js'
 
@@ -106,6 +108,15 @@ export function QuickTicketModal({ open, onClose }: { open: boolean; onClose: ()
         <section className="ticket-form-section">
           <h3 className="ticket-form-section-title">Requester details</h3>
           <p className="ticket-form-section-hint">Capture who needs help. Leave these fields blank when you are raising the ticket for yourself.</p>
+          <DirectoryPersonPicker
+            onSelect={(person: DirectoryPerson) => {
+              setRequesterName(person.name)
+              setRequesterEmail(person.email)
+              setRequesterPhone(person.phone ?? '')
+              setRequesterDepartment(person.department ?? '')
+              setRequesterLocation(person.site ?? '')
+            }}
+          />
           <div className="form-row">
             <Field label="Name"><input className="field-input" value={requesterName} onChange={(event) => setRequesterName(event.target.value)} placeholder="Full name" /></Field>
             <Field label="Email"><input className="field-input" type="email" value={requesterEmail} onChange={(event) => setRequesterEmail(event.target.value)} placeholder="email@company.com" /></Field>

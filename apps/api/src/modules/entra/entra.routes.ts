@@ -16,6 +16,7 @@ import {
   listContacts,
   listSyncRuns,
   runAccountAction,
+  syncDevices,
   syncDirectory,
   testConnection,
   updateConnection,
@@ -144,6 +145,24 @@ export async function entraRoutes(app: FastifyInstance): Promise<void> {
   app.get('/entra/sync-runs', { preHandler: read }, async (request) => {
     const ctx = request.tenantCtx!
     return { runs: await listSyncRuns(app.db, ctx.tenantId) }
+  })
+
+  app.post('/entra/connections/:id/sync-devices', { preHandler: manage }, async (request, reply) => {
+    const ctx = request.tenantCtx!
+    const { id } = request.params as { id: string }
+    const result = await syncDevices(app.db, ctx.tenantId, id, emailKey(), app.entraGraph ?? graphClient)
+    await withTenant(app.db, ctx.tenantId, async (client) => {
+      await recordAudit(client, ctx.tenantId, {
+        actorType: 'user',
+        actorId: request.user!.id,
+        action: 'entra.devices_synced',
+        objectType: 'entra_connection',
+        objectId: id,
+        ip: request.ip,
+        payload: { ...result },
+      })
+    })
+    return reply.code(200).send(result)
   })
 
   app.post('/entra/connections/:id/actions', { preHandler: manage }, async (request, reply) => {

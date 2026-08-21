@@ -26,6 +26,7 @@ import { webauthnRoutes } from './modules/auth/webauthn.routes.js'
 import { cannedRoutes } from './modules/canned/canned.routes.js'
 import { catalogueRoutes } from './modules/catalogue/catalogue.routes.js'
 import { dexRoutes } from './modules/dex/dex.routes.js'
+import { directoryRoutes } from './modules/directory/directory.routes.js'
 import { agentRoutes } from './modules/devices/agent.routes.js'
 import { deviceRoutes } from './modules/devices/devices.routes.js'
 import { aiRoutes } from './modules/ai/ai.routes.js'
@@ -350,6 +351,7 @@ export async function buildApp(config: AppConfig): Promise<FastifyInstance> {
     await v1.register(catalogueRoutes)
     await v1.register(entraRoutes)
     await v1.register(adRoutes)
+    await v1.register(directoryRoutes)
     await v1.register(aiRoutes)
     await v1.register(aiAgentRoutes)
     await v1.register(chatRoutes)

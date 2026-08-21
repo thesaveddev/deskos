@@ -7,8 +7,19 @@ export interface AdUser {
   displayName: string
   mail?: string
   department?: string
+  employeeId?: string
   accountEnabled: boolean
   lockedOut?: boolean
+}
+
+/** A computer object discovered from on-prem AD (inventory only; no agent). */
+export interface AdComputer {
+  objectId: string
+  name: string
+  dnsHostName: string
+  os: string
+  osVersion: string
+  serialNumber?: string
 }
 
 export interface AdConnectionSecrets {
@@ -29,6 +40,7 @@ export type AdAction = 'resetPassword' | 'unlockAccount' | 'enableAccount' | 'di
  */
 export interface AdClient {
   listUsers(connection: AdConnectionSecrets): Promise<AdUser[]>
+  listComputers(connection: AdConnectionSecrets): Promise<AdComputer[]>
   runAccountAction(connection: AdConnectionSecrets, action: AdAction, upn: string, newPassword?: string): Promise<string>
 }
 
@@ -58,8 +70,22 @@ function mapEntry(entry: ldap.SearchEntry): AdUser {
     displayName: first(entry, 'displayName') ?? upn,
     mail: first(entry, 'mail'),
     department: first(entry, 'department'),
+    employeeId: first(entry, 'employeeID') ?? first(entry, 'employeeNumber'),
     accountEnabled: (uac & 0x0002) === 0,
     lockedOut: lockoutTime !== undefined && lockoutTime !== '0',
+  }
+}
+
+function mapComputerEntry(entry: ldap.SearchEntry): AdComputer {
+  const guid = first(entry, 'objectGUID') ?? first(entry, 'objectSid')
+  const cn = first(entry, 'cn') ?? first(entry, 'name') ?? ''
+  return {
+    objectId: guid ?? entry.objectName ?? entry.dn,
+    name: cn,
+    dnsHostName: first(entry, 'dnsHostName') ?? cn,
+    os: first(entry, 'operatingSystem') ?? '',
+    osVersion: first(entry, 'operatingSystemVersion') ?? '',
+    serialNumber: first(entry, 'serialNumber'),
   }
 }
 
@@ -141,7 +167,7 @@ export const adClient: AdClient = {
           {
             scope: 'sub',
             filter: '(objectCategory=person)',
-            attributes: ['objectGUID', 'objectSid', 'userPrincipalName', 'displayName', 'mail', 'department', 'userAccountControl', 'lockoutTime'],
+            attributes: ['objectGUID', 'objectSid', 'userPrincipalName', 'displayName', 'mail', 'department', 'employeeID', 'employeeNumber', 'userAccountControl', 'lockoutTime'],
           },
           (err, res) => {
             if (err) {
@@ -152,6 +178,34 @@ export const adClient: AdClient = {
             res.on('searchEntry', (entry) => users.push(mapEntry(entry)))
             res.on('error', (e: Error) => reject(new AppError(502, 'ad_search_failed', e.message)))
             res.on('end', () => resolve(users))
+          },
+        )
+      })
+    } finally {
+      client.unbind()
+    }
+  },
+
+  async listComputers(connection) {
+    const client = await connect(connection)
+    try {
+      return await new Promise<AdComputer[]>((resolve, reject) => {
+        client.search(
+          connection.baseDn,
+          {
+            scope: 'sub',
+            filter: '(objectCategory=computer)',
+            attributes: ['objectGUID', 'objectSid', 'cn', 'name', 'dnsHostName', 'operatingSystem', 'operatingSystemVersion', 'serialNumber'],
+          },
+          (err, res) => {
+            if (err) {
+              reject(new AppError(502, 'ad_search_failed', `LDAP search failed: ${err.message}`))
+              return
+            }
+            const computers: AdComputer[] = []
+            res.on('searchEntry', (entry) => computers.push(mapComputerEntry(entry)))
+            res.on('error', (e: Error) => reject(new AppError(502, 'ad_search_failed', e.message)))
+            res.on('end', () => resolve(computers))
           },
         )
       })

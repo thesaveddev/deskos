@@ -9,8 +9,13 @@ function makeMockClient(): AdClient {
   return {
     async listUsers() {
       return [
-        { objectId: 'ad-user-1', upn: 'alice@corp.local', displayName: 'Alice Example', mail: 'alice@corp.local', department: 'Finance', accountEnabled: true },
+        { objectId: 'ad-user-1', upn: 'alice@corp.local', displayName: 'Alice Example', mail: 'alice@corp.local', department: 'Finance', employeeId: 'AD-100', accountEnabled: true },
         { objectId: 'ad-user-2', upn: 'bob@corp.local', displayName: 'Bob Example', mail: 'bob@corp.local', accountEnabled: false },
+      ]
+    },
+    async listComputers() {
+      return [
+        { objectId: 'ad-comp-1', name: 'WS-FIN-01', dnsHostName: 'ws-fin-01.corp.local', os: 'Windows', osVersion: '10 Pro', serialNumber: 'ADSN-1' },
       ]
     },
     async runAccountAction(_connection, action, upn) {
@@ -96,6 +101,24 @@ describe('Active Directory integration', () => {
 
     const sync2 = await app.inject({ method: 'POST', url: `/api/v1/ad/connections/${connectionId}/sync`, headers: authHeaders(owner), payload: {} })
     expect(sync2.json()).toEqual({ fetched: 2, created: 0, updated: 2 })
+  })
+
+  it('syncs computer objects as directory devices and records staff id', async () => {
+    const deviceSync = await app.inject({ method: 'POST', url: `/api/v1/ad/connections/${connectionId}/sync-devices`, headers: authHeaders(owner), payload: {} })
+    expect(deviceSync.statusCode).toBe(200)
+    expect(deviceSync.json()).toEqual({ fetched: 1, created: 1, updated: 0 })
+
+    const devices = await app.inject({ method: 'GET', url: '/api/v1/devices', headers: authHeaders(owner) })
+    const synced = devices.json().devices.find((d: { name: string }) => d.name === 'WS-FIN-01')
+    expect(synced).toBeTruthy()
+    expect(synced.source).toBe('directory')
+    expect(synced.managed_by).toBe('ad')
+    expect(synced.serial_number).toBe('ADSN-1')
+
+    const search = await app.inject({ method: 'GET', url: '/api/v1/directory/search?q=AD-100', headers: authHeaders(owner) })
+    const hit = search.json().contacts.find((c: { email: string }) => c.email === 'alice@corp.local')
+    expect(hit).toBeTruthy()
+    expect(hit.staffId).toBe('AD-100')
   })
 
   it('runs gated account actions and records them', async () => {

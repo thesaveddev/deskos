@@ -49,6 +49,8 @@ export interface Contact {
   email: string
   department: string | null
   account_status: string
+  staff_id?: string | null
+  job_title?: string | null
   ext_identity: Record<string, unknown>
 }
 
@@ -74,6 +76,10 @@ export function testEntraConnection(id: string): Promise<{ ok: boolean; users?: 
 
 export function syncEntraDirectory(id: string): Promise<{ fetched: number; created: number; updated: number }> {
   return api(`/entra/connections/${id}/sync`, { method: 'POST', body: {} })
+}
+
+export function syncEntraDevices(id: string): Promise<{ fetched: number; created: number; updated: number }> {
+  return api(`/entra/connections/${id}/sync-devices`, { method: 'POST', body: {} })
 }
 
 export function runEntraAction(id: string, body: { action: 'resetPassword' | 'requireMfa'; upn: string; newPassword?: string }): Promise<{ id: string; status: string; detail: string }> {
