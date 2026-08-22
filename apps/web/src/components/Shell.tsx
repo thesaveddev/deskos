@@ -7,7 +7,7 @@ import { QuickTicketModal } from './QuickTicketModal.js'
 import { useAuth } from '../lib/auth.js'
 import { isNative } from '../lib/capacitor.js'
 import { lockScreen, rememberLockedUser } from '../lib/lock.js'
-import { createAdhocSession } from '../lib/sessions.js'
+import { createAdhocSession, emailAdhocSession } from '../lib/sessions.js'
 import { Icon } from './Icons.js'
 import { readSessionDock, sessionDockEventName, type SessionDockEntry } from '../lib/sessions.js'
 import { listNotifications, markNotificationsRead, openNotificationStream, type AppNotification } from '../lib/notifications.js'
@@ -241,7 +241,11 @@ export function Shell({ children }: { children: ReactNode }) {
   const [quickTicketOpen, setQuickTicketOpen] = useState(false)
   const [showSessionKey, setShowSessionKey] = useState(false)
   const [sessionKey, setSessionKey] = useState<string | null>(null)
+  const [sessionKeyId, setSessionKeyId] = useState<string | null>(null)
   const [sessionKeyExpires, setSessionKeyExpires] = useState<string | null>(null)
+  const [sessionKeyRecipient, setSessionKeyRecipient] = useState('')
+  const [sessionKeyEmailBusy, setSessionKeyEmailBusy] = useState(false)
+  const [sessionKeyEmailNotice, setSessionKeyEmailNotice] = useState<string | null>(null)
   const [sessionKeyBusy, setSessionKeyBusy] = useState(false)
   const remoteWrapRef = useRef<HTMLDivElement>(null)
   const notificationsWrapRef = useRef<HTMLDivElement>(null)
@@ -398,11 +402,16 @@ export function Shell({ children }: { children: ReactNode }) {
                 setSessionKeyBusy(true)
                 setShowSessionKey(true)
                 setSessionKey(null)
+                setSessionKeyId(null)
+                setSessionKeyRecipient('')
+                setSessionKeyEmailNotice(null)
                 createAdhocSession({
                   permissions: ['view_screen', 'control_input', 'clipboard', 'terminal', 'elevation', 'file_transfer', 'system_manage'],
                   expiresInMin: 10,
+                  codeLength: 12,
                 }).then((res) => {
                   setSessionKey(res.code)
+                  setSessionKeyId(res.id)
                   setSessionKeyExpires(res.expiresAt)
                 }).catch(() => {
                   setSessionKey(null)
@@ -421,17 +430,20 @@ export function Shell({ children }: { children: ReactNode }) {
                 ) : sessionKey ? (
                   <>
                     <div className="session-key-code">{sessionKey}</div>
-                    <span className="session-key-validity">Valid for 10 minutes</span>
-                    <button
-                      className="session-key-email"
-                      onClick={() => {
-                        const url = `${window.location.origin}/connect/${sessionKey}`
-                        window.open(`mailto:?subject=${BRAND.name} Support Session&body=Join my support session:%0A%0A${url}%0A%0ACode: ${sessionKey}`, '_blank')
-                      }}
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                      Send Email
-                    </button>
+                    <span className="session-key-validity">Valid for 10 minutes · single use</span>
+                    <p className="session-key-instructions">Send this 12-digit code to the person you’re helping. They can visit the link below, download the helper, enter the code, and approve the access request on their device.</p>
+                    <div className="session-key-connect-url">{window.location.origin}/connect/{sessionKey}</div>
+                    <button className="btn btn-ghost btn-xs session-key-copy" onClick={() => void navigator.clipboard.writeText(`${window.location.origin}/connect/${sessionKey}`)}>Copy secure link</button>
+                    <div className="session-key-email-form">
+                      <input className="field-input" type="email" placeholder="Recipient email" value={sessionKeyRecipient} onChange={(event) => setSessionKeyRecipient(event.target.value)} />
+                      <button className="btn btn-primary btn-sm" type="button" disabled={!sessionKeyRecipient.trim() || !sessionKeyId || sessionKeyEmailBusy} onClick={() => {
+                        if (!sessionKeyId || !sessionKey) return
+                        setSessionKeyEmailBusy(true)
+                        setSessionKeyEmailNotice(null)
+                        void emailAdhocSession(sessionKeyId, sessionKey, sessionKeyRecipient.trim(), 'email_link').then(() => setSessionKeyEmailNotice('Secure link sent.')).catch((err) => setSessionKeyEmailNotice(err instanceof Error ? err.message : 'Could not send email.')).finally(() => setSessionKeyEmailBusy(false))
+                      }}><Icon name="mail" size={13} />{sessionKeyEmailBusy ? 'Sending…' : 'Send link'}</button>
+                    </div>
+                    {sessionKeyEmailNotice ? <span className="session-key-email-notice">{sessionKeyEmailNotice}</span> : null}
                   </>
                 ) : (
                   <div className="session-key-error">Failed to generate key</div>

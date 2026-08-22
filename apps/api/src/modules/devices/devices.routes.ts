@@ -643,7 +643,7 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
       token: rotated.plaintext,
       code: rotated.code,
       codeExpiresAt: rotated.codeExpiresAt,
-      note: 'The eight-digit code is shown once, expires in 15 minutes, and is consumed by the first successful enrollment. The opaque token is for protected fleet deployment.',
+      note: 'The 12-digit code is shown once, expires in 15 minutes, and is consumed by the first successful enrollment. The opaque token is for protected fleet deployment.',
     })
   })
 }

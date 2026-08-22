@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Shell } from '../components/Shell.js'
 import { Alert, Field, Modal, PageHeader, Panel, useConfirm } from '../components/ui.js'
+import { Icon } from '../components/Icons.js'
 import { useAuth } from '../lib/auth.js'
 import AvailabilityPoliciesPanel from '../components/AvailabilityPoliciesPanel.js'
 import { listDeviceGroups, type DeviceGroup } from '../lib/devices.js'
@@ -144,20 +145,27 @@ export default function MonitoringPage() {
 
     {activeTab === 'availability' ? <AvailabilityPoliciesPanel /> : null}
 
-    {activeTab === 'overview' ? <div className="monitoring-overview-grid">
+    {activeTab === 'overview' ? <>
+      <div className="monitoring-command-strip"><div><span className="settings-eyebrow">Operations at a glance</span><strong>Start with the signal that needs a decision.</strong><span className="muted">Review fleet health, open alerts, and policy coverage without leaving this workspace.</span></div><div className="monitoring-command-actions"><button type="button" className="btn btn-ghost btn-sm" onClick={() => setActiveTab('alerts')}><Icon name="alert" size={14} />Review alerts{alerts.length ? ` (${alerts.length})` : ''}</button><button type="button" className="btn btn-ghost btn-sm" onClick={() => setActiveTab('rules')}><Icon name="shield" size={14} />Manage rules</button></div></div>
+      <div className="monitoring-overview-grid">
       <Panel title="Fleet by device type" subtitle="Different endpoint classes can use different policies.">
         <div className="monitoring-type-list">{overview?.devices.map((item) => <div key={item.device_type} className="monitoring-type-row"><span>{item.device_type.replace('_', ' ')}</span><strong>{item.online}/{item.total}</strong><span className="muted">online</span></div>) ?? <span className="etch">Loading…</span>}</div>
       </Panel>
       <Panel title="30-day health trend" subtitle="Average CPU, memory, and disk from reported telemetry.">
         <div className="monitoring-trend">{overview?.trend.slice(-14).map((point) => <div key={point.day} className="monitoring-trend-day" title={`${point.day}: CPU ${point.cpu_pct}% · memory ${point.mem_pct}% · disk ${point.disk_pct}%`}><i style={{ height: `${Math.max(4, point.cpu_pct)}%` }} /><i style={{ height: `${Math.max(4, point.mem_pct)}%` }} /><i style={{ height: `${Math.max(4, point.disk_pct)}%` }} /></div>) ?? <span className="etch">Loading…</span>}</div>
+        <div className="monitoring-trend-legend"><span><i />CPU</span><span><i />Memory</span><span><i />Disk</span></div>
       </Panel>
-    </div> : null}
+      </div>
+      <div className="monitoring-health-grid">
+        {[['mem_pct', 'Memory', '%', health?.mem_pct], ['disk_pct', 'Disk used', '%', health?.disk_pct], ['battery_pct', 'Battery', '%', health?.battery_pct], ['network_latency_ms', 'Network latency', 'ms', health?.network_latency_ms]].map(([key, label, unit, value]) => <article className="monitoring-health-card" key={key as string}><span className="etch">{label as string}</span><strong>{value == null ? '—' : `${value}${unit === '%' ? '%' : ` ${unit}`}`}</strong><span className="muted">Latest available fleet sample</span></article>)}
+      </div>
+    </> : null}
 
-    {activeTab === 'alerts' || activeTab === 'overview' ? <Panel title="Active alerts" subtitle="Acknowledge noise, snooze maintenance work, or follow the linked ticket." empty={alerts.length === 0}>
+    {activeTab === 'alerts' ? <Panel title="Active alerts" subtitle="Acknowledge noise, snooze maintenance work, or follow the linked ticket." empty={alerts.length === 0}>
       <div className="device-alert-list">{alerts.map((alert) => <div key={alert.id} className="device-alert-row"><span className={`alert-severity severity-${alert.severity}`} /><div className="device-alert-main"><strong>{alert.message}</strong><span className="muted mono">{alert.severity} · {new Date(alert.created_at).toLocaleString()}{alert.acknowledged_at ? ' · acknowledged' : ''}{alert.snoozed_until ? ` · snoozed until ${new Date(alert.snoozed_until).toLocaleString()}` : ''}</span></div>{alert.ticket_number ? <span className="mono">#{alert.ticket_number}</span> : null}{canManage && !alert.acknowledged_at ? <button className="btn btn-ghost btn-sm" onClick={() => void acknowledge(alert.id)}>Acknowledge</button> : null}{canManage ? <button className="btn btn-ghost btn-sm" onClick={() => void snooze(alert.id)}>Snooze 1h</button> : null}</div>)}</div>
     </Panel> : null}
 
-    {activeTab === 'rules' || activeTab === 'overview' ? <Panel title="Rules" subtitle="Rules are evaluated after telemetry is safely stored. A failed action cannot stop endpoint reporting." empty={rules !== null && rules.length === 0}>
+    {activeTab === 'rules' ? <Panel title="Rules" subtitle="Rules are evaluated after telemetry is safely stored. A failed action cannot stop endpoint reporting." empty={rules !== null && rules.length === 0}>
       {rules === null ? <div className="etch" style={{ padding: 24 }}>Loading rules…</div> : <ul className="channel-list">{rules.map((rule) => <li key={rule.id} className="channel-card"><div className="channel-main"><span className="channel-name">{rule.name} {!rule.enabled ? <span className="muted">(disabled)</span> : null}</span><span className="channel-meta mono">{rule.metric} {rule.condition.op} {formatMetric(rule.metric, rule.condition.value)} · {rule.device_type ?? 'all types'} · {rule.group_name ?? 'all devices'}</span><span className="channel-meta">{rule.action.createTicket ? `creates ${rule.action.ticketPriority.toUpperCase()} ticket` : 'alert only'}{rule.min_duration_seconds ? ` · sustained ${rule.min_duration_seconds}s` : ''}{rule.action.escalation?.levels?.length ? ` · escalates after ${rule.action.escalation.levels[0].afterMinutes}m` : ''}</span></div>{canManage ? <div className="channel-actions"><button className="btn btn-ghost btn-sm" onClick={() => void toggle(rule)}>{rule.enabled ? 'Disable' : 'Enable'}</button><button className="btn btn-ghost btn-sm" onClick={() => openEdit(rule)}>Edit</button><button className="btn btn-ghost btn-sm" onClick={() => void remove(rule)}>Delete</button></div> : null}</li>)}</ul>}
     </Panel> : null}
 

@@ -28,8 +28,8 @@ describe('ad-hoc (unmanaged) support sessions', () => {
       payload: { permissions: ['view_screen', 'control_input'], reason: 'Printer help' },
     })
     expect(res.statusCode).toBe(201)
-    expect(res.json().code).toMatch(/^\d{10}$/)
-    expect(res.json().codeLength).toBe(10)
+    expect(res.json().code).toMatch(/^\d{12}$/)
+    expect(res.json().codeLength).toBe(12)
     expect(res.json().connectUrl).toContain(`/connect/${res.json().code}`)
     expect(res.json().expiresAt).toBeTruthy()
   })
@@ -67,7 +67,7 @@ describe('ad-hoc (unmanaged) support sessions', () => {
       await emailApp.emailQueue.drain()
       const mail = emailApp.mailer.sent[0]
       expect(mail.text).not.toContain(`Support code: ${code}`)
-      const match = mail.text.match(/\/connect\/(\d{10})\?claimToken=(deskos_link_[A-Za-z0-9_-]+)/)
+      const match = mail.text.match(/\/connect\/(\d{12})\?claimToken=((?:reydesk|deskos)_link_[A-Za-z0-9_-]+)/)
       expect(match).toBeTruthy()
       const secureCode = match![1]
       const claimToken = match![2]
@@ -149,7 +149,7 @@ describe('ad-hoc (unmanaged) support sessions', () => {
     expect(claim.statusCode).toBe(201)
     expect(claim.json().device.id).toBeTruthy()
     expect(claim.json().device.name).toBe('customer-laptop')
-    expect(claim.json().deviceToken).toMatch(/^deskos_dev_/)
+    expect(claim.json().deviceToken).toMatch(/^(?:reydesk|deskos)_dev_/)
     expect(claim.json().session.id).toBeTruthy()
     expect(claim.json().relayUrl).toMatch(/^ws:/)
 
@@ -303,7 +303,7 @@ describe('ad-hoc (unmanaged) support sessions', () => {
       const res = await helperApp.inject({ method: 'GET', url: `/api/connect/${code}/download` })
       expect(res.statusCode).toBe(200)
       expect(res.headers['content-type']).toContain('application/octet-stream')
-      expect(res.headers['content-disposition']).toContain('deskos-helper.exe')
+      expect(res.headers['content-disposition']).toContain('reydesk-helper.exe')
       expect(res.body).toContain('MZ-fake-helper-binary')
     } finally {
       await helperApp.close()

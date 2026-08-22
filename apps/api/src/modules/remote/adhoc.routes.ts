@@ -17,7 +17,7 @@ const createSchema = z.object({
   permissions: z.array(z.enum(sessionPermissions)).min(1).max(10).default(['view_screen']),
   reason: z.string().trim().max(500).optional(),
   expiresInMin: z.number().int().min(1).max(1440).optional(),
-  codeLength: z.union([z.literal(10), z.literal(11), z.literal(12)]).default(10),
+  codeLength: z.union([z.literal(10), z.literal(11), z.literal(12)]).default(12),
 })
 
 const emailSchema = z.object({
@@ -26,8 +26,8 @@ const emailSchema = z.object({
   mode: z.enum(['code', 'email_link']).default('email_link'),
 })
 
-// Eight-digit links remain readable for legacy sessions; new sessions default
-// to 10 digits and can be configured to 11 or 12 digits.
+// Older links remain readable for compatibility; new support sessions default
+// to the stronger 12-digit code.
 const publicCodeSchema = z.string().regex(/^\d{8,12}$/)
 
 const claimSchema = z.object({
@@ -99,11 +99,11 @@ function publicAdhoc(
 }
 
 function newClaimToken(): string {
-  return `deskos_link_${randomBytes(32).toString('base64url')}`
+  return `reydesk_link_${randomBytes(32).toString('base64url')}`
 }
 
 function claimFingerprint(request: { headers: Record<string, string | string[] | undefined> }): string | null {
-  const value = request.headers['x-deskos-claim-fingerprint']
+  const value = request.headers['x-reydesk-claim-fingerprint'] ?? request.headers['x-deskos-claim-fingerprint']
   if (Array.isArray(value)) return null
   const fingerprint = value?.trim()
   return fingerprint && fingerprint.length <= 300 ? fingerprint : null
@@ -289,7 +289,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         })
       }
       reply.header('Content-Type', 'application/octet-stream')
-      reply.header('Content-Disposition', 'attachment; filename="deskos-helper.exe"')
+      reply.header('Content-Disposition', 'attachment; filename="reydesk-helper.exe"')
       return reply.send(createReadStream(binaryPath))
     },
   )
@@ -324,7 +324,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
 
       const effectiveClaimToken = row.claim_mode === 'email_link' ? claimToken : null
       const effectiveFingerprint = row.claim_mode === 'email_link' ? fingerprint : null
-      const deviceToken = `deskos_dev_${randomBytes(24).toString('base64url')}`
+      const deviceToken = `reydesk_dev_${randomBytes(24).toString('base64url')}`
       const claimed = await withTenant(app.db, row.tenant_id, async (client) => {
         const consumed = await client.query(
           `UPDATE adhoc_sessions

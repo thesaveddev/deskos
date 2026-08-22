@@ -23,7 +23,7 @@ describe('devices & agent v1', () => {
     })
     expect(rotate.statusCode).toBe(201)
     enrolToken = rotate.json().token as string
-    expect(enrolToken.startsWith('deskos_')).toBe(true)
+    expect(enrolToken.startsWith('deskos_') || enrolToken.startsWith('reydesk_')).toBe(true)
   })
 
   afterAll(async () => {
@@ -88,7 +88,7 @@ describe('devices & agent v1', () => {
       const newToken = rotated.json().token as string
       const code = rotated.json().code as string
       expect(newToken).not.toBe(enrolToken)
-      expect(code).toMatch(/^\d{8}$/)
+      expect(code).toMatch(/^\d{12}$/)
       expect(rotated.json().codeExpiresAt).toBeTruthy()
 
       const codeEnrol = await app.inject({

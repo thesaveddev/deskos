@@ -68,7 +68,10 @@ export default function SessionsPage() {
 
   const loadCodes = useCallback(async () => {
     try {
-      setAdhocSessions((await listAdhocSessions()).sessions)
+      const result = await listAdhocSessions()
+      // Historical codes are not useful in the working queue. Keep the page
+      // focused on codes that can still be acted on or have a live session.
+      setAdhocSessions(result.sessions.filter((session) => session.state === 'open' || Boolean(session.remote_session_id)))
     } catch {
       setAdhocSessions([])
     }
@@ -225,7 +228,7 @@ export default function SessionsPage() {
         <button type="button" className={`workspace-tab${view === 'sessions' ? ' active' : ''}`} onClick={() => setView('sessions')}>Sessions{view === 'sessions' && total > 0 ? <span>{total}</span> : null}</button>
         <button type="button" className={`workspace-tab${view === 'codes' ? ' active' : ''}`} onClick={() => setView('codes')}>Support codes{adhocSessions ? <span>{adhocSessions.length}</span> : null}</button>
         <span className="workspace-tab-spacer" />
-        <span className="workspace-context">{view === 'sessions' ? (loading ? 'Refreshing…' : `${sessions.length} shown`) : (adhocSessions === null ? 'Loading…' : `${adhocSessions.length} codes`)}</span>
+        <span className="workspace-context">{view === 'sessions' ? (loading ? 'Refreshing…' : `${sessions.length} shown`) : (adhocSessions === null ? 'Loading…' : `${adhocSessions.length} active`)}</span>
       </nav>
 
       {view === 'sessions' ? (
@@ -357,7 +360,7 @@ export default function SessionsPage() {
       ) : (
         <div className="adhoc-list adhoc-list-page">
           <div className="adhoc-list-head">
-            <div><h3>Support codes</h3><p className="muted">One-time codes and secure links for attended support. Revoke any code before it is used.</p></div>
+            <div><h3>Active support codes</h3><p className="muted">Only open codes and codes with a live session are shown. Expired and revoked codes are removed automatically from this view.</p></div>
             <button className="btn btn-ghost btn-sm" onClick={() => void loadCodes()}><Icon name="refresh" size={14} />Refresh</button>
           </div>
           {adhocSessions === null ? <span className="etch">Loading support codes…</span> : null}

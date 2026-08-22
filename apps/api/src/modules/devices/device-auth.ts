@@ -14,8 +14,8 @@ export function generateEnrolToken(): string {
   return `deskos_${randomBytes(24).toString('base64url')}`
 }
 
-/** Generate a phone-friendly numeric code. New support sessions use 10–12 digits; 8 remains available for legacy enrollment flows. */
-export function generateEnrolCode(length = 8): string {
+/** Generate a phone-friendly numeric code. New enrollment and support sessions use 12 digits; shorter values remain available for legacy links. */
+export function generateEnrolCode(length = 12): string {
   if (!Number.isInteger(length) || length < 8 || length > 12) {
     throw new Error('Enrollment code length must be between 8 and 12 digits')
   }
@@ -25,7 +25,7 @@ export function generateEnrolCode(length = 8): string {
 
 /**
  * Rotate the opaque fleet token and its companion human enrollment code.
- * The code is eight digits, expires after fifteen minutes, and is consumed by
+ * The code is twelve digits, expires after fifteen minutes, and is consumed by
  * the first successful customer/technician enrollment. Plaintext values are
  * returned exactly once. Must run inside a tenant-scoped txn.
  */
