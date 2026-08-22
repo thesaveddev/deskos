@@ -5,6 +5,7 @@ export interface ChatRoom {
   name: string
   team_id?: string | null
   team_name?: string | null
+  created_by?: string | null
   created_at: string
   message_count: number
 }
@@ -33,6 +34,33 @@ export function listChatRooms(): Promise<{ rooms: ChatRoom[] }> {
 
 export function createChatRoom(name: string): Promise<{ room: ChatRoom }> {
   return api('/chat/rooms', { method: 'POST', body: { name } })
+}
+
+export interface ChatRoomMember {
+  user_id: string
+  name: string | null
+  email: string
+  source: 'organization' | 'direct' | 'team'
+  created_at: string
+}
+
+export interface ChatRoomMembershipInfo {
+  id: string
+  name: string
+  team_id: string | null
+  access_mode: 'organization' | 'restricted' | 'team'
+}
+
+export function listChatRoomMembers(roomId: string): Promise<{ room: ChatRoomMembershipInfo; members: ChatRoomMember[] }> {
+  return api(`/chat/rooms/${roomId}/members`)
+}
+
+export function addChatRoomMember(roomId: string, userId: string): Promise<{ userId: string }> {
+  return api(`/chat/rooms/${roomId}/members`, { method: 'POST', body: { userId } })
+}
+
+export function removeChatRoomMember(roomId: string, userId: string): Promise<{ ok: boolean }> {
+  return api(`/chat/rooms/${roomId}/members/${userId}`, { method: 'DELETE' })
 }
 
 export function listChatMessages(roomId: string): Promise<{ messages: ChatMessage[] }> {

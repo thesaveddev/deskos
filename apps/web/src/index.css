@@ -265,5 +265,30 @@
 .chat-composer-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 14px 12px; }
 .chat-composer-tools { display: flex; min-width: 0; align-items: center; gap: 10px; }
 .chat-composer-hint { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.chat-thread-actions { display: flex !important; flex-direction: row !important; align-items: center; gap: 10px; }
+.chat-members-summary { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 16px; padding: 12px; border: 1px solid var(--line-1); border-radius: var(--radius-sm); background: var(--bg-2); color: var(--accent); }
+.chat-members-summary > div { display: grid; flex: 1; gap: 3px; color: var(--text-1); }
+.chat-members-summary strong { font-size: 13px; }
+.chat-members-summary span { color: var(--text-2); font-size: 12px; line-height: 1.45; }
+.chat-member-list { display: grid; max-height: 300px; overflow-y: auto; border-top: 1px solid var(--line-1); border-bottom: 1px solid var(--line-1); }
+.chat-member-row { display: flex; align-items: center; min-width: 0; gap: 9px; padding: 10px 2px; border-bottom: 1px solid var(--line-1); }
+.chat-member-row:last-child { border-bottom: 0; }
+.chat-member-avatar { display: inline-flex; flex: 0 0 28px; align-items: center; justify-content: center; width: 28px; height: 28px; border: 1px solid var(--line-2); border-radius: 50%; color: var(--text-2); }
+.chat-member-row > div { display: grid; min-width: 0; flex: 1; gap: 2px; }
+.chat-member-row strong, .chat-member-row small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-member-row strong { font-size: 13px; }
+.chat-member-row small { color: var(--text-3); font-size: 11px; }
+.chat-member-source { color: var(--text-3); font: 10px var(--font-mono); white-space: nowrap; }
+.chat-member-add { display: grid; gap: 8px; margin-top: 18px; }
+.chat-member-search { display: flex; align-items: center; gap: 8px; }
+.chat-member-search .ui-icon { flex: 0 0 auto; color: var(--text-3); }
+.chat-member-options { display: grid; max-height: 180px; overflow-y: auto; gap: 4px; }
+.chat-member-option { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; padding: 9px 10px; border: 1px solid var(--line-1); border-radius: var(--radius-sm); background: var(--bg-1); color: var(--text-1); font: inherit; text-align: left; cursor: pointer; }
+.chat-member-option:hover { border-color: var(--accent); background: var(--bg-2); }
+.chat-member-option > span { display: grid; min-width: 0; gap: 2px; }
+.chat-member-option strong, .chat-member-option small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-member-option strong { font-size: 12px; }
+.chat-member-option small { color: var(--text-3); font-size: 11px; }
+.chat-members-state { display: grid; place-items: center; min-height: 180px; color: var(--text-3); }
 .visually-hidden { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0, 0, 0, 0) !important; white-space: nowrap !important; border: 0 !important; }
-@media (max-width: 760px) { .chat-layout { grid-template-columns: 1fr; min-height: 0; } .chat-rooms { max-height: 220px; } .chat-thread-wrap { min-height: 560px; } .chat-message { max-width: 94%; } .chat-composer-foot { align-items: stretch; flex-direction: column; } .chat-composer-tools { justify-content: space-between; } .chat-composer-foot > .btn { width: 100%; } }
+@media (max-width: 760px) { .chat-layout { grid-template-columns: 1fr; min-height: 0; } .chat-rooms { max-height: 220px; } .chat-thread-wrap { min-height: 560px; } .chat-message { max-width: 94%; } .chat-thread-head { align-items: flex-start; flex-direction: column; } .chat-thread-actions { width: 100%; justify-content: space-between; } .chat-composer-foot { align-items: stretch; flex-direction: column; } .chat-composer-tools { justify-content: space-between; } .chat-composer-foot > .btn { width: 100%; } .chat-members-summary { flex-wrap: wrap; } .chat-members-summary .btn { margin-left: 30px; } }

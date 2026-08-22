@@ -81,6 +81,52 @@ describe('team chat', () => {
     expect(denied.json().error.denied_reason).toBe('team_chat_membership_required')
   })
 
+  it('manages standalone room members and restricts access after the first addition', async () => {
+    const created = await app.inject({ method: 'POST', url: '/api/v1/chat/rooms', headers: authHeaders(owner), payload: { name: 'Incident bridge' } })
+    expect(created.statusCode).toBe(201)
+    const standaloneRoomId = created.json().room.id as string
+
+    const candidates = await app.inject({ method: 'GET', url: `/api/v1/chat/rooms/${standaloneRoomId}/member-candidates?q=analyst`, headers: authHeaders(owner) })
+    expect(candidates.statusCode).toBe(200)
+    expect(candidates.json().members.some((member: { user_id: string }) => member.user_id === analyst.userId)).toBe(true)
+
+    const added = await app.inject({ method: 'POST', url: `/api/v1/chat/rooms/${standaloneRoomId}/members`, headers: authHeaders(owner), payload: { userId: analyst.userId } })
+    expect(added.statusCode).toBe(201)
+
+    const roomMembers = await app.inject({ method: 'GET', url: `/api/v1/chat/rooms/${standaloneRoomId}/members`, headers: authHeaders(analyst) })
+    expect(roomMembers.statusCode).toBe(200)
+    expect(roomMembers.json().room.access_mode).toBe('restricted')
+    expect(roomMembers.json().members.some((member: { user_id: string; source: string }) => member.user_id === analyst.userId && member.source === 'direct')).toBe(true)
+
+    const hidden = await app.inject({ method: 'GET', url: '/api/v1/chat/rooms', headers: authHeaders(engineer) })
+    expect(hidden.json().rooms.some((room: { id: string }) => room.id === standaloneRoomId)).toBe(false)
+    const denied = await app.inject({ method: 'GET', url: `/api/v1/chat/rooms/${standaloneRoomId}/messages`, headers: authHeaders(engineer) })
+    expect(denied.statusCode).toBe(403)
+
+    const removed = await app.inject({ method: 'DELETE', url: `/api/v1/chat/rooms/${standaloneRoomId}/members/${analyst.userId}`, headers: authHeaders(owner) })
+    expect(removed.statusCode).toBe(200)
+    const openAgain = await app.inject({ method: 'GET', url: `/api/v1/chat/rooms/${standaloneRoomId}/members`, headers: authHeaders(engineer) })
+    expect(openAgain.statusCode).toBe(200)
+    expect(openAgain.json().room.access_mode).toBe('organization')
+  })
+
+  it('keeps team room membership managed by the team roster', async () => {
+    const team = await app.inject({
+      method: 'POST',
+      url: '/api/v1/teams',
+      headers: authHeaders(owner),
+      payload: { name: 'Network Operations', memberIds: [analyst.userId], createChat: true },
+    })
+    const teamRoomId = team.json().team.chat_room_id as string
+    const add = await app.inject({ method: 'POST', url: `/api/v1/chat/rooms/${teamRoomId}/members`, headers: authHeaders(owner), payload: { userId: engineer.userId } })
+    expect(add.statusCode).toBe(409)
+    expect(add.json().error.code).toBe('team_chat_membership_managed_by_team')
+    const members = await app.inject({ method: 'GET', url: `/api/v1/chat/rooms/${teamRoomId}/members`, headers: authHeaders(owner) })
+    expect(members.statusCode).toBe(200)
+    expect(members.json().room.access_mode).toBe('team')
+    expect(members.json().members.some((member: { user_id: string }) => member.user_id === analyst.userId)).toBe(true)
+  })
+
   it('posts and lists messages with sender info', async () => {
     const sent = await app.inject({ method: 'POST', url: `/api/v1/chat/rooms/${roomId}/messages`, headers: authHeaders(analyst), payload: { body: 'Hello team' } })
     expect(sent.statusCode).toBe(201)

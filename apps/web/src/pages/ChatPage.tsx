@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Shell } from '../components/Shell.js'
-import { Alert } from '../components/ui.js'
+import { Alert, Modal } from '../components/ui.js'
 import { Icon } from '../components/Icons.js'
-import { createChatRoom, downloadChatAttachment, listChatMessages, listChatRooms, sendChatMessage, sendChatMessageWithFile, type ChatMessage, type ChatRoom } from '../lib/chat.js'
+import { addChatRoomMember, createChatRoom, downloadChatAttachment, listChatMessages, listChatRoomMembers, listChatRooms, removeChatRoomMember, sendChatMessage, sendChatMessageWithFile, type ChatMessage, type ChatRoom, type ChatRoomMember, type ChatRoomMembershipInfo } from '../lib/chat.js'
 import { openNotificationStream } from '../lib/notifications.js'
+import { api } from '../lib/api.js'
 import { useAuth } from '../lib/auth.js'
 
 function formatTime(iso: string): string {
@@ -35,6 +36,13 @@ export default function ChatPage() {
   const [error, setError] = useState<string | null>(null)
   const [roomsLoading, setRoomsLoading] = useState(true)
   const [messagesLoading, setMessagesLoading] = useState(false)
+  const [membersOpen, setMembersOpen] = useState(false)
+  const [roomMembers, setRoomMembers] = useState<ChatRoomMember[]>([])
+  const [roomMembershipInfo, setRoomMembershipInfo] = useState<ChatRoomMembershipInfo | null>(null)
+  const [organizationMembers, setOrganizationMembers] = useState<ChatRoomMember[]>([])
+  const [memberSearch, setMemberSearch] = useState('')
+  const [membersLoading, setMembersLoading] = useState(false)
+  const [memberBusy, setMemberBusy] = useState<string | null>(null)
   const threadRef = useRef<HTMLDivElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const activeRoomRef = useRef<string | null>(null)
@@ -94,6 +102,64 @@ export default function ChatPage() {
   }, [messages])
 
   const activeRoom = rooms?.find((r) => r.id === activeRoomId) ?? null
+  const activeMembership = useAuth((s) => s.memberships.find((membership) => membership.tenant.id === s.activeTenantId) ?? s.memberships[0])
+  const canManageMembers = Boolean(activeRoom && (activeRoom.created_by === user?.id || activeMembership?.permissions.includes('member.manage')))
+  const filteredOrganizationMembers = organizationMembers.filter((member) => {
+    const query = memberSearch.trim().toLowerCase()
+    return !query || (member.name ?? '').toLowerCase().includes(query) || member.email.toLowerCase().includes(query)
+  })
+
+  const openMembers = async () => {
+    if (!activeRoomId) return
+    setMembersOpen(true)
+    setMembersLoading(true)
+    setMemberSearch('')
+    try {
+      const result = await listChatRoomMembers(activeRoomId)
+      setRoomMembers(result.members)
+      setRoomMembershipInfo(result.room)
+      if (result.room.access_mode !== 'team') {
+        const all = await api<{ members: ChatRoomMember[] }>(`/chat/rooms/${activeRoomId}/member-candidates`)
+        setOrganizationMembers(all.members)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Room members could not be loaded.')
+    } finally {
+      setMembersLoading(false)
+    }
+  }
+
+  const addMember = async (userId: string) => {
+    if (!activeRoomId || memberBusy) return
+    setMemberBusy(userId)
+    try {
+      await addChatRoomMember(activeRoomId, userId)
+      const result = await listChatRoomMembers(activeRoomId)
+      setRoomMembers(result.members)
+      setRoomMembershipInfo(result.room)
+      await loadRooms()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Member could not be added.')
+    } finally {
+      setMemberBusy(null)
+    }
+  }
+
+  const removeMember = async (userId: string) => {
+    if (!activeRoomId || memberBusy) return
+    setMemberBusy(userId)
+    try {
+      await removeChatRoomMember(activeRoomId, userId)
+      const result = await listChatRoomMembers(activeRoomId)
+      setRoomMembers(result.members)
+      setRoomMembershipInfo(result.room)
+      await loadRooms()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Member could not be removed.')
+    } finally {
+      setMemberBusy(null)
+    }
+  }
 
   const send = async () => {
     if (!activeRoomId || (!draft.trim() && !selectedFile) || busy) return
@@ -197,7 +263,7 @@ export default function ChatPage() {
             <>
               <div className="chat-thread-head">
                 <div><span className="etch">#{activeRoom.name}</span>{activeRoom.team_name ? <span className="chat-room-scope">Team room · {activeRoom.team_name}</span> : <span className="chat-room-scope">Organization room</span>}</div>
-                <span className="muted mono">{messages.length} messages</span>
+                <div className="chat-thread-actions"><span className="muted mono">{messages.length} messages</span><button type="button" className="btn btn-ghost btn-sm" onClick={() => void openMembers()}><Icon name="users" size={14} />Members</button></div>
               </div>
               <div className="chat-thread" ref={threadRef} aria-live="polite">
                 {messagesLoading && messages.length === 0 ? <div className="chat-message-state">Loading messages…</div> : null}
@@ -257,6 +323,17 @@ export default function ChatPage() {
           )}
         </section>
       </div>
+
+      <Modal open={membersOpen} onClose={() => { if (!memberBusy) setMembersOpen(false) }} title={activeRoom ? `#${activeRoom.name} members` : 'Room members'} width={620}>
+        {membersLoading ? <div className="chat-members-state">Loading room members…</div> : roomMembershipInfo?.access_mode === 'team' ? <>
+          <div className="chat-members-summary"><Icon name="users" size={18} /><div><strong>Team-managed room</strong><span>Membership follows the team roster. Add or remove people from Teams to keep ticket routing and chat access aligned.</span></div><a className="btn btn-ghost btn-sm" href="/teams">Open Teams</a></div>
+          <div className="chat-member-list">{roomMembers.map((member) => <div className="chat-member-row" key={member.user_id}><span className="chat-member-avatar"><Icon name="user" size={14} /></span><div><strong>{member.name || member.email}</strong><small>{member.email}</small></div><span className="chat-member-source">Team member</span></div>)}</div>
+        </> : <>
+          <div className="chat-members-summary"><Icon name="users" size={18} /><div><strong>{roomMembershipInfo?.access_mode === 'restricted' ? 'Selected members' : 'Organization room'}</strong><span>{roomMembershipInfo?.access_mode === 'restricted' ? 'Only listed members, the room creator, and organization managers can access this room.' : 'Everyone in the organization can access this room until you add a person here. Adding the first person makes it a selected-member room.'}</span></div></div>
+          <div className="chat-member-list">{roomMembers.map((member) => <div className="chat-member-row" key={member.user_id}><span className="chat-member-avatar"><Icon name="user" size={14} /></span><div><strong>{member.name || member.email}</strong><small>{member.email}</small></div><span className="chat-member-source">{member.source === 'direct' ? 'Added to room' : 'Organization'}</span>{canManageMembers && member.user_id !== activeRoom?.created_by && member.source === 'direct' ? <button type="button" className="icon-btn" onClick={() => void removeMember(member.user_id)} disabled={memberBusy === member.user_id} aria-label={`Remove ${member.name || member.email}`} title="Remove from room"><Icon name="delete" size={14} /></button> : null}</div>)}</div>
+          {canManageMembers ? <div className="chat-member-add"><span className="field-label">Add organization member</span><div className="chat-member-search"><Icon name="search" size={14} /><input className="field-input" value={memberSearch} onChange={(event) => setMemberSearch(event.target.value)} placeholder="Search by name or email…" /></div><div className="chat-member-options">{filteredOrganizationMembers.filter((member) => roomMembershipInfo?.access_mode === 'organization' || !roomMembers.some((current) => current.user_id === member.user_id)).slice(0, 8).map((member) => <button type="button" className="chat-member-option" key={member.user_id} onClick={() => void addMember(member.user_id)} disabled={memberBusy === member.user_id}><span><strong>{member.name || member.email}</strong><small>{member.email}</small></span><Icon name="add" size={14} /></button>)}</div></div> : null}
+        </>}
+      </Modal>
     </Shell>
   )
 }
