@@ -1,3 +1,5 @@
+mod helper_ui;
+
 use anyhow::{anyhow, Context, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use bytes::Bytes;
@@ -1226,6 +1228,7 @@ struct HelperWindowState {
     submit: tokio::sync::mpsc::UnboundedSender<HelperEvent>,
     shutdown: tokio::sync::mpsc::UnboundedSender<()>,
     status: Arc<StdMutex<String>>,
+    hwnd: std::sync::atomic::AtomicPtr<std::ffi::c_void>,
 }
 
 #[cfg(target_os = "windows")]
@@ -1273,6 +1276,7 @@ fn run_helper_window(
     submit: tokio::sync::mpsc::UnboundedSender<HelperEvent>,
     shutdown: tokio::sync::mpsc::UnboundedSender<()>,
     status: Arc<StdMutex<String>>,
+    hwnd_out: Option<Arc<std::sync::atomic::AtomicPtr<std::ffi::c_void>>>,
 ) -> Result<()> {
     let class_name = tray_wide("ReyDeskHelperWindow");
     let cursor = unsafe { LoadCursorW(None, IDC_ARROW) }.unwrap_or_default();
@@ -1285,10 +1289,13 @@ fn run_helper_window(
     };
     unsafe { RegisterClassW(&class) };
 
+    let hwnd_holder: std::sync::Arc<std::sync::atomic::AtomicPtr<std::ffi::c_void>> = std::sync::Arc::new(std::sync::atomic::AtomicPtr::new(std::ptr::null_mut()));
+    let hwnd_holder_for_state = hwnd_holder.clone();
     let state = Box::into_raw(Box::new(HelperWindowState {
         submit,
         shutdown,
         status: status.clone(),
+        hwnd: std::sync::atomic::AtomicPtr::new(std::ptr::null_mut()),
     }));
 
     let title = tray_wide("ReyDesk support");
@@ -1388,6 +1395,9 @@ fn run_helper_window(
             None,
         );
         ShowWindow(hwnd, SW_SHOW);
+        // Store HWND so the async task can close this window after claim
+        hwnd_holder_for_state.store(hwnd.0 as *mut _, std::sync::atomic::Ordering::SeqCst);
+        (*state).hwnd.store(hwnd.0 as *mut _, std::sync::atomic::Ordering::SeqCst);
 
         let status_thread = status;
         thread::spawn(move || {
@@ -1429,11 +1439,13 @@ async fn run_helper_native(
     let (submit, mut receiver) = tokio::sync::mpsc::unbounded_channel::<HelperEvent>();
     let (shutdown_tx, shutdown_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
     let status = Arc::new(StdMutex::new("Enter your technician's 12-digit code to begin.".to_owned()));
+    let hwnd_holder: Arc<std::sync::atomic::AtomicPtr<std::ffi::c_void>> = Arc::new(std::sync::atomic::AtomicPtr::new(std::ptr::null_mut()));
 
     let window_submit = submit.clone();
     let window_status = status.clone();
+    let hwnd_clone = hwnd_holder.clone();
     let window = tokio::task::spawn_blocking(move || {
-        run_helper_window(window_submit, shutdown_tx, window_status)
+        run_helper_window(window_submit, shutdown_tx, window_status, Some(hwnd_clone))
     });
     drop(submit);
 
@@ -1464,12 +1476,37 @@ async fn run_helper_native(
                 .await
                 {
                     Ok((session, config)) => {
-                        if let Ok(mut current) = status.lock() {
-                            *current = format!("Connected — session {}", session.state);
+                        // Close the code-entry window
+                        let ptr = hwnd_holder.load(std::sync::atomic::Ordering::SeqCst);
+                        if !ptr.is_null() {
+                            unsafe {
+                                windows::Win32::UI::WindowsAndMessaging::PostMessageW(
+                                    HWND(ptr as isize),
+                                    WM_CLOSE, WPARAM(0), LPARAM(0),
+                                );
+                            }
                         }
-                        let result = run_agent(config_path, None, true, Some(shutdown_rx)).await;
+                        // Wait briefly for the window to close
+                        tokio::time::sleep(Duration::from_millis(300)).await;
+                        let _ = window.await;
+
+                        // Open the session management window on a background thread
+                        let session_id = session.id.clone();
+                        let session_window = tokio::task::spawn_blocking(move || {
+                            if let Err(error) = helper_ui::windows_ui::run_session_window(&session_id) {
+                                eprintln!("[session-window] {error:#}");
+                            }
+                        });
+
+                        // Run the agent (consent, relay, chat, telemetry)
+                        let agent_result = run_agent(config_path.clone(), None, true, Some(shutdown_rx)).await;
                         let _ = AgentClient::new(&config).end_session(&session.id).await;
-                        result?;
+
+                        // When the agent finishes, close the session window
+                        // by posting WM_QUIT — but we need the HWND. For simplicity,
+                        // the session window will close itself when it detects disconnect.
+                        let _ = session_window.await;
+                        agent_result?;
                         return Ok(());
                     }
                     Err(error) => {
@@ -1698,6 +1735,7 @@ fn session_elevation_prompt(session: &AgentSession) -> Result<bool> {
     show_consent_prompt(&message)
 }
 
+#[derive(Clone)]
 enum ConsentDecision {
     Denied,
     Granted,
@@ -1705,26 +1743,33 @@ enum ConsentDecision {
 }
 
 fn decide_consent(session: &AgentSession) -> Result<ConsentDecision> {
-    if !session_consent_prompt(session)? {
-        return Ok(ConsentDecision::Denied);
+    #[cfg(target_os = "windows")]
+    {
+        return helper_ui::windows_ui::show_consent_window(session);
     }
-    let wants_elevation = session
-        .permissions
-        .iter()
-        .any(|permission| permission == "elevation");
-    if !wants_elevation {
-        return Ok(ConsentDecision::Granted);
+    #[cfg(not(target_os = "windows"))]
+    {
+        if !session_consent_prompt(session)? {
+            return Ok(ConsentDecision::Denied);
+        }
+        let wants_elevation = session
+            .permissions
+            .iter()
+            .any(|permission| permission == "elevation");
+        if !wants_elevation {
+            return Ok(ConsentDecision::Granted);
+        }
+        if session_elevation_prompt(session)? {
+            return Ok(ConsentDecision::Granted);
+        }
+        let reduced = session
+            .permissions
+            .iter()
+            .filter(|permission| !is_elevated_permission(permission.as_str()))
+            .cloned()
+            .collect();
+        Ok(ConsentDecision::GrantedWithoutElevation(reduced))
     }
-    if session_elevation_prompt(session)? {
-        return Ok(ConsentDecision::Granted);
-    }
-    let reduced = session
-        .permissions
-        .iter()
-        .filter(|permission| !is_elevated_permission(permission.as_str()))
-        .cloned()
-        .collect();
-    Ok(ConsentDecision::GrantedWithoutElevation(reduced))
 }
 
 /// The mailbox is a per-session set of JSON files shared between the Windows
