@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { Link, NavLink, useNavigate } from 'react-router-dom'
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { CommandPalette } from './CommandPalette.js'
 import { MobileShell } from './MobileShell.js'
 import { NotesDropdown } from './NotesDropdown.js'
@@ -121,7 +121,17 @@ const NAV_ICON_MAP: Record<string, string> = {
 /** Categorised sidebar navigation, driven by the caller's permissions. */
 function NavSections() {
   const auth = useAuth()
+  const location = useLocation()
   const perms = new Set(auth.memberships.flatMap((m) => m.permissions))
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      document
+        .querySelector<HTMLElement>('.nav-rail .nav-item[aria-current="page"]')
+        ?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [location.pathname])
   const can = (p: string) => perms.has(p)
   const anyRemote = ['remote.attended', 'remote.unattended', 'remote.control', 'remote.inspection'].some(can)
 
