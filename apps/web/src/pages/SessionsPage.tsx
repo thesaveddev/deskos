@@ -240,6 +240,8 @@ export default function SessionsPage() {
       {showCodePanel ? (
         <Modal open={showCodePanel} onClose={() => { if (!codeBusy && !emailBusy) setShowCodePanel(false) }} title="Generate a support code" width={620}>
           <div className="support-code-panel">
+            {!generatedCode ? (
+            <>
             <p className="support-code-intro">Create a single-use 12-digit code or secure link for attended support. No enrollment or preinstalled software is required.</p>
             <form className="support-code-form" onSubmit={generateCode}>
               <Field label="Reason" hint="Shown to the person you're helping and recorded in the audit trail.">
@@ -288,7 +290,8 @@ export default function SessionsPage() {
               </div>
             </form>
 
-            {generatedCode ? (
+            </>
+            ) : (
               <div className="support-code-result">
                 <div className="support-code-result-head">
                   <span className="etch">12-digit support code</span>
@@ -304,8 +307,11 @@ export default function SessionsPage() {
                   <div className="support-code-email-row"><input className="field-input" type="email" placeholder="user@example.com" value={emailRecipient} onChange={(event) => setEmailRecipient(event.target.value)} /><select className="field-input" value={emailMode} onChange={(event) => setEmailMode(event.target.value as 'code' | 'email_link')} aria-label="Email support method"><option value="email_link">Secure link + fingerprint</option><option value="code">Numeric code</option></select><button className="btn btn-ghost btn-sm" type="button" onClick={() => void emailCode()} disabled={emailBusy || !emailRecipient.trim()}><Icon name="mail" size={14} />{emailBusy ? 'Sending…' : 'Email user'}</button></div>
                   {emailNotice ? <span className="muted">{emailNotice}</span> : null}
                 </div>
+                <div className="support-code-actions" style={{ marginTop: '1rem', borderTop: '1px solid var(--border-subtle)', paddingTop: '0.75rem' }}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => { setGeneratedCode(null); setEmailRecipient(''); setEmailNotice(null) }}><Icon name="key" size={14} />Generate another code</button>
+                </div>
               </div>
-            ) : null}
+            )}
           </div>
         </Modal>
       ) : null}
