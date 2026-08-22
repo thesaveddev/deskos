@@ -572,7 +572,9 @@ export function Shell({ children }: { children: ReactNode }) {
               <strong>{sessionDock.deviceName}</strong>
             </span>
             <span className="mono muted session-dock-state">{sessionDock.state}</span>
-            <Link className="btn btn-ghost btn-sm" to={`/sessions/${sessionDock.id}`}>Return</Link>
+            <Link className="btn btn-primary btn-sm" to={`/sessions/${sessionDock.id}`}>
+              <Icon name="external" size={14} />Open Console
+            </Link>
           </div>
         ) : null}
         <main className="app-content" id="main-content" tabIndex={-1}>{children}</main>

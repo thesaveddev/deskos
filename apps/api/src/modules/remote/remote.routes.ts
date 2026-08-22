@@ -622,6 +622,18 @@ export async function remoteRoutes(app: FastifyInstance): Promise<void> {
         await addSessionEvent(client, ctx.tenantId, id, 'session.elevation_denied', 'agent', ctx.deviceId, { permissions: effective })
       }
       await appendTicketTimeline(client, ctx.tenantId, id, 'session.consent_granted', 'Remote session consent granted.', 'agent', ctx.deviceId, elevationReduced ? { permissions: effective } : {})
+      // Instantly notify the technician so they can open the session console
+      // without waiting for the next poll cycle.
+      if (session.requested_by) {
+        const deviceRow = (await client.query('SELECT name FROM devices WHERE id = $1 AND tenant_id = $2', [ctx.deviceId, ctx.tenantId])).rows[0]
+        await notify(client, ctx.tenantId, {
+          userId: session.requested_by,
+          kind: 'session.adhoc.claimed',
+          body: `${deviceRow?.name ?? 'Device'} accepted the remote support session. Click to open the session console.`,
+          subjectType: 'session',
+          subjectId: id,
+        })
+      }
       return reply.send({ session: updated, joinToken })
     })
   })
@@ -799,6 +811,15 @@ export async function remoteRoutes(app: FastifyInstance): Promise<void> {
       await addSessionEvent(client, ctx.tenantId, id, `session.${body.state}`, 'agent', ctx.deviceId)
       if (body.state === 'active') {
         await appendTicketTimeline(client, ctx.tenantId, id, 'session.active', 'Remote session connected.', 'agent', ctx.deviceId)
+        if (session.requested_by) {
+          await notify(client, ctx.tenantId, {
+            userId: session.requested_by,
+            kind: 'session_invite',
+            body: 'Remote session is now active. The relay connection is ready.',
+            subjectType: 'session',
+            subjectId: id,
+          })
+        }
       } else if (body.state === 'ended') {
         await appendTicketTimeline(client, ctx.tenantId, id, 'session.ended', 'Remote session ended.', 'agent', ctx.deviceId)
         await client.query(

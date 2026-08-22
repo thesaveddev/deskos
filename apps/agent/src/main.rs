@@ -5421,6 +5421,9 @@ async fn main() -> Result<()> {
     // subcommand, so default to the helper's code-entry window instead of letting
     // clap print a usage error and close the console immediately.
     if std::env::args_os().len() <= 1 {
+        // Hide the console window so end users only see the GUI.
+        #[cfg(target_os = "windows")]
+        unsafe { windows::Win32::System::Console::FreeConsole().ok(); }
         return helper_ui(
             String::new(),
             String::new(),
@@ -5457,9 +5460,14 @@ async fn main() -> Result<()> {
             code,
             name,
             config,
-        } => match code {
-            Some(code) => run_helper(api_url, relay_url, code, name, config).await,
-            None => helper_ui(api_url, relay_url, name, config).await,
+        } => {
+            // Hide the console window so end users only see the GUI.
+            #[cfg(target_os = "windows")]
+            unsafe { windows::Win32::System::Console::FreeConsole().ok(); }
+            match code {
+                Some(code) => run_helper(api_url, relay_url, code, name, config).await,
+                None => helper_ui(api_url, relay_url, name, config).await,
+            }
         },
         Command::Run {
             config,
