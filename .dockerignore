@@ -8,7 +8,10 @@ build
 *.db
 *.sqlite
 .freebuff
-artifacts
+artifacts/*
+!artifacts/
+!artifacts/windows/
+!artifacts/windows/reydesk-helper.exe
 .recordings
 .uploads
 .vscode

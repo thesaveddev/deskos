@@ -17,8 +17,49 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  build-helper:
+    name: Build portable Windows helper
+    runs-on: windows-latest
+    timeout-minutes: 25
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.head_branch == 'master' && github.event.workflow_run.conclusion == 'success') }}
+    steps:
+      - name: Checkout tested revision
+        if: ${{ github.event_name == 'workflow_run' }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Checkout current revision
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build portable helper
+        shell: pwsh
+        env:
+          REYDESK_API_URL: https://reydesk.com
+          REYDESK_RELAY_URL: wss://relay.reydesk.com/ws
+        run: |
+          cargo build --release --manifest-path apps/Cargo.toml -p deskos-agent
+          New-Item -ItemType Directory -Force -Path artifacts/windows | Out-Null
+          Copy-Item apps/target/release/deskos-agent.exe artifacts/windows/reydesk-helper.exe
+          if (-not (Test-Path artifacts/windows/reydesk-helper.exe)) {
+            throw 'The portable ReyDesk helper was not produced.'
+          }
+
+      - name: Upload portable helper
+        uses: actions/upload-artifact@v4
+        with:
+          name: reydesk-windows-helper
+          path: artifacts/windows/reydesk-helper.exe
+          if-no-files-found: error
+          retention-days: 7
+
   deploy:
     name: Deploy ReyDesk to VPS
+    needs: build-helper
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 45
@@ -62,6 +103,34 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
+      - name: Download portable helper
+        uses: actions/download-artifact@v4
+        with:
+          name: reydesk-windows-helper
+          path: artifacts/windows
+
+      - name: Stage helper for upload
+        run: cp artifacts/windows/reydesk-helper.exe ./reydesk-helper.exe
+
+      - name: Prepare helper directory on VPS
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: mkdir -p /root/reydesk-app/artifacts/windows
+
+      - name: Upload portable helper to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: reydesk-helper.exe
+          target: /root/reydesk-app/artifacts/windows
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.2.0
         with:
@@ -91,6 +160,7 @@ jobs:
             done
             curl -sf http://127.0.0.1:4000/healthz || { echo "API did not become healthy"; exit 1; }
             curl -sf http://127.0.0.1:4100/healthz || { echo "Relay did not become healthy"; exit 1; }
+            docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T api test -f /app/artifacts/windows/reydesk-helper.exe || { echo "Portable helper is missing from the production API image"; exit 1; }
             curl -sf https://reydesk.com/healthz || { echo "Public healthz failed"; exit 1; }
 
       - name: Deployment summary

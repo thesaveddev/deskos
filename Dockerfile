@@ -18,6 +18,10 @@ RUN mkdir -p apps/api/node_modules apps/relay/node_modules
 
 # -- build --
 COPY . .
+# The Windows helper is produced by the deployment workflow. Keep the copy
+# optional so generic Docker/tag builds still work, while production deploys
+# can verify that the portable helper was included before going live.
+RUN mkdir -p /tmp/reydesk-helper && if [ -f artifacts/windows/reydesk-helper.exe ]; then cp artifacts/windows/reydesk-helper.exe /tmp/reydesk-helper/reydesk-helper.exe; fi
 RUN npm run build --workspace=@deskos/web
 RUN npm run build --workspace=@deskos/api
 RUN npm run build --workspace=@deskos/relay
@@ -28,6 +32,9 @@ WORKDIR /app
 COPY --from=base /app/apps/api/dist apps/api/dist
 COPY --from=base /app/apps/web/dist apps/web/dist
 COPY --from=base /app/apps/relay/dist apps/relay/dist
+# Always copy the directory; it is empty for generic builds and contains the
+# portable helper for the production deployment workflow.
+COPY --from=base /tmp/reydesk-helper artifacts/windows
 COPY --from=base /app/node_modules node_modules
 COPY --from=base /app/apps/api/node_modules apps/api/node_modules
 COPY --from=base /app/apps/relay/node_modules apps/relay/node_modules
