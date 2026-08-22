@@ -3,7 +3,7 @@ import { Link, useLocation, useParams } from 'react-router-dom'
 import { Shell } from '../components/Shell.js'
 import { Alert, useConfirm } from '../components/ui.js'
 import { clearSessionDock, downloadRecording, endSession, getSession, inviteParticipant, joinSession, listMessages, listParticipants, listRecordings, sendMessage, transferSession, uploadRecording, writeSessionDock, type RemoteSession, type SessionEvent, type SessionParticipant, type SessionRecording } from '../lib/sessions.js'
-import { appendSessionChat, disposeSessionRuntime, endSessionRuntime, hasSessionRuntime, sendSessionChat, sendSessionControl, sendSessionFiles, sendSessionInput, sendSessionSystem, sendSessionTerminal, subscribeSessionRuntime, type RuntimeConsoleState } from '../lib/sessionRuntime.js'
+import { appendSessionChat, disposeSessionRuntime, endSessionRuntime, hasSessionRuntime, sendSessionChat, sendSessionControl, sendSessionFiles, sendSessionInput, sendSessionSystem, sendSessionTerminal, subscribeSessionRuntime, type RemoteMonitor, type RuntimeConsoleState } from '../lib/sessionRuntime.js'
 
 type ConsoleState = 'loading' | RuntimeConsoleState
 type HistoryState = { joinToken?: string }
@@ -37,6 +37,9 @@ export default function SessionConsolePage() {
   const [ending, setEnding] = useState(false)
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null)
   const [remoteCursor, setRemoteCursor] = useState<RemoteCursor | null>(null)
+  const [monitors, setMonitors] = useState<RemoteMonitor[]>([])
+  const [selectedMonitorId, setSelectedMonitorId] = useState<number | null>(null)
+  const [monitorStatus, setMonitorStatus] = useState<string | null>(null)
   const [cursorStyle, setCursorStyle] = useState<{ left: string; top: string } | null>(null)
   const [videoReady, setVideoReady] = useState(0)
   const [controlArmed, setControlArmed] = useState(false)
@@ -107,15 +110,32 @@ export default function SessionConsolePage() {
       const scale = Math.min(bounds.width / sourceWidth, bounds.height / sourceHeight)
       const renderedWidth = sourceWidth * scale
       const renderedHeight = sourceHeight * scale
+      let cursorX = remoteCursor.x
+      let cursorY = remoteCursor.y
+      if (selectedMonitor) {
+        const virtual = virtualBounds()
+        if (!virtual) {
+          setCursorStyle(null)
+          return
+        }
+        const absoluteX = virtual.left + remoteCursor.x * virtual.width
+        const absoluteY = virtual.top + remoteCursor.y * virtual.height
+        cursorX = (absoluteX - selectedMonitor.x) / Math.max(1, selectedMonitor.width)
+        cursorY = (absoluteY - selectedMonitor.y) / Math.max(1, selectedMonitor.height)
+        if (cursorX < 0 || cursorX > 1 || cursorY < 0 || cursorY > 1) {
+          setCursorStyle(null)
+          return
+        }
+      }
       setCursorStyle({
-        left: `${(bounds.width - renderedWidth) / 2 + remoteCursor.x * renderedWidth}px`,
-        top: `${(bounds.height - renderedHeight) / 2 + remoteCursor.y * renderedHeight}px`,
+        left: `${(bounds.width - renderedWidth) / 2 + cursorX * renderedWidth}px`,
+        top: `${(bounds.height - renderedHeight) / 2 + cursorY * renderedHeight}px`,
       })
     }
     updateCursorStyle()
     window.addEventListener('resize', updateCursorStyle)
     return () => window.removeEventListener('resize', updateCursorStyle)
-  }, [remoteCursor, remoteStream, videoReady])
+  }, [remoteCursor, remoteStream, videoReady, monitors, selectedMonitorId])
 
   useEffect(() => {
     if (!id) return
@@ -146,6 +166,9 @@ export default function SessionConsolePage() {
           setError(snapshot.error)
           setRemoteStream(snapshot.remoteStream)
           setRemoteCursor(snapshot.remoteCursor)
+          setMonitors(snapshot.monitors)
+          setSelectedMonitorId(snapshot.selectedMonitorId)
+          setMonitorStatus(snapshot.monitorStatus)
           setControlArmed(snapshot.controlArmed)
           setPresence(snapshot.presence)
           setRemoteClipboard(snapshot.remoteClipboard ?? '')
@@ -194,6 +217,9 @@ export default function SessionConsolePage() {
       unsubscribe?.()
       setRemoteStream(null)
       setRemoteCursor(null)
+      setMonitors([])
+      setSelectedMonitorId(null)
+      setMonitorStatus(null)
       setCursorStyle(null)
       setVideoReady(0)
       setImmersive(false)
@@ -240,6 +266,7 @@ export default function SessionConsolePage() {
   const canTerminal = session?.permissions.includes('terminal') && session.permissions.includes('elevation')
   const canFileTransfer = session?.permissions.includes('file_transfer') ?? false
   const canSystemManage = session?.permissions.includes('system_manage') && session.permissions.includes('elevation')
+  const canSelectMonitor = session?.permissions.includes('view_screen') === true && consoleState === 'connected'
 
   useEffect(() => {
     if (id && canFileTransfer && fileChannelReady && controlArmed) {
@@ -247,9 +274,46 @@ export default function SessionConsolePage() {
     }
   }, [id, canFileTransfer, fileChannelReady, controlArmed])
 
+  const virtualBounds = () => {
+    if (monitors.length === 0) return null
+    const left = Math.min(...monitors.map((monitor) => monitor.x))
+    const top = Math.min(...monitors.map((monitor) => monitor.y))
+    const right = Math.max(...monitors.map((monitor) => monitor.x + monitor.width))
+    const bottom = Math.max(...monitors.map((monitor) => monitor.y + monitor.height))
+    return { left, top, width: Math.max(1, right - left), height: Math.max(1, bottom - top) }
+  }
+
+  const selectedMonitor = selectedMonitorId === null ? null : monitors.find((monitor) => monitor.id === selectedMonitorId) ?? null
+
+  const toVirtualPoint = (x: number, y: number): { x: number; y: number } => {
+    if (!selectedMonitor) return { x, y }
+    const bounds = virtualBounds()
+    if (!bounds) return { x, y }
+    return {
+      x: (selectedMonitor.x + x * selectedMonitor.width - bounds.left) / bounds.width,
+      y: (selectedMonitor.y + y * selectedMonitor.height - bounds.top) / bounds.height,
+    }
+  }
+
   const sendInput = (payload: Record<string, unknown>) => {
     if (!id || !canControl) return
-    sendSessionInput(id, payload, controlArmed)
+    const x = typeof payload.x === 'number' ? payload.x : null
+    const y = typeof payload.y === 'number' ? payload.y : null
+    const mapped = x !== null && y !== null ? { ...payload, ...toVirtualPoint(x, y) } : payload
+    sendSessionInput(id, mapped, controlArmed)
+  }
+
+  const selectMonitor = (value: string) => {
+    if (!id || !canSelectMonitor) return
+    if (value === 'all') {
+      setMonitorStatus('Switching to all displays…')
+      sendSessionControl(id, { action: 'monitor_all' }, controlArmed)
+      return
+    }
+    const monitorId = Number(value)
+    if (!Number.isInteger(monitorId)) return
+    setMonitorStatus('Switching display…')
+    sendSessionControl(id, { action: 'monitor_select', monitorId }, controlArmed)
   }
 
   const point = (event: MouseEvent<HTMLVideoElement> | PointerEvent<HTMLVideoElement>): { x: number; y: number } => {
@@ -578,6 +642,15 @@ export default function SessionConsolePage() {
           <section className="detail-card">
             <div className="detail-card-head"><h2>Session state</h2><span className="mono muted">live</span></div>
             {canControl ? <button className={`btn btn-sm btn-block ${controlArmed ? 'btn-danger' : 'btn-primary'}`} onClick={() => setControlArmed((armed) => !armed)}>{controlArmed ? 'Disable input control' : 'Enable input control'}</button> : null}
+            {monitors.length > 0 ? <div className="monitor-selector">
+              <label className="field-label" htmlFor="session-monitor">Remote display</label>
+              <select id="session-monitor" className="field-input" value={selectedMonitorId === null ? 'all' : String(selectedMonitorId)} onChange={(event) => selectMonitor(event.target.value)} disabled={!canSelectMonitor}>
+                <option value="all">All displays</option>
+                {monitors.map((monitor) => <option value={monitor.id} key={monitor.id}>{monitor.name}{monitor.primary ? ' · Primary' : ''} ({monitor.width}×{monitor.height})</option>)}
+              </select>
+              <span className="field-hint">Switching changes the shared view and mouse coordinate space.</span>
+            </div> : null}
+            {monitorStatus ? <span className="muted clipboard-status">{monitorStatus}</span> : null}
             <div className="console-state-line"><span className={`status-pill session-state-${session?.state ?? 'requested'}`}>{session?.state ?? 'requested'}</span><span className="mono muted">{stateLabel(consoleState)}</span></div>
             <p className="console-help">The session remains connected while you navigate ReyDesk. Return using the session dock; the peer, video stream, and input channels stay owned by the browser session runtime.</p>
           </section>

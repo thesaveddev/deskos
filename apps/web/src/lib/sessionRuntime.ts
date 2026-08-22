@@ -2,6 +2,16 @@ import { api } from './api.js'
 
 export type RemoteCursor = { x: number; y: number; visible: boolean; embedded?: boolean }
 
+export type RemoteMonitor = {
+  id: number
+  name: string
+  x: number
+  y: number
+  width: number
+  height: number
+  primary: boolean
+}
+
 export type RuntimeConsoleState = 'authorizing' | 'connecting' | 'waiting' | 'negotiating' | 'connected' | 'error' | 'ended'
 
 export interface SessionRuntimeSnapshot {
@@ -9,6 +19,9 @@ export interface SessionRuntimeSnapshot {
   error: string | null
   remoteStream: MediaStream | null
   remoteCursor: RemoteCursor | null
+  monitors: RemoteMonitor[]
+  selectedMonitorId: number | null
+  monitorStatus: string | null
   controlArmed: boolean
   presence: 'waiting' | 'endpoint_ready'
   remoteClipboard: string | null
@@ -73,9 +86,21 @@ function handleControlMessage(runtime: Runtime, event: MessageEvent): void {
     return
   }
   try {
-    const message = JSON.parse(event.data) as Partial<RemoteCursor> & { type?: string; action?: string; status?: string; text?: string; reason?: string; path?: string; root?: string; name?: string; entries?: unknown; data?: string; processes?: unknown; services?: unknown }
+    const message = JSON.parse(event.data) as Partial<RemoteCursor> & { type?: string; action?: string; status?: string; text?: string; reason?: string; path?: string; root?: string; name?: string; entries?: unknown; data?: string; processes?: unknown; services?: unknown; monitors?: unknown; monitorId?: unknown; selectedMonitorId?: unknown }
     if (message.type === 'presence' && message.status === 'endpoint_ready') {
       notify(runtime, { presence: 'endpoint_ready' })
+      return
+    }
+    if (message.type === 'monitor' && (message.action === 'list' || message.action === 'selected')) {
+      const monitors = Array.isArray(message.monitors) ? message.monitors as RemoteMonitor[] : runtime.snapshot.monitors
+      const selectedMonitorId = message.monitorId === null || message.monitorId === undefined
+        ? (typeof message.selectedMonitorId === 'number' ? message.selectedMonitorId : message.action === 'selected' ? null : runtime.snapshot.selectedMonitorId)
+        : typeof message.monitorId === 'number' ? message.monitorId : runtime.snapshot.selectedMonitorId
+      notify(runtime, { monitors, selectedMonitorId, monitorStatus: message.action === 'selected' ? 'Display selection applied.' : null })
+      return
+    }
+    if (message.type === 'monitor' && message.action === 'error') {
+      notify(runtime, { monitorStatus: message.reason ?? 'The display could not be selected.' })
       return
     }
     if (message.type === 'control' && message.action === 'clipboard_result' && typeof message.text === 'string') {
@@ -218,6 +243,7 @@ function configureDataChannel(runtime: Runtime, channel: RTCDataChannel): void {
   channel.onopen = () => {
     notify(runtime, { state: 'connected', controlArmed: true })
     send(runtime, { type: 'control', action: 'presence', status: 'technician_ready' })
+    send(runtime, { type: 'control', action: 'monitor_list' })
   }
   channel.onclose = () => {
     if (runtime.controlChannel === channel) runtime.controlChannel = null
@@ -402,6 +428,9 @@ function createRuntime(id: string): Runtime {
       error: null,
       remoteStream: null,
       remoteCursor: null,
+      monitors: [],
+      selectedMonitorId: null,
+      monitorStatus: null,
       controlArmed: false,
       presence: 'waiting',
       remoteClipboard: null,

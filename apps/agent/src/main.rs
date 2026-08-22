@@ -3261,7 +3261,12 @@ fn rejected_control_audit(action: impl Into<String>, reason: &str) -> ControlAud
     }
 }
 
-fn handle_control_message(message: &DataChannelMessage, can_control: bool) -> ControlAudit {
+fn handle_control_message(
+    message: &DataChannelMessage,
+    can_control: bool,
+    monitors: &[Monitor],
+    selected_monitor: &Arc<StdMutex<Option<usize>>>,
+) -> ControlAudit {
     let Ok(text) = std::str::from_utf8(&message.data) else {
         eprintln!("Rejected non-UTF-8 control message");
         return rejected_control_audit("unknown", "invalid_encoding");
@@ -3322,7 +3327,27 @@ fn handle_control_message(message: &DataChannelMessage, can_control: bool) -> Co
         eprintln!("Rejected invalid input payload");
         return rejected_control_audit(action, "invalid_payload");
     }
-    match apply_input(&value, &action) {
+    let mut input_value = value;
+    if let Some(selected) = selected_monitor.lock().ok().and_then(|selection| *selection) {
+        if let Some(monitor) = monitors.get(selected) {
+            if let (Some(x), Some(y)) = (
+                input_value.get("x").and_then(serde_json::Value::as_f64),
+                input_value.get("y").and_then(serde_json::Value::as_f64),
+            ) {
+                let virtual_left = monitors.iter().filter_map(|item| item.x().ok()).min().unwrap_or(0) as f64;
+                let virtual_top = monitors.iter().filter_map(|item| item.y().ok()).min().unwrap_or(0) as f64;
+                let virtual_right = monitors.iter().filter_map(|item| item.x().ok().zip(item.width().ok()).map(|(left, width)| left + width as i32)).max().unwrap_or(1) as f64;
+                let virtual_bottom = monitors.iter().filter_map(|item| item.y().ok().zip(item.height().ok()).map(|(top, height)| top + height as i32)).max().unwrap_or(1) as f64;
+                let left = monitor.x().unwrap_or(0) as f64;
+                let top = monitor.y().unwrap_or(0) as f64;
+                let width = monitor.width().unwrap_or(1).max(1) as f64;
+                let height = monitor.height().unwrap_or(1).max(1) as f64;
+                input_value["x"] = serde_json::json!(((left + x.clamp(0.0, 1.0) * width - virtual_left) / (virtual_right - virtual_left).max(1.0)).clamp(0.0, 1.0));
+                input_value["y"] = serde_json::json!(((top + y.clamp(0.0, 1.0) * height - virtual_top) / (virtual_bottom - virtual_top).max(1.0)).clamp(0.0, 1.0));
+            }
+        }
+    }
+    match apply_input(&input_value, &action) {
         Ok(()) => {
             println!("Applied validated input action: {action}");
             ControlAudit {
@@ -3338,9 +3363,30 @@ fn handle_control_message(message: &DataChannelMessage, can_control: bool) -> Co
     }
 }
 
+fn monitor_catalog(monitors: &[Monitor]) -> Vec<serde_json::Value> {
+    monitors
+        .iter()
+        .enumerate()
+        .map(|(index, monitor)| {
+            serde_json::json!({
+                "id": index,
+                "name": monitor.name().unwrap_or_else(|_| format!("Display {}", index + 1)),
+                "x": monitor.x().unwrap_or(0),
+                "y": monitor.y().unwrap_or(0),
+                "width": monitor.width().unwrap_or(0),
+                "height": monitor.height().unwrap_or(0),
+                "primary": monitor.is_primary().unwrap_or(false),
+            })
+        })
+        .collect()
+}
+
 fn handle_session_control_message(
     message: &DataChannelMessage,
+    can_monitor: bool,
     can_clipboard: bool,
+    monitors: &[Monitor],
+    selected_monitor: &Arc<StdMutex<Option<usize>>>,
 ) -> Option<serde_json::Value> {
     let text = std::str::from_utf8(&message.data).ok()?;
     let value = serde_json::from_str::<serde_json::Value>(text).ok()?;
@@ -3353,6 +3399,52 @@ fn handle_session_control_message(
         .cloned()
         .unwrap_or(serde_json::Value::Null);
     match action {
+        "monitor_list" if can_monitor => Some(serde_json::json!({
+            "type": "monitor",
+            "action": "list",
+            "monitors": monitor_catalog(monitors),
+            "selectedMonitorId": selected_monitor.lock().ok().and_then(|selected| *selected),
+        })),
+        "monitor_select" if can_monitor => {
+            let monitor_id = value
+                .get("monitorId")
+                .and_then(serde_json::Value::as_u64)
+                .map(|id| id as usize);
+            let valid = monitor_id.is_some_and(|id| id < monitors.len());
+            if valid {
+                if let Ok(mut selected) = selected_monitor.lock() {
+                    *selected = monitor_id;
+                }
+                Some(serde_json::json!({
+                    "type": "monitor",
+                    "action": "selected",
+                    "monitorId": monitor_id,
+                    "monitors": monitor_catalog(monitors),
+                }))
+            } else {
+                Some(serde_json::json!({
+                    "type": "monitor",
+                    "action": "error",
+                    "reason": "the requested display is not available",
+                }))
+            }
+        }
+        "monitor_all" if can_monitor => {
+            if let Ok(mut selected) = selected_monitor.lock() {
+                *selected = None;
+            }
+            Some(serde_json::json!({
+                "type": "monitor",
+                "action": "selected",
+                "monitorId": serde_json::Value::Null,
+                "monitors": monitor_catalog(monitors),
+            }))
+        }
+        "monitor_list" | "monitor_select" | "monitor_all" => Some(serde_json::json!({
+            "type": "monitor",
+            "action": "error",
+            "reason": "display control permission was not granted",
+        })),
         "presence" => Some(serde_json::json!({
             "type": "presence",
             "status": "endpoint_ready",
@@ -3773,6 +3865,7 @@ async fn accept_webrtc_offer(
     can_terminal: bool,
     can_file_transfer: bool,
     can_system_manage: bool,
+    can_monitor: bool,
     client: Arc<AgentClient>,
     session_id: String,
 ) -> Result<Arc<webrtc::peer_connection::RTCPeerConnection>> {
@@ -3838,14 +3931,18 @@ async fn accept_webrtc_offer(
 
     let data_client = client.clone();
     let data_session_id = session_id.clone();
+    let monitor_selection = Arc::new(StdMutex::new(None::<usize>));
     let terminal_state = Arc::new(Mutex::new(None::<Child>));
     let file_transfers: UploadTransfers = Arc::new(Mutex::new(HashMap::new()));
+    let publisher_monitor_selection = monitor_selection.clone();
     peer.on_data_channel(Box::new(move |channel: Arc<RTCDataChannel>| {
         let can_control = can_control;
         let can_clipboard = can_clipboard;
         let can_terminal = can_terminal;
         let can_file_transfer = can_file_transfer;
         let can_system_manage = can_system_manage;
+        let can_monitor = can_monitor;
+        let monitor_selection = monitor_selection.clone();
         let terminal_state = terminal_state.clone();
         let file_transfers = file_transfers.clone();
         let client = data_client.clone();
@@ -3896,7 +3993,14 @@ async fn accept_webrtc_offer(
                                 .and_then(serde_json::Value::as_str)
                                 .map(str::to_owned)
                         });
-                    if let Some(response) = handle_session_control_message(&message, can_clipboard)
+                    let monitors = Monitor::all().unwrap_or_default();
+                    if let Some(response) = handle_session_control_message(
+                        &message,
+                        can_monitor,
+                        can_clipboard,
+                        &monitors,
+                        &monitor_selection,
+                    )
                     {
                         let response_action = response
                             .get("action")
@@ -4108,7 +4212,13 @@ async fn accept_webrtc_offer(
                         if let Err(error) = client.audit_control(&session_id, &audit).await { eprintln!("system audit: {error:#}"); }
                     });
                 } else {
-                    let audit = handle_control_message(&message, can_control);
+                    let monitors = Monitor::all().unwrap_or_default();
+                    let audit = handle_control_message(
+                        &message,
+                        can_control,
+                        &monitors,
+                        &monitor_selection,
+                    );
                     // Pointer motion is deliberately not written to the audit log: it is
                     // high-frequency telemetry, contains no useful operator intent, and
                     // would add avoidable API/database latency. Button, wheel, and
@@ -4158,7 +4268,7 @@ async fn accept_webrtc_offer(
     let _ = client
         .diagnostic(&session_id, "screen.publisher_started", None)
         .await;
-    start_screen_publisher(video_track, client, session_id);
+    start_screen_publisher(video_track, client, session_id, publisher_monitor_selection);
     println!("Sent WebRTC SDP answer; publishing screen frames");
     Ok(peer)
 }
@@ -4258,6 +4368,9 @@ async fn run_relay_connection(
                                     && permissions
                                         .iter()
                                         .any(|permission| permission == "elevation"),
+                                permissions
+                                    .iter()
+                                    .any(|permission| permission == "view_screen"),
                                 client.clone(),
                                 session_id.to_owned(),
                             )
@@ -4445,13 +4558,18 @@ async fn consent(config_path: PathBuf, session_id: String, granted: bool) -> Res
     Ok(())
 }
 
-fn capture_desktop_rgb(monitors: &[Monitor]) -> Result<(Vec<u8>, usize, usize)> {
+fn capture_desktop_rgb(
+    monitors: &[Monitor],
+    selected_monitor: Option<usize>,
+) -> Result<(Vec<u8>, usize, usize)> {
     if monitors.is_empty() {
         return Err(anyhow!("no display found"));
     }
     let captured = monitors
         .iter()
-        .map(|monitor| {
+        .enumerate()
+        .filter(|(index, _)| selected_monitor.is_none_or(|selected| selected == *index))
+        .map(|(_, monitor)| {
             let offset_x = monitor.x().unwrap_or(0);
             let offset_y = monitor.y().unwrap_or(0);
             monitor
@@ -4534,8 +4652,39 @@ fn draw_cursor(rgb: &mut [u8], width: usize, height: usize, x: i32, y: i32) {
     }
 }
 
-fn capture_encoded_frame(encoder: &mut Encoder, monitors: &[Monitor]) -> Result<Vec<u8>> {
-    let (rgb, width, height) = capture_desktop_rgb(monitors)?;
+fn capture_dimensions(monitors: &[Monitor], selected_monitor: Option<usize>) -> Result<(usize, usize)> {
+    let selected = monitors
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| selected_monitor.is_none_or(|selected| selected == *index))
+        .map(|(_, monitor)| {
+            (
+                monitor.x().unwrap_or(0),
+                monitor.y().unwrap_or(0),
+                monitor.width().unwrap_or(0) as i32,
+                monitor.height().unwrap_or(0) as i32,
+            )
+        })
+        .collect::<Vec<_>>();
+    if selected.is_empty() {
+        return Err(anyhow!("no selected display found"));
+    }
+    if selected_monitor.is_some() {
+        return Ok((selected[0].2.max(1) as usize, selected[0].3.max(1) as usize));
+    }
+    let left = selected.iter().map(|(x, _, _, _)| *x).min().unwrap_or(0);
+    let top = selected.iter().map(|(_, y, _, _)| *y).min().unwrap_or(0);
+    let right = selected.iter().map(|(x, _, width, _)| *x + *width).max().unwrap_or(left + 1);
+    let bottom = selected.iter().map(|(_, y, _, height)| *y + *height).max().unwrap_or(top + 1);
+    Ok(((right - left).max(1) as usize, (bottom - top).max(1) as usize))
+}
+
+fn capture_encoded_frame(
+    encoder: &mut Encoder,
+    monitors: &[Monitor],
+    selected_monitor: Option<usize>,
+) -> Result<Vec<u8>> {
+    let (rgb, width, height) = capture_desktop_rgb(monitors, selected_monitor)?;
     let yuv = YUVBuffer::from_rgb_source(RgbSliceU8::new(&rgb, (width, height)));
     Ok(encoder.encode(&yuv)?.to_vec())
 }
@@ -4544,6 +4693,7 @@ fn start_screen_publisher(
     track: Arc<TrackLocalStaticSample>,
     client: Arc<AgentClient>,
     session_id: String,
+    selected_monitor: Arc<StdMutex<Option<usize>>>,
 ) {
     let (sender, mut receiver) = tokio::sync::mpsc::channel::<Vec<u8>>(1);
     let runtime_handle = tokio::runtime::Handle::current();
@@ -4576,8 +4726,31 @@ fn start_screen_publisher(
                 return;
             }
         };
+        let mut encoder_dimensions: Option<(usize, usize)> = None;
         loop {
-            match capture_encoded_frame(&mut encoder, &screens) {
+            let selected = selected_monitor.lock().ok().and_then(|selection| *selection);
+            match capture_dimensions(&screens, selected) {
+                Ok(dimensions) if encoder_dimensions != Some(dimensions) => {
+                    match Encoder::new() {
+                        Ok(new_encoder) => {
+                            encoder = new_encoder;
+                            encoder_dimensions = Some(dimensions);
+                        }
+                        Err(error) => {
+                            eprintln!("screen encoder reset: {error}");
+                            thread::sleep(Duration::from_millis(250));
+                            continue;
+                        }
+                    }
+                }
+                Err(error) => {
+                    eprintln!("screen capture dimensions: {error:#}");
+                    thread::sleep(Duration::from_millis(250));
+                    continue;
+                }
+                _ => {}
+            }
+            match capture_encoded_frame(&mut encoder, &screens, selected) {
                 Ok(frame) => {
                     if !frame_reported.swap(true, Ordering::Relaxed) {
                         let diagnostic_client = client.clone();
