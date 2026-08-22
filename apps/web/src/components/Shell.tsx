@@ -260,6 +260,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const [sessionKeyEmailNotice, setSessionKeyEmailNotice] = useState<string | null>(null)
   const [sessionKeyBusy, setSessionKeyBusy] = useState(false)
   const [sessionKeyError, setSessionKeyError] = useState<string | null>(null)
+  const [copiedSessionCode, setCopiedSessionCode] = useState(false)
   const perms = new Set(auth.memberships.flatMap((m) => m.permissions))
   const remoteWrapRef = useRef<HTMLDivElement>(null)
   const notificationsWrapRef = useRef<HTMLDivElement>(null)
@@ -455,6 +456,26 @@ export function Shell({ children }: { children: ReactNode }) {
                 ) : sessionKey ? (
                   <>
                     <div className="session-key-code">{sessionKey}</div>
+                    <div className="session-key-actions-row">
+                      <button className="btn btn-ghost btn-xs" onClick={() => { navigator.clipboard.writeText(sessionKey).then(() => setCopiedSessionCode(true)); window.setTimeout(() => setCopiedSessionCode(false), 2000) }}><Icon name="copy" size={13} />{copiedSessionCode ? 'Copied' : 'Copy code'}</button>
+                      <button className="btn btn-ghost btn-xs" onClick={() => {
+                        setSessionKeyBusy(true)
+                        setSessionKey(null)
+                        setSessionKeyId(null)
+                        setSessionKeyRecipient('')
+                        setSessionKeyEmailNotice(null)
+                        setSessionKeyError(null)
+                        {
+                          const remotePerms: string[] = ['view_screen']
+                          if (perms.has('remote.control')) remotePerms.push('control_input', 'clipboard')
+                          if (perms.has('remote.elevated')) remotePerms.push('terminal', 'elevation', 'file_transfer', 'system_manage')
+                          createAdhocSession({ permissions: remotePerms as any, expiresInMin: 10, codeLength: 12 })
+                            .then((res) => { setSessionKey(res.code); setSessionKeyId(res.id); setSessionKeyExpires(res.expiresAt) })
+                            .catch((err) => { setSessionKey(null); setSessionKeyError(err instanceof Error ? err.message : 'Failed to generate key.') })
+                            .finally(() => setSessionKeyBusy(false))
+                        }
+                      }}><Icon name="refresh" size={13} />Refresh</button>
+                    </div>
                     <span className="session-key-validity">Valid for 10 minutes · single use</span>
                     <p className="session-key-instructions">Send this 12-digit code to the person you’re helping. They can visit the link below, download the helper, enter the code, and approve the access request on their device.</p>
                     <div className="session-key-connect-url">{window.location.origin}/connect/{sessionKey}</div>
