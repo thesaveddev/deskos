@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ChangeEvent, type MouseEvent, type Po
 import { Link, useLocation, useParams } from 'react-router-dom'
 import { Shell } from '../components/Shell.js'
 import { Alert, useConfirm } from '../components/ui.js'
+import { api } from '../lib/api.js'
 import { clearSessionDock, downloadRecording, endSession, getSession, inviteParticipant, joinSession, listMessages, listParticipants, listRecordings, sendMessage, transferSession, uploadRecording, writeSessionDock, type RemoteSession, type SessionEvent, type SessionParticipant, type SessionRecording } from '../lib/sessions.js'
 import { appendSessionChat, disposeSessionRuntime, endSessionRuntime, hasSessionRuntime, sendSessionChat, sendSessionControl, sendSessionFiles, sendSessionInput, sendSessionSystem, sendSessionTerminal, subscribeSessionRuntime, type RemoteMonitor, type RuntimeConsoleState } from '../lib/sessionRuntime.js'
 
@@ -69,6 +70,10 @@ export default function SessionConsolePage() {
   const [participantNotice, setParticipantNotice] = useState<string | null>(null)
   const [inviteUserId, setInviteUserId] = useState('')
   const [inviteRole, setInviteRole] = useState<'technician' | 'observer'>('technician')
+  const [inviteSearch, setInviteSearch] = useState('')
+  const [inviteResults, setInviteResults] = useState<Array<{ id: string; name: string; email: string }>>([])
+  const [inviteSearching, setInviteSearching] = useState(false)
+  const [inviteDropdownOpen, setInviteDropdownOpen] = useState(false)
   const [immersive, setImmersive] = useState(false)
   const [recordingActive, setRecordingActive] = useState(false)
   const [recordingBusy, setRecordingBusy] = useState(false)
@@ -386,6 +391,17 @@ export default function SessionConsolePage() {
     if (!id || !canSystemManage || !await confirm(`${action === 'service_start' ? 'Start' : 'Stop'} ${name}?`, { title: `${action === 'service_start' ? 'Start' : 'Stop'} service`, confirmLabel: action === 'service_start' ? 'Start service' : 'Stop service', destructive: action === 'service_stop' })) return
     setSysdataStatus(`${action === 'service_start' ? 'Starting' : 'Stopping'} ${name}…`)
     sendSessionSystem(id, { action, name }, controlArmed)
+  }
+
+  const searchMembers = async (query: string) => {
+    if (query.length < 2) { setInviteResults([]); return }
+    setInviteSearching(true)
+    try {
+      const params = new URLSearchParams({ search: query })
+      const result = await api<{ members: Array<{ membership_id: string; org_role: string; status: string; user_id: string; name: string; email: string }> }>(`/members?${params}`)
+      setInviteResults(result.members.filter((m) => m.status === 'active').map((m) => ({ id: m.user_id, name: m.name, email: m.email })))
+    } catch { setInviteResults([]) }
+    finally { setInviteSearching(false) }
   }
 
   const sendChat = async () => {
@@ -742,8 +758,19 @@ export default function SessionConsolePage() {
                 </div>
               ))}
             </div>
-            <div className="clipboard-actions">
-              <input className="field-input" value={inviteUserId} onChange={(event) => setInviteUserId(event.target.value)} placeholder="User ID" />
+            <div className="session-invite-wrap">
+              <div className="session-invite-picker">
+                <input className="field-input" value={inviteSearch} onChange={(event) => { const q = event.target.value; setInviteSearch(q); setInviteUserId(''); setInviteDropdownOpen(true); void searchMembers(q) }} onFocus={() => { if (inviteSearch.length >= 2) setInviteDropdownOpen(true) }} onBlur={() => setTimeout(() => setInviteDropdownOpen(false), 150)} placeholder="Search by name or email" />
+                {inviteDropdownOpen && inviteSearch.length >= 2 ? (
+                  <div className="session-invite-results">
+                    {inviteSearching ? <div className="session-invite-empty">Searching…</div> : inviteResults.length === 0 ? <div className="session-invite-empty">No users found</div> : inviteResults.map((u) => (
+                      <button key={u.id} type="button" className="session-invite-option" onMouseDown={(e) => { e.preventDefault(); setInviteUserId(u.id); setInviteSearch(`${u.name} (${u.email})`); setInviteDropdownOpen(false) }}>
+                        <strong>{u.name}</strong><small>{u.email}</small>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
               <select className="field-input" value={inviteRole} onChange={(event) => setInviteRole(event.target.value as 'technician' | 'observer')}>
                 <option value="technician">Technician</option>
                 <option value="observer">Observer</option>

@@ -292,3 +292,33 @@
 .chat-members-state { display: grid; place-items: center; min-height: 180px; color: var(--text-3); }
 .visually-hidden { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0, 0, 0, 0) !important; white-space: nowrap !important; border: 0 !important; }
 @media (max-width: 760px) { .chat-layout { grid-template-columns: 1fr; min-height: 0; } .chat-rooms { max-height: 220px; } .chat-thread-wrap { min-height: 560px; } .chat-message { max-width: 94%; } .chat-thread-head { align-items: flex-start; flex-direction: column; } .chat-thread-actions { width: 100%; justify-content: space-between; } .chat-composer-foot { align-items: stretch; flex-direction: column; } .chat-composer-tools { justify-content: space-between; } .chat-composer-foot > .btn { width: 100%; } .chat-members-summary { flex-wrap: wrap; } .chat-members-summary .btn { margin-left: 30px; } }
+
+/* ---- enrol / deploy modal ---- */
+.enrol-modal-content { display: flex; flex-direction: column; gap: 16px; }
+.enrol-modal-intro { color: var(--text-2); font-size: 13px; line-height: 1.5; margin: 0; }
+.enrol-method-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.enrol-method-grid article { display: flex; flex-direction: column; gap: 8px; padding: 16px; background: var(--bg-2); border: 1px solid var(--line-2); border-radius: var(--radius); }
+.enrol-method-icon { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 8px; background: var(--accent); color: #1b1408; flex-shrink: 0; }
+.enrol-method-grid h3 { font-size: 14px; font-weight: 600; margin: 0; }
+.enrol-method-grid p { font-size: 12px; color: var(--text-2); margin: 0; line-height: 1.5; }
+.enrol-secret { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--bg-0); border: 1px solid var(--line-2); border-radius: var(--radius-sm); }
+.enrol-secret code { flex: 1; color: var(--accent-hi); font-family: var(--font-mono); font-size: 14px; font-weight: 600; letter-spacing: 0.04em; word-break: break-all; }
+.enrol-endpoints { display: flex; flex-direction: column; gap: 6px; padding: 12px; background: var(--bg-2); border: 1px solid var(--line-1); border-radius: var(--radius); }
+.enrol-endpoints .etch { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-3); }
+.enrol-endpoints > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12px; }
+.enrol-endpoints > div span { color: var(--text-2); }
+.enrol-endpoints > div code { font-family: var(--font-mono); font-size: 12px; color: var(--accent); background: var(--bg-0); padding: 2px 8px; border-radius: 4px; }
+.enrol-modal-note { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; color: var(--text-3); line-height: 1.5; }
+.enrol-modal-note svg { flex-shrink: 0; margin-top: 2px; }
+@media (max-width: 600px) { .enrol-method-grid { grid-template-columns: 1fr; } }
+
+/* ---- session invite user picker ---- */
+.session-invite-wrap { display: flex; flex-direction: column; gap: 6px; }
+.session-invite-picker { position: relative; }
+.session-invite-results { position: absolute; top: 100%; left: 0; right: 0; z-index: 50; margin-top: 4px; background: var(--bg-1); border: 1px solid var(--line-2); border-radius: var(--radius); box-shadow: var(--shadow-lg); max-height: 200px; overflow-y: auto; }
+.session-invite-option { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; background: none; border: none; border-bottom: 1px solid var(--line-1); text-align: left; cursor: pointer; font-family: inherit; color: var(--text-1); }
+.session-invite-option:hover { background: var(--bg-2); }
+.session-invite-option:last-child { border-bottom: none; }
+.session-invite-option strong { font-size: 13px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-invite-option small { color: var(--text-3); font-size: 11px; flex-shrink: 0; }
+.session-invite-empty { padding: 12px; text-align: center; color: var(--text-3); font-size: 12px; }

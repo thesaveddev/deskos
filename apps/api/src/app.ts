@@ -101,6 +101,7 @@ function friendlyValidationMessage(error: ZodError): string {
     refreshToken: 'your session token',
     mfaCode: 'your authentication code',
     code: 'the verification code',
+    userId: 'a valid user',
   }
   const firstField = String(error.issues[0]?.path[0] ?? '')
   if (firstField && labels[firstField]) return `Please enter ${labels[firstField]}.`
