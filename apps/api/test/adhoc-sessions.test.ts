@@ -171,6 +171,105 @@ describe('ad-hoc (unmanaged) support sessions', () => {
     expect(sessions.json().sessions.map((session: { id: string }) => session.id)).toContain(claim.json().session.id)
   })
 
+  it('supports the end-user browser companion: consent, relay join, and chat over device-token auth', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/v1/adhoc-sessions',
+      headers: authHeaders(owner),
+      payload: { permissions: ['view_screen', 'control_input'], reason: 'Companion test' },
+    })
+    const { code } = created.json()
+    const claim = await app.inject({ method: 'POST', url: `/api/connect/${code}/claim`, payload: { name: 'companion-browser', os: 'windows' } })
+    expect(claim.statusCode).toBe(201)
+    const deviceToken = claim.json().deviceToken as string
+    const sessionId = claim.json().session.id as string
+    const agentHeaders = { authorization: `Bearer ${deviceToken}` }
+
+    // Missing and wrong device tokens are rejected.
+    const unauthorized = await app.inject({ method: 'GET', url: `/api/connect/${code}/messages` })
+    expect(unauthorized.statusCode).toBe(401)
+    const wrongToken = await app.inject({
+      method: 'GET',
+      url: `/api/connect/${code}/messages`,
+      headers: { authorization: 'Bearer reydesk_dev_wrong' },
+    })
+    expect(wrongToken.statusCode).toBe(401)
+
+    // Grant consent through the browser companion route.
+    const consent = await app.inject({
+      method: 'POST',
+      url: `/api/connect/${code}/consent`,
+      headers: agentHeaders,
+      payload: { granted: true, permissions: ['view_screen'] },
+    })
+    expect(consent.statusCode).toBe(200)
+    expect(consent.json().session.state).toBe('connecting')
+    expect(consent.json().joinToken).toBeTruthy()
+
+    // Relay join issues an agent ticket for the session.
+    const join = await app.inject({ method: 'POST', url: `/api/connect/${code}/join`, headers: agentHeaders, payload: {} })
+    expect(join.statusCode).toBe(200)
+    expect(join.json().joinToken).toBeTruthy()
+    expect(join.json().relayUrl).toMatch(/^ws:/)
+
+    // Chat round-trip.
+    const sent = await app.inject({
+      method: 'POST',
+      url: `/api/connect/${code}/messages`,
+      headers: agentHeaders,
+      payload: { body: 'Hello from the browser' },
+    })
+    expect(sent.statusCode).toBe(201)
+    const history = await app.inject({ method: 'GET', url: `/api/connect/${code}/messages`, headers: agentHeaders })
+    expect(history.statusCode).toBe(200)
+    expect(history.json().messages.map((message: { body: string }) => message.body)).toContain('Hello from the browser')
+
+    // The native helper can attach as the streaming engine with just the code.
+    const agentJoin = await app.inject({ method: 'POST', url: `/api/connect/${code}/agent-join`, payload: {} })
+    expect(agentJoin.statusCode).toBe(200)
+    expect(agentJoin.json().sessionId).toBe(sessionId)
+    expect(agentJoin.json().permissions).toContain('view_screen')
+    expect(agentJoin.json().joinToken).toBeTruthy()
+
+    // Consent is only honoured while the session awaits it.
+    const lateDeny = await app.inject({
+      method: 'POST',
+      url: `/api/connect/${code}/consent`,
+      headers: agentHeaders,
+      payload: { granted: false },
+    })
+    expect(lateDeny.statusCode).toBe(409)
+  })
+
+  it('declines support from the browser companion and expires the credential', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/v1/adhoc-sessions',
+      headers: authHeaders(owner),
+      payload: { permissions: ['view_screen'], reason: 'Deny test' },
+    })
+    const { code } = created.json()
+    const claim = await app.inject({ method: 'POST', url: `/api/connect/${code}/claim`, payload: { name: 'deny-browser' } })
+    expect(claim.statusCode).toBe(201)
+    const deviceToken = claim.json().deviceToken as string
+    const agentHeaders = { authorization: `Bearer ${deviceToken}` }
+
+    const denied = await app.inject({
+      method: 'POST',
+      url: `/api/connect/${code}/consent`,
+      headers: agentHeaders,
+      payload: { granted: false },
+    })
+    expect(denied.statusCode).toBe(200)
+    expect(denied.json().session.state).toBe('denied')
+
+    // The credential is revoked and the adhoc session is ended.
+    const heartbeat = await app.inject({ method: 'POST', url: '/api/v1/agent/heartbeat', headers: agentHeaders, payload: {} })
+    expect(heartbeat.statusCode).toBe(401)
+    const info = await app.inject({ method: 'GET', url: `/api/connect/${code}` })
+    expect(info.statusCode).toBe(404)
+  })
+
   it('links the claimed session to the issuing technician (participants + event + live state)', async () => {
     const created = await app.inject({
       method: 'POST',

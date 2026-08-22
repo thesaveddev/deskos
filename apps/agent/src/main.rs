@@ -1162,6 +1162,100 @@ async fn claim_and_save(
     Ok((claimed.session, config))
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentJoinResponse {
+    session_id: String,
+    join_token: String,
+    relay_url: String,
+    permissions: Vec<String>,
+}
+
+/// Attach to a session that was already claimed (browser companion flow) using
+/// the support code as the bearer credential. Returns a fresh relay ticket.
+async fn agent_join(api_url: &str, code: &str) -> Result<AgentJoinResponse> {
+    let response = Client::new()
+        .post(format!(
+            "{}/api/connect/{code}/agent-join",
+            api_url.trim_end_matches('/')
+        ))
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .context("attach-to-session request failed")?
+        .error_for_status()
+        .context("the support session is no longer available")?;
+    response
+        .json::<AgentJoinResponse>()
+        .await
+        .context("invalid attach response")
+}
+
+/// Streaming-engine mode: the browser companion owns consent and chat, so the
+/// helper only connects the relay, streams the screen, and relays chat. No
+/// device identity is required — the join ticket is issued by the API.
+async fn run_streamer(
+    api_url: String,
+    code: String,
+    mut shutdown: Option<mpsc::UnboundedReceiver<()>>,
+) -> Result<()> {
+    let mut backoff_seconds = 2_u64;
+    let mut attempt = 0_u32;
+    loop {
+        let joined = agent_join(&api_url, &code).await?;
+        validate_endpoint(&joined.relay_url, true)?;
+        let config = AgentConfig {
+            api_url: api_url.clone(),
+            relay_url: joined.relay_url.clone(),
+            device_id: joined.session_id.clone(),
+            device_token: String::new(),
+            name: "Streaming helper".to_owned(),
+            hostname: hostname(),
+            agent_version: "deskos-helper".to_owned(),
+            device_type: default_device_type(),
+            heartbeat_interval_sec: 30,
+        };
+        let client = Arc::new(AgentClient::new(&config));
+        let should_reconnect = match run_relay_connection(
+            &config,
+            &joined.session_id,
+            &joined.join_token,
+            &joined.permissions,
+            client,
+        )
+        .await
+        {
+            Ok(value) => value,
+            Err(error) => {
+                eprintln!("streamer relay: {error:#}");
+                true
+            }
+        };
+        if !should_reconnect {
+            return Ok(());
+        }
+        attempt += 1;
+        if attempt >= 5 {
+            return Err(anyhow!("the support session ended or could not be reached"));
+        }
+        println!("Streamer disconnected; retrying in {backoff_seconds}s (attempt {attempt})");
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_secs(backoff_seconds)) => {}
+            _ = async {
+                match shutdown.as_mut() {
+                    Some(receiver) => {
+                        let _ = receiver.recv().await;
+                    }
+                    None => std::future::pending::<()>().await,
+                }
+            } => {
+                return Ok(());
+            }
+        }
+        backoff_seconds = (backoff_seconds.saturating_mul(2)).min(30);
+    }
+}
+
 async fn run_helper(
     api_url: String,
     relay_url: String,
@@ -1171,16 +1265,31 @@ async fn run_helper(
 ) -> Result<()> {
     let (code, claim_token) = parse_support_input(&code)?;
     let fingerprint = claim_token.as_ref().map(|_| new_claim_fingerprint());
-    let (session, config) = claim_and_save(
-        api_url,
+    let (session, config) = match claim_and_save(
+        api_url.clone(),
         relay_url,
-        code,
+        code.clone(),
         claim_token,
         fingerprint,
         name,
         config_path.clone(),
     )
-    .await?;
+    .await
+    {
+        Ok(value) => value,
+        Err(claim_error) => {
+            // The code may already be claimed by the browser companion page;
+            // attach as the streaming engine instead of failing.
+            match agent_join(&api_url, &code).await {
+                Ok(_joined) => {
+                    println!("Attaching to an already-claimed support session; streaming screen only.");
+                    run_streamer(api_url.clone(), code.clone(), None).await?;
+                    return Ok(());
+                }
+                Err(_) => return Err(claim_error),
+            }
+        }
+    };
     println!(
         "Support session {} ({}) — saved helper credentials to {}",
         session.id,
@@ -1437,7 +1546,7 @@ async fn run_helper_native(
     config_path: PathBuf,
 ) -> Result<()> {
     let (submit, mut receiver) = tokio::sync::mpsc::unbounded_channel::<HelperEvent>();
-    let (shutdown_tx, shutdown_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+    let (shutdown_tx, _shutdown_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
     let status = Arc::new(StdMutex::new("Enter your technician's 12-digit code to begin.".to_owned()));
     let hwnd_holder: Arc<std::sync::atomic::AtomicPtr<std::ffi::c_void>> = Arc::new(std::sync::atomic::AtomicPtr::new(std::ptr::null_mut()));
 
@@ -1467,7 +1576,7 @@ async fn run_helper_native(
                 match claim_and_save(
                     api_url.clone(),
                     String::new(),
-                    code,
+                    code.clone(),
                     claim_token,
                     fingerprint,
                     name.clone(),
@@ -1476,7 +1585,9 @@ async fn run_helper_native(
                 .await
                 {
                     Ok((session, config)) => {
-                        // Close the code-entry window
+                        // Close the code-entry window. Its WM_DESTROY sends a
+                        // shutdown signal on the *code window* channel; the agent
+                        // below uses its own channel so this close cannot kill it.
                         let ptr = hwnd_holder.load(std::sync::atomic::Ordering::SeqCst);
                         if !ptr.is_null() {
                             unsafe {
@@ -1490,6 +1601,11 @@ async fn run_helper_native(
                         tokio::time::sleep(Duration::from_millis(300)).await;
                         let _ = window.await;
 
+                        // The session window (Disconnect / Exit / X) is the only
+                        // thing that stops the agent.
+                        let (agent_shutdown_tx, agent_shutdown_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+                        helper_ui::windows_ui::set_session_shutdown(agent_shutdown_tx);
+
                         // Open the session management window on a background thread
                         let session_id = session.id.clone();
                         let session_window = tokio::task::spawn_blocking(move || {
@@ -1498,20 +1614,73 @@ async fn run_helper_native(
                             }
                         });
 
-                        // Run the agent (consent, relay, chat, telemetry)
-                        let agent_result = run_agent(config_path.clone(), None, true, Some(shutdown_rx)).await;
-                        let _ = AgentClient::new(&config).end_session(&session.id).await;
-
-                        // When the agent finishes, close the session window
-                        // by posting WM_QUIT — but we need the HWND. For simplicity,
-                        // the session window will close itself when it detects disconnect.
-                        let _ = session_window.await;
-                        agent_result?;
-                        return Ok(());
+                        // Run the agent (consent, relay, chat, telemetry) until
+                        // the technician ends the session or the user closes the
+                        // session window.
+                        let agent_task = tokio::spawn(run_agent(config_path.clone(), None, true, Some(agent_shutdown_rx)));
+                        tokio::select! {
+                            agent_result = agent_task => {
+                                // Technician ended the session; close the UI window.
+                                helper_ui::windows_ui::close_session_window();
+                                agent_result.context("agent task failed")??;
+                                let _ = AgentClient::new(&config).end_session(&session.id).await;
+                                return Ok(());
+                            }
+                            _ = session_window => {
+                                // User closed the window; the shutdown signal has
+                                // already told the agent to stop. End the session
+                                // server-side as a final cleanup.
+                                let _ = AgentClient::new(&config).end_session(&session.id).await;
+                                return Ok(());
+                            }
+                        }
                     }
                     Err(error) => {
-                        if let Ok(mut current) = status.lock() {
-                            *current = format!("Connection failed: {error}");
+                        // The code may already be claimed by the browser companion
+                        // page — attach as the streaming engine instead of failing.
+                        match agent_join(&api_url, &code).await {
+                            Ok(joined) => {
+                                if let Ok(mut current) = status.lock() {
+                                    *current = "Connecting to your support session…".to_owned();
+                                }
+                                let ptr = hwnd_holder.load(std::sync::atomic::Ordering::SeqCst);
+                                if !ptr.is_null() {
+                                    unsafe {
+                                        windows::Win32::UI::WindowsAndMessaging::PostMessageW(
+                                            HWND(ptr as isize),
+                                            WM_CLOSE, WPARAM(0), LPARAM(0),
+                                        );
+                                    }
+                                }
+                                tokio::time::sleep(Duration::from_millis(300)).await;
+                                let _ = window.await;
+
+                                let (agent_shutdown_tx, agent_shutdown_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+                                helper_ui::windows_ui::set_session_shutdown(agent_shutdown_tx);
+
+                                let stream_session_id = joined.session_id.clone();
+                                let session_window = tokio::task::spawn_blocking(move || {
+                                    if let Err(error) = helper_ui::windows_ui::run_session_window(&stream_session_id) {
+                                        eprintln!("[session-window] {error:#}");
+                                    }
+                                });
+                                let agent_task = tokio::spawn(run_streamer(api_url.clone(), code.clone(), Some(agent_shutdown_rx)));
+                                tokio::select! {
+                                    agent_result = agent_task => {
+                                        helper_ui::windows_ui::close_session_window();
+                                        agent_result.context("streamer task failed")??;
+                                        return Ok(());
+                                    }
+                                    _ = session_window => {
+                                        return Ok(());
+                                    }
+                                }
+                            }
+                            Err(_) => {
+                                if let Ok(mut current) = status.lock() {
+                                    *current = format!("Connection failed: {error}");
+                                }
+                            }
                         }
                     }
                 }
@@ -1907,14 +2076,16 @@ async fn drain_chat_outbox(
                 continue;
             }
             // Persist durably first so a dropped relay never loses the reply.
+            // Persistence is best-effort: in streamer mode there is no device
+            // identity, so the relay must still deliver even when persist fails.
             if let Err(error) = client.send_chat(&session_id, body).await {
                 eprintln!("[chat] persist reply: {error:#}");
-                continue;
             }
             if let Err(error) =
                 send_relay(&writer, serde_json::json!({ "type": "chat", "body": body })).await
             {
                 eprintln!("[chat] relay reply: {error:#}");
+                continue;
             }
             remove_mailbox_message(&path);
         }
@@ -4398,6 +4569,14 @@ async fn run_relay_connection(
                         if description.get("type").and_then(serde_json::Value::as_str)
                             == Some("offer")
                         {
+                            // Only answer the first offer. The browser companion
+                            // page can join the same relay room for chat, which
+                            // makes the technician re-offer; answering twice would
+                            // create a second (orphaned) media peer.
+                            if peer.is_some() {
+                                println!("Ignoring additional WebRTC offer (peer already negotiated)");
+                                continue;
+                            }
                             let sdp = description
                                 .get("sdp")
                                 .and_then(serde_json::Value::as_str)

@@ -665,7 +665,12 @@ export default function TicketDetailPage() {
   }
 
   const viewerStage = previewImage ? (
-    <div className="image-viewer-stage" onDoubleClick={() => setPreviewFullscreen((value) => !value)}>
+    <div className="image-viewer-stage" onDoubleClick={() => setPreviewFullscreen((value) => !value)} onWheel={(event) => {
+      if (!event.ctrlKey && !event.metaKey) return
+      event.preventDefault()
+      if (event.deltaY < 0) zoomIn()
+      else zoomOut()
+    }}>
       <img src={previewImage.url} alt={previewImage.filename} style={{ width: `${previewZoom * 100}%` }} draggable={false} />
     </div>
   ) : null

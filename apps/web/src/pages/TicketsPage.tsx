@@ -203,6 +203,11 @@ export default function TicketsPage() {
 
       {/* Keep the queue header compact; the full label lives with the filter action. */}
       <div className="tickets-toolbar">
+        {canManageLocks ? (
+          <button type="button" className="ticket-lock-admin-icon" onClick={() => { setShowLockModal(true); void loadLockedTickets() }} data-tooltip="Manage locked tickets" aria-label={`Manage locked tickets${lockedTickets.length ? ` (${lockedTickets.length})` : ''}`}>
+            <Icon name="lock" size={15} /><span className="tab-count">{lockedTickets.length}</span>
+          </button>
+        ) : null}
         <div className="tickets-filter-anchor">
           <button type="button" className={`btn btn-ghost btn-sm${showFilters ? ' active' : ''}`} onClick={() => setShowFilters((open) => !open)} aria-expanded={showFilters} aria-controls="ticket-filter-card">
             <Icon name="filter" size={14} />{showFilters ? 'Close filters' : 'Filter and sort the queue'}{hasActiveFilters ? ` · ${activeFilterCount}` : ''}
@@ -239,11 +244,7 @@ export default function TicketsPage() {
       </div>
 
       {canManageLocks ? (
-        <>
-          <button type="button" className="ticket-lock-admin-icon" onClick={() => { setShowLockModal(true); void loadLockedTickets() }} data-tooltip="Manage ticket locks" aria-label={`Manage ticket locks${lockedTickets.length ? ` (${lockedTickets.length})` : ''}`}>
-            <Icon name="lock" size={15} /><span className="tab-count">{lockedTickets.length}</span>
-          </button>
-          <Modal open={showLockModal} onClose={() => setShowLockModal(false)} title="Manage ticket locks" width={720}>
+        <Modal open={showLockModal} onClose={() => setShowLockModal(false)} title="Manage ticket locks" width={720}>
             <p className="modal-intro">Review active ticket locks and release one when an agent is unavailable. Releasing a lock does not change assignment.</p>
             {lockListError ? <div className="alert alert-error">{lockListError}</div> : null}
             {lockListLoading ? <span className="muted">Loading active locks…</span> : lockedTickets.length === 0 ? <div className="empty-state"><Icon name="unlock" size={20} /><p>No tickets are currently locked.</p></div> : <div className="ticket-lock-admin-list">{lockedTickets.map((lock) => (
@@ -253,8 +254,7 @@ export default function TicketsPage() {
                 <button type="button" className="btn btn-ghost btn-sm" onClick={() => void releaseLock(lock.ticket_id)} disabled={lockListLoading}><Icon name="unlock" size={14} />Release</button>
               </div>
             ))}</div>}
-          </Modal>
-        </>
+        </Modal>
       ) : null}
 
       {/* Quick filter tabs */}

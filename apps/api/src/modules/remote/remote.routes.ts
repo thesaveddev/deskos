@@ -179,7 +179,7 @@ async function appendTicketTimeline(
   )
 }
 
-async function issueJoinToken(
+export async function issueJoinToken(
   client: DbClient,
   app: FastifyInstance,
   tenantId: string,

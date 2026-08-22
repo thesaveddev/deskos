@@ -10,6 +10,7 @@ pub mod windows_ui {
     use std::sync::atomic::{AtomicPtr, Ordering};
     use std::sync::Once;
     use windows::Win32::Graphics::Gdi::{GetSysColorBrush, COLOR_WINDOW};
+    use windows::Win32::UI::Shell::{NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY, NOTIFYICONDATAW, Shell_NotifyIconW};
     use windows::Win32::UI::WindowsAndMessaging::*;
     use windows::core::PCWSTR;
 
@@ -253,6 +254,12 @@ pub mod windows_ui {
     const IDC_STATUS: i32 = 4005;
     const TIMER_POLL_INBOX: usize = 1;
 
+    const IDM_TRAY_OPEN: i32 = 4101;
+    const IDM_TRAY_DISCONNECT: i32 = 4102;
+    const IDM_TRAY_EXIT: i32 = 4103;
+    const WM_TRAY_CALLBACK: u32 = WM_APP + 1;
+    const TRAY_ID: u32 = 0x5245; // "RE"
+
     struct SessionWindow {
         session_id: String,
         last_message_count: usize,
@@ -260,6 +267,63 @@ pub mod windows_ui {
     }
 
     static SESSION_STATE: AtomicPtr<SessionWindow> = AtomicPtr::new(std::ptr::null_mut());
+
+    /// Sender used to stop the agent when the end user closes the session
+    /// window (Disconnect / Exit / X). The Rust/async agent half is started
+    /// by run_helper_native, which also owns the receiver.
+    static SESSION_SHUTDOWN: AtomicPtr<tokio::sync::mpsc::UnboundedSender<()>> = AtomicPtr::new(std::ptr::null_mut());
+
+    pub fn set_session_shutdown(sender: tokio::sync::mpsc::UnboundedSender<()>) {
+        let ptr = Box::into_raw(Box::new(sender));
+        let old = SESSION_SHUTDOWN.swap(ptr, std::sync::atomic::Ordering::SeqCst);
+        if !old.is_null() {
+            // SAFETY: only swapped here; the box was allocated here.
+            unsafe {
+                drop(Box::from_raw(old));
+            }
+        }
+    }
+
+    fn trigger_session_shutdown() {
+        let ptr = SESSION_SHUTDOWN.load(std::sync::atomic::Ordering::SeqCst);
+        if !ptr.is_null() {
+            // SAFETY: the box is only freed by set_session_shutdown, which is
+            // never called again after the window is running.
+            unsafe {
+                let _ = (*ptr).send(());
+            }
+        }
+    }
+
+    static SESSION_WINDOW_HWND: AtomicPtr<std::ffi::c_void> = AtomicPtr::new(std::ptr::null_mut());
+
+    /// Ask the session window to close (used when the technician ends the
+    /// session and the agent is winding down).
+    pub fn close_session_window() {
+        let ptr = SESSION_WINDOW_HWND.load(std::sync::atomic::Ordering::SeqCst);
+        if !ptr.is_null() {
+            // SAFETY: the HWND is only stored while the window is alive; the
+            // destroy path clears it before the window is freed.
+            unsafe {
+                let _ = PostMessageW(HWND(ptr as isize), WM_CLOSE, WPARAM(0), LPARAM(0));
+            }
+        }
+    }
+
+    fn build_tray_data(hwnd: HWND, tooltip: &str) -> NOTIFYICONDATAW {
+        let mut data = NOTIFYICONDATAW::default();
+        data.cbSize = std::mem::size_of::<NOTIFYICONDATAW>() as u32;
+        data.hWnd = hwnd;
+        data.uID = TRAY_ID;
+        data.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+        data.uCallbackMessage = WM_TRAY_CALLBACK;
+        // SAFETY: LoadIconW is safe to call with a null instance handle.
+        data.hIcon = unsafe { LoadIconW(None, IDI_APPLICATION).unwrap_or_default() };
+        for (slot, unit) in data.szTip.iter_mut().zip(tooltip.encode_utf16().chain(std::iter::once(0))) {
+            *slot = unit;
+        }
+        data
+    }
 
     fn session_chat_dir() -> std::path::PathBuf {
         let program_data = std::env::var("ProgramData")
@@ -318,6 +382,44 @@ pub mod windows_ui {
         lparam: LPARAM,
     ) -> LRESULT {
         match msg {
+            WM_TRAY_CALLBACK => {
+                let action = (lparam.0 as u32) & 0xFFFF;
+                match action {
+                    WM_LBUTTONDBLCLK | WM_LBUTTONUP => {
+                        ShowWindow(hwnd, SW_SHOW).ok();
+                        SetForegroundWindow(hwnd);
+                    }
+                    WM_RBUTTONUP | WM_CONTEXTMENU => {
+                        let menu = CreatePopupMenu().unwrap_or_default();
+                        let state = SESSION_STATE.load(Ordering::SeqCst);
+                        let status_text = if !state.is_null() && (*state).last_message_count > 0 {
+                            "Session active — messages received".to_owned()
+                        } else {
+                            "Session active — waiting for technician".to_owned()
+                        };
+                        AppendMenuW(menu, MF_GRAYED | MF_STRING, 0, PCWSTR(tray_wide(&status_text).as_ptr()));
+                        AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
+                        AppendMenuW(menu, MF_STRING, IDM_TRAY_OPEN as usize, PCWSTR(tray_wide("Open session window").as_ptr()));
+                        AppendMenuW(menu, MF_STRING, IDM_TRAY_DISCONNECT as usize, PCWSTR(tray_wide("Disconnect").as_ptr()));
+                        AppendMenuW(menu, MF_STRING, IDM_TRAY_EXIT as usize, PCWSTR(tray_wide("Exit").as_ptr()));
+                        SetForegroundWindow(hwnd);
+                        let selected = TrackPopupMenu(menu, TPM_RIGHTBUTTON | TPM_RETURNCMD, 0, 0, 0, hwnd, None);
+                        DestroyMenu(menu);
+                        if selected.0 != 0 {
+                            PostMessageW(hwnd, WM_COMMAND, WPARAM(selected.0 as usize), LPARAM(0));
+                        }
+                    }
+                    _ => {}
+                }
+                LRESULT(0)
+            }
+            WM_SIZE => {
+                // Minimize to the tray instead of the taskbar.
+                if wparam.0 == 1 /* SIZE_MINIMIZED */ {
+                    ShowWindow(hwnd, SW_HIDE).ok();
+                }
+                LRESULT(0)
+            }
             WM_TIMER => {
                 if wparam.0 == TIMER_POLL_INBOX {
                     let state = SESSION_STATE.load(Ordering::SeqCst);
@@ -330,6 +432,9 @@ pub mod windows_ui {
                                 let text = build_chat_text(&(*state).chat_dir, &(*state).session_id);
                                 SetWindowTextW(log_hwnd, PCWSTR(tray_wide(&text).as_ptr()));
                             }
+                            // Keep the tray tooltip in sync with activity.
+                            let tooltip = format!("ReyDesk support — {} message{}", count, if count == 1 { "" } else { "s" });
+                            Shell_NotifyIconW(NIM_MODIFY, &build_tray_data(hwnd, &tooltip));
                         }
                     }
                 }
@@ -338,6 +443,15 @@ pub mod windows_ui {
             WM_COMMAND => {
                 let id = (wparam.0 & 0xFFFF) as i32;
                 match id {
+                    IDM_TRAY_OPEN => {
+                        ShowWindow(hwnd, SW_SHOW).ok();
+                        SetForegroundWindow(hwnd);
+                        LRESULT(0)
+                    }
+                    IDM_TRAY_DISCONNECT | IDM_TRAY_EXIT => {
+                        DestroyWindow(hwnd).ok();
+                        LRESULT(0)
+                    }
                     IDC_MSG_SEND => {
                         let state = SESSION_STATE.load(Ordering::SeqCst);
                         if !state.is_null() {
@@ -380,12 +494,18 @@ pub mod windows_ui {
                 LRESULT(0)
             }
             WM_DESTROY => {
+                SESSION_WINDOW_HWND.store(std::ptr::null_mut(), Ordering::SeqCst);
+                Shell_NotifyIconW(NIM_DELETE, &build_tray_data(hwnd, ""));
                 let state = SESSION_STATE.load(Ordering::SeqCst);
                 if !state.is_null() {
                     let _ = Box::from_raw(state);
                     SESSION_STATE.store(std::ptr::null_mut(), Ordering::SeqCst);
                 }
                 KillTimer(hwnd, TIMER_POLL_INBOX).ok();
+                // Closing the window (X, Disconnect or Exit) ends the session:
+                // the agent task observes the shutdown signal and closes the
+                // relay, then the helper exits.
+                trigger_session_shutdown();
                 PostQuitMessage(0);
                 LRESULT(0)
             }
@@ -430,13 +550,17 @@ pub mod windows_ui {
                 WINDOW_EX_STYLE::default(),
                 PCWSTR(class_name.as_ptr()),
                 PCWSTR(title.as_ptr()),
-                WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_VISIBLE,
+                WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VISIBLE,
                 x, y, w, h,
                 None, None, None, None,
             );
             if hwnd.0 == 0 {
                 return Err(anyhow!("failed to create session window"));
             }
+            SESSION_WINDOW_HWND.store(hwnd.0 as *mut std::ffi::c_void, Ordering::SeqCst);
+
+            // System tray entry with connection status, open/disconnect/exit.
+            Shell_NotifyIconW(NIM_ADD, &build_tray_data(hwnd, "ReyDesk support — session active"));
 
             let static_class = tray_wide("STATIC");
             let button_class = tray_wide("BUTTON");

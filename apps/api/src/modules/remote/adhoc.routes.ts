@@ -10,7 +10,8 @@ import { withTenant, type DbPool } from '../../db/pool.js'
 import { authenticate } from '../../middleware/authenticate.js'
 import { requireTenant } from '../../middleware/requireTenant.js'
 import { generateEnrolCode, hashToken } from '../devices/device-auth.js'
-import { assertSessionPermission, sessionPermissions } from './remote.routes.js'
+import { authenticateAgent } from '../devices/device-auth.js'
+import { assertSessionPermission, issueJoinToken, sessionPermissions } from './remote.routes.js'
 import '../../types.js'
 
 const createSchema = z.object({
@@ -37,6 +38,14 @@ const claimSchema = z.object({
   osVersion: z.string().max(80).optional(),
   arch: z.string().max(40).optional(),
 })
+
+const consentSchema = z.object({
+  granted: z.boolean(),
+  permissions: z.array(z.enum(sessionPermissions)).min(1).max(10).optional(),
+})
+const messageSchema = z.object({ body: z.string().trim().min(1).max(2000) })
+
+const LIVE_SESSION_STATES = new Set<string>(['requested', 'consent_pending', 'connecting', 'active', 'reconnecting'])
 
 interface AdhocRow {
   id: string
@@ -421,6 +430,175 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         session: claimed.session,
         relayUrl: app.config.relayUrl,
       })
+    },
+  )
+
+  /** Resolve the adhoc row + live session for a claimed code and device. */
+  async function claimedSession(pool: DbPool, code: string, deviceId: string): Promise<{ row: AdhocRow; session: { id: string; state: string; permissions: string[]; requested_by: string | null } }> {
+    const row = await findAdhocByCode(pool, code)
+    if (!row || row.device_id !== deviceId) {
+      throw AppError.notFound('This support link is invalid or expired.')
+    }
+    if (row.state !== 'claimed' || !row.remote_session_id) {
+      throw AppError.conflict('This support session is not active yet.', 'session_not_claimed')
+    }
+    const session = (
+      await withTenant(pool, row.tenant_id, (client) =>
+        client.query('SELECT id, state, permissions, requested_by FROM remote_sessions WHERE id = $1', [row.remote_session_id]),
+      )
+    ).rows[0]
+    if (!session) throw AppError.notFound('Session not found')
+    return { row, session }
+  }
+
+  // Real-time relay join for the end-user browser companion (device-token auth).
+  app.post(
+    '/connect/:code/join',
+    { preHandler: [authenticateAgent], config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
+    async (request, reply) => {
+      reply.header('Cache-Control', 'no-store')
+      const { code: rawCode } = request.params as { code: string }
+      const codeResult = publicCodeSchema.safeParse(rawCode)
+      if (!codeResult.success) throw AppError.notFound('This support link is invalid or expired.')
+      const ctx = request.deviceCtx!
+      const { row, session } = await claimedSession(app.db, codeResult.data, ctx.deviceId)
+      if (!LIVE_SESSION_STATES.has(session.state)) throw AppError.conflict('This support session is no longer live.', 'invalid_session_state')
+      const joinToken = await withTenant(app.db, row.tenant_id, (client) => issueJoinToken(client, app, row.tenant_id, session.id, 'agent'))
+      return reply.send({ relayUrl: app.config.relayUrl, joinToken })
+    },
+  )
+
+  // Chat history for the end-user browser companion (device-token auth).
+  app.get(
+    '/connect/:code/messages',
+    { preHandler: [authenticateAgent], config: { rateLimit: { max: 120, timeWindow: '1 minute' } } },
+    async (request, reply) => {
+      reply.header('Cache-Control', 'no-store')
+      const { code: rawCode } = request.params as { code: string }
+      const codeResult = publicCodeSchema.safeParse(rawCode)
+      if (!codeResult.success) throw AppError.notFound('This support link is invalid or expired.')
+      const ctx = request.deviceCtx!
+      const { row, session } = await claimedSession(app.db, codeResult.data, ctx.deviceId)
+      const messages = await withTenant(app.db, row.tenant_id, (client) =>
+        client.query(
+          `SELECT m.id, m.sender_type, m.sender_id, m.body, m.created_at, u.name AS sender_name
+             FROM session_messages m
+             LEFT JOIN users u ON u.id = m.sender_id AND m.sender_type = 'technician'
+            WHERE m.session_id = $1
+            ORDER BY m.created_at ASC
+            LIMIT 200`,
+          [session.id],
+        ),
+      )
+      return reply.send({ messages: messages.rows })
+    },
+  )
+
+  // Persist a chat message from the end-user browser companion (device-token auth).
+  app.post(
+    '/connect/:code/messages',
+    { preHandler: [authenticateAgent], config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
+    async (request, reply) => {
+      reply.header('Cache-Control', 'no-store')
+      const { code: rawCode } = request.params as { code: string }
+      const codeResult = publicCodeSchema.safeParse(rawCode)
+      if (!codeResult.success) throw AppError.notFound('This support link is invalid or expired.')
+      const ctx = request.deviceCtx!
+      const body = messageSchema.parse(request.body)
+      const { row, session } = await claimedSession(app.db, codeResult.data, ctx.deviceId)
+      if (['ended', 'denied', 'expired'].includes(session.state)) {
+        throw AppError.conflict('This support session is no longer accepting messages.', 'invalid_session_state')
+      }
+      const message = await withTenant(app.db, row.tenant_id, (client) =>
+        client.query(
+          `INSERT INTO session_messages (tenant_id, session_id, sender_type, sender_id, body)
+           VALUES ($1, $2, 'agent', $3, $4) RETURNING id, sender_type, sender_id, body, created_at`,
+          [row.tenant_id, session.id, ctx.deviceId, body.body],
+        ),
+      )
+      return reply.code(201).send({ message: message.rows[0] })
+    },
+  )
+
+  // Grant or decline the support session from the end-user browser companion.
+  app.post(
+    '/connect/:code/consent',
+    { preHandler: [authenticateAgent], config: { rateLimit: { max: 20, timeWindow: '1 minute' } } },
+    async (request, reply) => {
+      reply.header('Cache-Control', 'no-store')
+      const { code: rawCode } = request.params as { code: string }
+      const codeResult = publicCodeSchema.safeParse(rawCode)
+      if (!codeResult.success) throw AppError.notFound('This support link is invalid or expired.')
+      const ctx = request.deviceCtx!
+      const body = consentSchema.parse(request.body)
+      const { row, session } = await claimedSession(app.db, codeResult.data, ctx.deviceId)
+      if (!['requested', 'consent_pending'].includes(session.state)) {
+        throw AppError.conflict('This support session is no longer awaiting consent.', 'invalid_session_state')
+      }
+      const result = await withTenant(app.db, row.tenant_id, async (client) => {
+        if (!body.granted) {
+          const denied = (await client.query("UPDATE remote_sessions SET state = 'denied', updated_at = now() WHERE id = $1 RETURNING *", [session.id])).rows[0]
+          await client.query(
+            'UPDATE devices SET agent_token_hash = NULL, agent_token_expires_at = now(), updated_at = now() WHERE id = $1 AND tenant_id = $2',
+            [ctx.deviceId, row.tenant_id],
+          )
+          await client.query("UPDATE adhoc_sessions SET state = 'ended', updated_at = now() WHERE remote_session_id = $1 AND state = 'claimed'", [session.id])
+          return { session: denied, joinToken: null }
+        }
+        const requested = session.permissions as string[]
+        let effective = requested
+        if (body.permissions) {
+          effective = body.permissions.filter((permission) => requested.includes(permission))
+          if (!effective.includes('view_screen')) effective = ['view_screen', ...effective]
+        }
+        const updated = (
+          await client.query(
+            `UPDATE remote_sessions SET state = 'connecting', permissions = $2, consented_at = now(), updated_at = now()
+              WHERE id = $1 RETURNING *`,
+            [session.id, effective],
+          )
+        ).rows[0]
+        const joinToken = await issueJoinToken(client, app, row.tenant_id, session.id, 'agent')
+        if (session.requested_by) {
+          const deviceRow = (await client.query('SELECT name FROM devices WHERE id = $1 AND tenant_id = $2', [ctx.deviceId, row.tenant_id])).rows[0]
+          await notify(client, row.tenant_id, {
+            userId: session.requested_by,
+            kind: 'session.adhoc.claimed',
+            body: `${deviceRow?.name ?? 'Device'} accepted the remote support session. Click to open the session console.`,
+            subjectType: 'session',
+            subjectId: session.id,
+          })
+        }
+        return { session: updated, joinToken }
+      })
+      return reply.send(result)
+    },
+  )
+
+  // Lets the native helper attach to an already-claimed (browser-managed) session
+  // purely as the streaming engine. The support code is the bearer credential.
+  app.post(
+    '/connect/:code/agent-join',
+    { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } },
+    async (request, reply) => {
+      reply.header('Cache-Control', 'no-store')
+      const { code: rawCode } = request.params as { code: string }
+      const codeResult = publicCodeSchema.safeParse(rawCode)
+      if (!codeResult.success) throw AppError.notFound('This support link is invalid or expired.')
+      const row = await findAdhocByCode(app.db, codeResult.data)
+      if (!row || row.state !== 'claimed' || !row.remote_session_id || new Date(row.expires_at).getTime() <= Date.now()) {
+        throw AppError.notFound('This support session is no longer available.')
+      }
+      const session = (
+        await withTenant(app.db, row.tenant_id, (client) =>
+          client.query('SELECT id, state, permissions FROM remote_sessions WHERE id = $1', [row.remote_session_id]),
+        )
+      ).rows[0]
+      if (!session || !LIVE_SESSION_STATES.has(session.state)) {
+        throw AppError.conflict('This support session is not in a joinable state.', 'invalid_session_state')
+      }
+      const joinToken = await withTenant(app.db, row.tenant_id, (client) => issueJoinToken(client, app, row.tenant_id, session.id, 'agent'))
+      return reply.send({ sessionId: session.id, joinToken, relayUrl: app.config.relayUrl, permissions: session.permissions })
     },
   )
 }

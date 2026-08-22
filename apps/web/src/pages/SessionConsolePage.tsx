@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState, type ChangeEvent, type MouseEvent, type PointerEvent } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import { Shell } from '../components/Shell.js'
 import { Alert, useConfirm } from '../components/ui.js'
 import { api } from '../lib/api.js'
 import { clearSessionDock, downloadRecording, endSession, getSession, inviteParticipant, joinSession, listMessages, listParticipants, listRecordings, sendMessage, transferSession, uploadRecording, writeSessionDock, type RemoteSession, type SessionEvent, type SessionParticipant, type SessionRecording } from '../lib/sessions.js'
-import { appendSessionChat, disposeSessionRuntime, endSessionRuntime, hasSessionRuntime, sendSessionChat, sendSessionControl, sendSessionFiles, sendSessionInput, sendSessionSystem, sendSessionTerminal, sendSessionTyping, subscribeSessionRuntime, type RemoteMonitor, type RuntimeConsoleState } from '../lib/sessionRuntime.js'
+import { appendSessionChat, disposeSessionRuntime, endSessionRuntime, hasSessionRuntime, isSessionRuntimeAlive, reconnectSessionRuntime, sendSessionChat, sendSessionChatWithAttachment, sendSessionControl, sendSessionFiles, sendSessionInput, sendSessionSystem, sendSessionTerminal, sendSessionTyping, subscribeSessionRuntime, type ChatAttachment, type RemoteMonitor, type RuntimeConsoleState, type SessionChatMessage } from '../lib/sessionRuntime.js'
 
 type ConsoleState = 'loading' | RuntimeConsoleState
 type HistoryState = { joinToken?: string }
@@ -25,6 +25,32 @@ function stateLabel(state: ConsoleState): string {
 
 function eventLabel(event: SessionEvent): string {
   return event.event.replace(/^session\./, '').replaceAll('_', ' ')
+}
+
+const URL_PATTERN = /(https?:\/\/[^\s<>"']+)/g
+const CHAT_EMOJI = ['👍', '❤️', '😂', '😮', '😢', '🙏', '🎉', '😅', '🤔', '👏', '😎', '🔥', '✅', '⚠️', '👋', '💻']
+const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏']
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname
+  } catch {
+    return url
+  }
+}
+
+function firstUrl(text: string): string | null {
+  const match = text.match(URL_PATTERN)
+  return match ? match[0] : null
+}
+
+function linkifyText(text: string): ReactNode[] {
+  const parts = text.split(URL_PATTERN)
+  return parts.map((part, index) =>
+    part.startsWith('http://') || part.startsWith('https://')
+      ? <a key={index} href={part} target="_blank" rel="noopener noreferrer" className="chat-link">{part}</a>
+      : <span key={index}>{part}</span>,
+  )
 }
 
 export default function SessionConsolePage() {
@@ -64,10 +90,19 @@ export default function SessionConsolePage() {
   const [processes, setProcesses] = useState<Array<{ pid: number; name: string; cpu: number; memory: number; user?: string }>>([])
   const [services, setServices] = useState<Array<{ name: string }>>([])
   const [sysdataStatus, setSysdataStatus] = useState<string | null>(null)
-  const [chatMessages, setChatMessages] = useState<Array<{ senderType: string; body: string; createdAt: string }>>([])
+  const [chatMessages, setChatMessages] = useState<SessionChatMessage[]>([])
   const [chatDraft, setChatDraft] = useState('')
   const [peerTyping, setPeerTyping] = useState<string | null>(null)
   const typingTimeoutRef = useRef<number | undefined>(undefined)
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)
+  const [pendingImages, setPendingImages] = useState<Array<{ name: string; dataUrl: string }>>([])
+  const [deliveredKeys, setDeliveredKeys] = useState<Set<string>>(new Set())
+  const [reactions, setReactions] = useState<Record<string, Record<string, number>>>({})
+  const seenChatKeysRef = useRef<Set<string>>(new Set())
+  const chatMessagesRef = useRef<SessionChatMessage[]>([])
+  const chatLogRef = useRef<HTMLDivElement | null>(null)
+  const chatComposerRef = useRef<HTMLTextAreaElement | null>(null)
+  const imageInputRef = useRef<HTMLInputElement | null>(null)
   const [participants, setParticipants] = useState<SessionParticipant[]>([])
   const [participantNotice, setParticipantNotice] = useState<string | null>(null)
   const [inviteUserId, setInviteUserId] = useState('')
@@ -196,6 +231,7 @@ export default function SessionConsolePage() {
           setServices(snapshot.services)
           setSysdataStatus(snapshot.sysdataStatus)
           setChatMessages(snapshot.chatMessages)
+          chatMessagesRef.current = snapshot.chatMessages
           setPeerTyping(snapshot.typingUser)
         })
 
@@ -204,6 +240,7 @@ export default function SessionConsolePage() {
           void listMessages(id).then(({ messages }) => {
             if (cancelled) return
             for (const message of messages) {
+              seenChatKeysRef.current.add(`${message.sender_type}:${message.body}:${message.created_at}`)
               appendSessionChat(id, { senderType: message.sender_type, body: message.body, createdAt: message.created_at })
             }
           }).catch(() => undefined)
@@ -263,11 +300,54 @@ export default function SessionConsolePage() {
           setConsoleState('ended')
         } else {
           writeSessionDock({ id: detail.session.id, deviceName: detail.session.device_name ?? detail.session.hostname ?? 'Remote session', state: detail.session.state })
+          // The runtime socket can silently die (relay restart, tab switch,
+          // network blip). Rejoin with a fresh ticket so the console always
+          // recovers instead of sitting on a dead connection.
+          if (hasSessionRuntime(id) && !isSessionRuntimeAlive(id)) {
+            void joinSession(id).then(({ joinToken }) => reconnectSessionRuntime(id, joinToken)).catch(() => undefined)
+          }
         }
       }).catch(() => undefined)
     }, 5000)
     return () => window.clearInterval(timer)
   }, [id])
+
+  // Endpoint replies from the browser companion page land in the API; merge
+  // them into the live chat without duplicating relay-delivered messages.
+  useEffect(() => {
+    if (!id) return
+    const mergePolled = (messages: Array<{ sender_type: string; body: string; created_at: string }>) => {
+      const recent = chatMessagesRef.current.slice(-25)
+      for (const message of messages) {
+        const key = `${message.sender_type}:${message.body}:${message.created_at}`
+        if (seenChatKeysRef.current.has(key)) continue
+        seenChatKeysRef.current.add(key)
+        const alreadyShown = recent.some((existing) =>
+          existing.senderType === message.sender_type &&
+          existing.body === message.body &&
+          Math.abs(Date.parse(existing.createdAt) - Date.parse(message.created_at)) < 15_000,
+        )
+        if (alreadyShown) continue
+        appendSessionChat(id, { senderType: message.sender_type, body: message.body, createdAt: message.created_at })
+      }
+    }
+    const timer = window.setInterval(() => {
+      void listMessages(id).then(({ messages }) => mergePolled(messages)).catch(() => undefined)
+    }, 3000)
+    return () => window.clearInterval(timer)
+  }, [id])
+
+  useEffect(() => {
+    const el = chatLogRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [chatMessages, peerTyping])
+
+  useEffect(() => {
+    if (!emojiPickerOpen) return
+    const close = () => setEmojiPickerOpen(false)
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [emojiPickerOpen])
 
   const canControl = session?.permissions.includes('control_input') ?? false
   const canClipboard = session?.permissions.includes('clipboard') ?? false
@@ -408,18 +488,91 @@ export default function SessionConsolePage() {
   }
 
   const sendChat = async () => {
-    if (!id || !chatDraft.trim()) return
+    if (!id) return
     const body = chatDraft.trim()
+    const images = pendingImages
+    if (!body && images.length === 0) return
     setChatDraft('')
-    // Append optimistically so the technician sees the message instantly.
-    appendSessionChat(id, { senderType: 'technician', body, createdAt: new Date().toISOString() })
-    // Deliver via relay WebSocket for instant endpoint delivery.
-    sendSessionChat(id, body)
-    // Persist via API in the background — a failure here does not
-    // block the relay delivery or the local UI.
-    sendMessage(id, body).catch(() => {
-      /* API persistence is best-effort; the relay already delivered */
+    setPendingImages([])
+    const deliver = (payload: { body: string; attachment?: ChatAttachment }) => {
+      const createdAt = new Date().toISOString()
+      appendSessionChat(id, { senderType: 'technician', body: payload.body, createdAt, attachment: payload.attachment })
+      if (isSessionRuntimeAlive(id)) {
+        if (payload.attachment) sendSessionChatWithAttachment(id, payload.body, payload.attachment)
+        else sendSessionChat(id, payload.body)
+        setDeliveredKeys((current) => new Set(current).add(createdAt))
+      }
+      sendMessage(id, payload.body).catch(() => {
+        /* API persistence is best-effort; the relay already delivered */
+      })
+    }
+    if (images.length === 0) {
+      deliver({ body })
+      return
+    }
+    for (let i = 0; i < images.length; i += 1) {
+      deliver({ body: i === 0 ? body : '', attachment: { kind: 'image', name: images[i].name, dataUrl: images[i].dataUrl } })
+    }
+  }
+
+  const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = Array.from(event.clipboardData?.files ?? []).filter((file) => file.type.startsWith('image/'))
+    if (files.length === 0) return
+    event.preventDefault()
+    for (const file of files.slice(0, 4)) {
+      const reader = new FileReader()
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          setPendingImages((current) => [...current, { name: file.name, dataUrl: reader.result as string }])
+        }
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  const handleImageFiles = (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []).filter((file) => file.type.startsWith('image/'))
+    event.target.value = ''
+    for (const file of files.slice(0, 4)) {
+      const reader = new FileReader()
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          setPendingImages((current) => [...current, { name: file.name, dataUrl: reader.result as string }])
+        }
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  const insertEmoji = (emoji: string) => {
+    setChatDraft((draft) => `${draft}${emoji}`)
+    chatComposerRef.current?.focus()
+    setEmojiPickerOpen(false)
+  }
+
+  const toggleReaction = (key: string, emoji: string) => {
+    setReactions((current) => {
+      const existing = { ...(current[key] ?? {}) }
+      const count = existing[emoji] ?? 0
+      if (count > 0) delete existing[emoji]
+      else existing[emoji] = 1
+      return { ...current, [key]: existing }
     })
+  }
+
+  const scrollToFiles = () => {
+    document.getElementById('session-files-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  const reconnectNow = async () => {
+    if (!id) return
+    setError(null)
+    try {
+      const { joinToken } = await joinSession(id)
+      reconnectSessionRuntime(id, joinToken)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not reconnect to the session.')
+    }
   }
 
   const invite = async () => {
@@ -672,6 +825,7 @@ export default function SessionConsolePage() {
             </div> : null}
             {monitorStatus ? <span className="muted clipboard-status">{monitorStatus}</span> : null}
             <div className="console-state-line"><span className={`status-pill session-state-${session?.state ?? 'requested'}`}>{session?.state ?? 'requested'}</span><span className="mono muted">{stateLabel(consoleState)}</span></div>
+            {consoleState === 'error' ? <button className="btn btn-primary btn-sm btn-block" onClick={() => void reconnectNow()}>Reconnect</button> : null}
             <p className="console-help">The session remains connected while you navigate ReyDesk. Return using the session dock; the peer, video stream, and input channels stay owned by the browser session runtime.</p>
           </section>
           {session?.recording_mode === 'video' ? <section className="detail-card">
@@ -701,7 +855,7 @@ export default function SessionConsolePage() {
             {services.length ? <div className="system-list"><strong className="muted">Services</strong>{services.slice(0, 30).map((service) => <div className="system-row" key={service.name}><strong>{service.name}</strong><button className="btn btn-ghost btn-sm" onClick={() => changeService('service_start', service.name)}>Start</button><button className="btn btn-ghost btn-sm" onClick={() => changeService('service_stop', service.name)}>Stop</button></div>)}</div> : null}
             {sysdataStatus ? <span className="muted clipboard-status">{sysdataStatus}</span> : null}
           </section> : null}
-          {canFileTransfer ? <section className="detail-card">
+          {canFileTransfer ? <section className="detail-card" id="session-files-panel">
             <div className="detail-card-head"><h2>Files</h2><span className="mono muted">{fileChannelReady ? 'managed root' : 'connecting'}</span></div>
             <div className="file-browser-path mono">{fileRoot ? `${fileRoot}/${filePath}` : `/${filePath || ''}`}</div>
             {fileRoot ? <p className="console-help">Transfers are confined to the endpoint&apos;s managed root. Uploads land in the current folder.</p> : null}
@@ -739,24 +893,61 @@ export default function SessionConsolePage() {
           </section> : null}
           <section className="detail-card">
             <div className="detail-card-head"><h2>Session chat</h2><span className="mono muted">broker-relayed · audited</span></div>
-            <div className="chat-log">
-              {chatMessages.length === 0 ? <span className="muted">No messages yet.</span> : chatMessages.map((message, index) => (
-                <div className={`chat-row chat-${message.senderType}`} key={`${message.createdAt}-${index}`}>
-                  <strong>{message.senderType === 'agent' ? 'Endpoint' : message.senderType === 'system' ? 'System' : 'Technician'}</strong>
-                  <span>{message.body}</span>
-                </div>
-              ))}
+            <div className="chat-log" ref={chatLogRef}>
+              {chatMessages.length === 0 ? <span className="muted">No messages yet.</span> : chatMessages.map((message, index) => {
+                const key = `${message.createdAt}-${index}`
+                const url = firstUrl(message.body)
+                const messageReactions = reactions[key] ?? {}
+                const delivered = deliveredKeys.has(message.createdAt)
+                const isMine = message.senderType === 'technician'
+                return (
+                  <div className={`chat-row chat-${message.senderType}`} key={key}>
+                    <div className="chat-row-meta"><strong>{message.senderType === 'agent' ? 'Endpoint' : message.senderType === 'system' ? 'System' : 'Technician'}</strong>{isMine ? <span className={`chat-delivery ${delivered ? 'chat-delivery-ok' : ''}`} title={delivered ? 'Delivered via relay' : 'Sent'}>{delivered ? '✓✓' : '✓'}</span> : null}</div>
+                    {message.attachment?.kind === 'image' && message.attachment.dataUrl ? <img className="chat-attachment-image" src={message.attachment.dataUrl} alt={message.attachment.name ?? 'Shared image'} /> : null}
+                    {message.body ? <p className="chat-body">{linkifyText(message.body)}</p> : null}
+                    {url ? <a className="chat-url-preview" href={url} target="_blank" rel="noopener noreferrer">
+                      <img className="chat-url-favicon" src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(hostOf(url))}&sz=64`} alt="" />
+                      <span className="chat-url-text"><strong>{hostOf(url)}</strong><small>{url}</small></span>
+                      <span className="chat-url-arrow">↗</span>
+                    </a> : null}
+                    <div className="chat-actions">
+                      {QUICK_REACTIONS.map((emoji) => (
+                        <button key={emoji} type="button" className="chat-react-btn" onClick={() => toggleReaction(key, emoji)}>{emoji}</button>
+                      ))}
+                    </div>
+                    {Object.keys(messageReactions).length > 0 ? <div className="chat-reactions">{Object.entries(messageReactions).map(([emoji, count]) => <button key={emoji} type="button" className="chat-reaction-chip" onClick={() => toggleReaction(key, emoji)}>{emoji} {count}</button>)}</div> : null}
+                  </div>
+                )
+              })}
               {peerTyping ? <div className="chat-typing"><span className="chat-typing-dot" /><span className="chat-typing-dot" /><span className="chat-typing-dot" /><span className="muted">Endpoint is typing…</span></div> : null}
             </div>
-            <textarea className="field-input terminal-input" value={chatDraft} onChange={(event) => {
-              setChatDraft(event.target.value)
-              if (id && event.target.value.trim()) {
-                sendSessionTyping(id, true)
-                window.clearTimeout(typingTimeoutRef.current)
-                typingTimeoutRef.current = window.setTimeout(() => { if (id) sendSessionTyping(id, false) }, 2_000)
-              }
-            }} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void sendChat() } }} placeholder="Message the endpoint user" rows={2} />
-            <button className="btn btn-primary btn-sm btn-block" onClick={() => void sendChat()} disabled={!chatDraft.trim()}>Send message</button>
+            {pendingImages.length > 0 ? <div className="chat-pending-images">{pendingImages.map((image, index) => (
+              <div className="chat-pending-image" key={`${image.name}-${index}`}>
+                <img src={image.dataUrl} alt={image.name} />
+                <button type="button" className="btn btn-danger btn-sm" onClick={() => setPendingImages((current) => current.filter((_, i) => i !== index))}>Remove</button>
+              </div>
+            ))}</div> : null}
+            <div className="chat-composer-row">
+              <button type="button" className={`chat-tool-btn ${emojiPickerOpen ? 'chat-tool-btn-active' : ''}`} title="Emoji" onClick={() => setEmojiPickerOpen((open) => !open)}>😊</button>
+              <button type="button" className="chat-tool-btn" title="Share an image" onClick={() => imageInputRef.current?.click()}>
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+              </button>
+              <button type="button" className="chat-tool-btn" title="Open file transfer panel" onClick={scrollToFiles}>
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+              </button>
+              <textarea ref={chatComposerRef} className="field-input terminal-input chat-composer-input" value={chatDraft} onChange={(event) => {
+                setChatDraft(event.target.value)
+                if (id && event.target.value.trim()) {
+                  sendSessionTyping(id, true)
+                  window.clearTimeout(typingTimeoutRef.current)
+                  typingTimeoutRef.current = window.setTimeout(() => { if (id) sendSessionTyping(id, false) }, 2_000)
+                }
+              }} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void sendChat() } }} onPaste={handlePaste} placeholder="Message the endpoint user" rows={2} />
+              <button className="btn btn-primary btn-sm chat-send-btn" onClick={() => void sendChat()} disabled={!chatDraft.trim() && pendingImages.length === 0}>Send</button>
+            </div>
+            <input ref={imageInputRef} type="file" accept="image/*" multiple hidden onChange={handleImageFiles} />
+            {emojiPickerOpen ? <div className="chat-emoji-picker">{CHAT_EMOJI.map((emoji) => <button key={emoji} type="button" onClick={() => insertEmoji(emoji)}>{emoji}</button>)}</div> : null}
+            <div className="chat-composer-hint"><span className="muted">Enter to send · Shift+Enter for a new line · paste images to share</span></div>
           </section>
           <section className="detail-card">
             <div className="detail-card-head"><h2>Participants</h2><span className="mono muted">{participants.length} in session</span></div>

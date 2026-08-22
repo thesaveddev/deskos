@@ -14,6 +14,19 @@ export type RemoteMonitor = {
 
 export type RuntimeConsoleState = 'authorizing' | 'connecting' | 'waiting' | 'negotiating' | 'connected' | 'error' | 'ended'
 
+export interface ChatAttachment {
+  kind: 'image' | 'file'
+  name?: string
+  dataUrl?: string
+}
+
+export interface SessionChatMessage {
+  senderType: string
+  body: string
+  createdAt: string
+  attachment?: ChatAttachment
+}
+
 export interface SessionRuntimeSnapshot {
   state: RuntimeConsoleState
   error: string | null
@@ -26,7 +39,7 @@ export interface SessionRuntimeSnapshot {
   presence: 'waiting' | 'endpoint_ready'
   remoteClipboard: string | null
   clipboardStatus: string | null
-  chatMessages: Array<{ senderType: string; body: string; createdAt: string }>
+  chatMessages: SessionChatMessage[]
   typingUser: string | null
   terminalChannelReady: boolean
   terminalReady: boolean
@@ -304,15 +317,37 @@ async function connect(runtime: Runtime, joinToken: string): Promise<void> {
     runtime.iceServers = await fetchIceServers(runtime)
     const socket = new WebSocket(relayUrl())
     runtime.socket = socket
+    let waitTimer: number | undefined
+    const clearWait = () => {
+      if (waitTimer !== undefined) {
+        window.clearTimeout(waitTimer)
+        waitTimer = undefined
+      }
+    }
+    const armWait = () => {
+      if (waitTimer !== undefined) return
+      waitTimer = window.setTimeout(() => {
+        waitTimer = undefined
+        if (runtime.socket !== socket) return
+        if (['connecting', 'waiting', 'negotiating'].includes(runtime.snapshot.state)) {
+          notify(runtime, {
+            state: 'error',
+            error: 'The endpoint has not connected yet. Ask the user to open the helper or check their network, then reconnect.',
+          })
+        }
+      }, 30_000)
+    }
     socket.onopen = () => {
       notify(runtime, { state: 'connecting', error: null })
       socket.send(JSON.stringify({ type: 'join', sessionId: runtime.id, joinToken }))
+      armWait()
     }
     socket.onerror = () => notify(runtime, {
       state: 'error',
       error: 'The relay could not be reached. Confirm the relay is running and the endpoint is online.',
     })
     socket.onclose = () => {
+      clearWait()
       if (runtime.snapshot.state !== 'ended') notify(runtime, { state: 'waiting' })
     }
 
@@ -348,9 +383,11 @@ async function connect(runtime: Runtime, joinToken: string): Promise<void> {
       }
       if (message.type === 'joined') {
         notify(runtime, { state: 'waiting' })
+        armWait()
         return
       }
       if (message.type === 'peer_joined') {
+        clearWait()
         if (message.audience === 'agent') void offerEndpoint().catch((error) => notify(runtime, {
           state: 'error',
           error: error instanceof Error ? error.message : 'Could not create the browser media offer.',
@@ -383,6 +420,10 @@ async function connect(runtime: Runtime, joinToken: string): Promise<void> {
         return
       }
       if (message.type === 'chat' && typeof message.body === 'string') {
+        const rawAttachment = message.attachment as { kind?: string; name?: string; dataUrl?: string } | undefined
+        const attachment: ChatAttachment | undefined = rawAttachment && (rawAttachment.kind === 'image' || rawAttachment.kind === 'file')
+          ? { kind: rawAttachment.kind, name: rawAttachment.name, dataUrl: rawAttachment.dataUrl }
+          : undefined
         notify(runtime, {
           chatMessages: [
             ...runtime.snapshot.chatMessages,
@@ -390,6 +431,7 @@ async function connect(runtime: Runtime, joinToken: string): Promise<void> {
               senderType: typeof message.from === 'string' ? message.from : 'system',
               body: message.body,
               createdAt: new Date().toISOString(),
+              attachment,
             },
           ],
           typingUser: null,
@@ -533,10 +575,38 @@ export function sendSessionTyping(id: string, active: boolean): void {
   send(runtime, { type: 'typing', active })
 }
 
-export function appendSessionChat(id: string, message: { senderType: string; body: string; createdAt: string }): void {
+export function appendSessionChat(id: string, message: SessionChatMessage): void {
   const runtime = runtimes.get(id)
   if (!runtime) return
   notify(runtime, { chatMessages: [...runtime.snapshot.chatMessages, message] })
+}
+
+export function sendSessionChatWithAttachment(id: string, body: string, attachment: ChatAttachment): void {
+  const runtime = runtimes.get(id)
+  if (!runtime) return
+  send(runtime, { type: 'chat', body, attachment })
+}
+
+export function isSessionRuntimeAlive(id: string): boolean {
+  const runtime = runtimes.get(id)
+  return Boolean(runtime?.socket && runtime.socket.readyState === WebSocket.OPEN)
+}
+
+export function reconnectSessionRuntime(id: string, joinToken: string): void {
+  const runtime = runtimes.get(id)
+  if (!runtime) return
+  runtime.socket?.close()
+  runtime.peer?.close()
+  runtime.socket = null
+  runtime.peer = null
+  runtime.controlChannel = null
+  runtime.inputChannel = null
+  runtime.terminalChannel = null
+  runtime.fileChannel = null
+  runtime.sysdataChannel = null
+  runtime.pendingIce = []
+  notify(runtime, { state: 'authorizing', error: null })
+  if (joinToken) void connect(runtime, joinToken)
 }
 
 export function endSessionRuntime(id: string): void {
