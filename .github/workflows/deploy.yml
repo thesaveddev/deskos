@@ -175,6 +175,13 @@ jobs:
             curl -sf http://127.0.0.1:4100/healthz || { echo "Relay did not become healthy"; exit 1; }
             docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T api test -f /app/artifacts/windows/reydesk-helper.exe || { echo "Portable helper is missing from the production API image"; exit 1; }
             curl -sf https://reydesk.com/healthz || { echo "Public healthz failed"; exit 1; }
+            # Sync host nginx config and reload so cache-busting and routing
+            # changes take effect without a manual login.
+            if [ -f /root/reydesk-app/deploy/nginx-reydesk.conf ]; then
+              cp /root/reydesk-app/deploy/nginx-reydesk.conf /etc/nginx/sites-enabled/reydesk.conf
+              nginx -t && systemctl reload nginx
+              echo "Nginx config synced and reloaded"
+            fi
 
       - name: Deployment summary
         run: echo "ReyDesk deployed to https://reydesk.com"
