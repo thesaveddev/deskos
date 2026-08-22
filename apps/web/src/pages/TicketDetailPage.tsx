@@ -299,6 +299,47 @@ export default function TicketDetailPage() {
     return () => window.clearTimeout(linkDebounceRef.current)
   }, [linkQuery, linkTargetType, linkTargetLabel])
 
+  // Keyboard shortcuts for the image viewer — placed before the early returns
+  // so that hook order is stable across loading and loaded states.
+  const ZOOM_MIN = 0.25
+  const ZOOM_MAX = 3
+  const ZOOM_STEP = 0.25
+  const zoomIn = () => setPreviewZoom((z) => Math.min(ZOOM_MAX, Math.round((z + ZOOM_STEP) * 100) / 100))
+  const zoomOut = () => setPreviewZoom((z) => Math.max(ZOOM_MIN, Math.round((z - ZOOM_STEP) * 100) / 100))
+  const zoomReset = () => setPreviewZoom(1)
+
+  useEffect(() => {
+    if (!previewImage || previewLoading) return
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      const tag = target?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        if (previewFullscreen) setPreviewFullscreen(false)
+        else {
+          if (previewImage) URL.revokeObjectURL(previewImage.url)
+          setPreviewImage(null)
+          setPreviewZoom(1)
+          setPreviewFullscreen(false)
+        }
+      } else if (event.key === 'f' || event.key === 'F') {
+        setPreviewFullscreen((value) => !value)
+      } else if (event.key === '+' || event.key === '=') {
+        event.preventDefault()
+        setPreviewZoom((z) => Math.min(ZOOM_MAX, Math.round((z + ZOOM_STEP) * 100) / 100))
+      } else if (event.key === '-' || event.key === '_') {
+        event.preventDefault()
+        setPreviewZoom((z) => Math.max(ZOOM_MIN, Math.round((z - ZOOM_STEP) * 100) / 100))
+      } else if (event.key === '0') {
+        setPreviewZoom(1)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewImage, previewLoading, previewFullscreen])
+
   if (error) {
     return (
       <Shell>
@@ -616,48 +657,12 @@ export default function TicketDetailPage() {
     }
   }
 
-  const ZOOM_MIN = 0.25
-  const ZOOM_MAX = 3
-  const ZOOM_STEP = 0.25
-  const zoomIn = () => setPreviewZoom((z) => Math.min(ZOOM_MAX, Math.round((z + ZOOM_STEP) * 100) / 100))
-  const zoomOut = () => setPreviewZoom((z) => Math.max(ZOOM_MIN, Math.round((z - ZOOM_STEP) * 100) / 100))
-  const zoomReset = () => setPreviewZoom(1)
-
   const closeImagePreview = () => {
     if (previewImage) URL.revokeObjectURL(previewImage.url)
     setPreviewImage(null)
     setPreviewZoom(1)
     setPreviewFullscreen(false)
   }
-
-  // Keyboard shortcuts for the image viewer: Escape closes (or exits full
-  // screen), F toggles full screen, +/- zoom, 0 resets.
-  useEffect(() => {
-    if (!previewImage || previewLoading) return
-    const onKey = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null
-      const tag = target?.tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        if (previewFullscreen) setPreviewFullscreen(false)
-        else closeImagePreview()
-      } else if (event.key === 'f' || event.key === 'F') {
-        setPreviewFullscreen((value) => !value)
-      } else if (event.key === '+' || event.key === '=') {
-        event.preventDefault()
-        zoomIn()
-      } else if (event.key === '-' || event.key === '_') {
-        event.preventDefault()
-        zoomOut()
-      } else if (event.key === '0') {
-        zoomReset()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewImage, previewLoading, previewFullscreen])
 
   const viewerStage = previewImage ? (
     <div className="image-viewer-stage" onDoubleClick={() => setPreviewFullscreen((value) => !value)}>
