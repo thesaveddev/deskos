@@ -215,6 +215,7 @@ export default function App() {
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/signup" element={<SignupPage />} />
       <Route path="/accept-invitation" element={<AcceptInvitationPage />} />
+      <Route path="/connect" element={<ConnectPage />} />
       <Route path="/connect/:code" element={<ConnectPage />} />
       <Route path="/features" element={<FeaturesPage />} />
       <Route path="/use-cases" element={<UseCasesPage />} />

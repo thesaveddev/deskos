@@ -45,6 +45,19 @@ jobs:
           cargo build --release --manifest-path apps/Cargo.toml -p deskos-agent
           New-Item -ItemType Directory -Force -Path artifacts/windows | Out-Null
           Copy-Item apps/target/release/deskos-agent.exe artifacts/windows/reydesk-helper.exe
+          # UPX is optional locally, but the hosted build compresses the portable
+          # helper so customers on slower connections receive a smaller download.
+          try {
+            choco install upx -y --no-progress
+          } catch {
+            Write-Warning "UPX installation failed; continuing with the stripped release binary. $($_.Exception.Message)"
+          }
+          $upx = Get-Command upx -ErrorAction SilentlyContinue
+          if ($upx) {
+            & $upx.Source --best --lzma artifacts/windows/reydesk-helper.exe | Out-Host
+          } else {
+            Write-Warning 'UPX was not available; continuing with the stripped release binary.'
+          }
           if (-not (Test-Path artifacts/windows/reydesk-helper.exe)) {
             throw 'The portable ReyDesk helper was not produced.'
           }

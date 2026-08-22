@@ -127,7 +127,7 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Command {
-    /// Enroll this endpoint with an eight-digit human code or an opaque fleet token.
+    /// Enroll this endpoint with a 12-digit human code or an opaque fleet token.
     Enroll {
         #[arg(long, default_value = "http://localhost:4000")]
         api_url: String,
@@ -152,7 +152,7 @@ enum Command {
         /// Optional override; defaults to the deployment-baked or registered endpoint.
         #[arg(long, default_value = "")]
         relay_url: String,
-        /// The 8–12 digit support code from the technician. Omit it to open a code-entry window instead.
+        /// The 12-digit support code from the technician. Omit it to open a code-entry window instead.
         code: Option<String>,
         #[arg(long)]
         name: Option<String>,
@@ -1065,15 +1065,21 @@ async fn claim_code(
     if let Some(fingerprint) = fingerprint {
         request = request.header("x-deskos-claim-fingerprint", fingerprint);
     }
-    request
+    let response = request
         .send()
         .await
-        .context("support-code claim request failed")?
-        .error_for_status()
-        .context("support code rejected or expired")?
-        .json::<ClaimResponse>()
-        .await
-        .context("invalid claim response")
+        .context("support-code claim request failed")?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        let detail = serde_json::from_str::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|value| value.get("error").and_then(|error| error.get("message")).and_then(serde_json::Value::as_str).map(str::to_owned))
+            .filter(|message| !message.is_empty())
+            .unwrap_or_else(|| format!("HTTP {status}"));
+        return Err(anyhow!("support code was rejected: {detail}"));
+    }
+    response.json::<ClaimResponse>().await.context("invalid claim response")
 }
 
 fn parse_support_input(raw: &str) -> Result<(String, Option<String>)> {
@@ -1081,21 +1087,21 @@ fn parse_support_input(raw: &str) -> Result<(String, Option<String>)> {
     if let Some(connect_start) = value.find("/connect/") {
         let after = &value[connect_start + "/connect/".len()..];
         let (code, query) = after.split_once('?').unwrap_or((after, ""));
-        if !(8..=12).contains(&code.len()) || !code.chars().all(|character| character.is_ascii_digit()) {
-            return Err(anyhow!("the secure link does not contain a valid 8-12 digit support code"));
+        if code.len() != 12 || !code.chars().all(|character| character.is_ascii_digit()) {
+            return Err(anyhow!("the secure link does not contain a valid 12-digit technician code"));
         }
         let token = query
             .split('&')
             .find_map(|part| part.strip_prefix("claimToken="))
-            .filter(|token| token.starts_with("deskos_link_") && token.len() <= 200)
+            .filter(|token| (token.starts_with("reydesk_link_") || token.starts_with("deskos_link_")) && token.len() <= 200)
             .map(str::to_owned)
             .ok_or_else(|| anyhow!("the secure link is missing its one-time claim token"))?;
         return Ok((code.to_owned(), Some(token)));
     }
-    if (8..=12).contains(&value.len()) && value.chars().all(|character| character.is_ascii_digit()) {
+    if value.len() == 12 && value.chars().all(|character| character.is_ascii_digit()) {
         return Ok((value.to_owned(), None));
     }
-    Err(anyhow!("enter an 8-12 digit support code or paste the complete secure ReyDesk link"))
+    Err(anyhow!("enter the 12-digit technician code or paste the complete secure ReyDesk link"))
 }
 
 fn new_claim_fingerprint() -> String {
@@ -1268,7 +1274,7 @@ fn run_helper_window(
     shutdown: tokio::sync::mpsc::UnboundedSender<()>,
     status: Arc<StdMutex<String>>,
 ) -> Result<()> {
-    let class_name = tray_wide("DeskOSHelperWindow");
+    let class_name = tray_wide("ReyDeskHelperWindow");
     let cursor = unsafe { LoadCursorW(None, IDC_ARROW) }.unwrap_or_default();
     let class = WNDCLASSW {
         lpfnWndProc: Some(helper_window_proc),
@@ -1294,8 +1300,8 @@ fn run_helper_window(
             WS_OVERLAPPEDWINDOW,
             CW_USEDEFAULT,
             CW_USEDEFAULT,
-            400,
-            200,
+            460,
+            290,
             None,
             None,
             None,
@@ -1315,11 +1321,24 @@ fn run_helper_window(
         CreateWindowExW(
             WINDOW_EX_STYLE::default(),
             PCWSTR(static_class.as_ptr()),
-            PCWSTR(tray_wide("Enter an 8-12 digit support code or paste a secure link").as_ptr()),
+            PCWSTR(tray_wide("Connect securely with ReyDesk").as_ptr()),
             WS_CHILD | WS_VISIBLE,
+            28,
             24,
-            24,
-            350,
+            400,
+            26,
+            hwnd,            None,
+            None,
+            None,
+        );
+        CreateWindowExW(
+            WINDOW_EX_STYLE::default(),
+            PCWSTR(static_class.as_ptr()),
+            PCWSTR(tray_wide("Your technician provided a single-use code for this session.").as_ptr()),
+            WS_CHILD | WS_VISIBLE,
+            28,
+            54,
+            400,
             22,
             hwnd,
             None,
@@ -1330,14 +1349,11 @@ fn run_helper_window(
             WINDOW_EX_STYLE::default(),
             PCWSTR(edit_class.as_ptr()),
             PCWSTR::null(),
-            WS_CHILD
-                | WS_VISIBLE
-                | WS_TABSTOP
-                | WINDOW_STYLE(ES_CENTER as u32),
-            24,
-            54,
-            350,
-            30,
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(ES_CENTER as u32),
+            28,
+            84,
+            400,
+            34,
             hwnd,
             HMENU(IDC_HELPER_CODE as isize),
             None,
@@ -1346,12 +1362,12 @@ fn run_helper_window(
         CreateWindowExW(
             WINDOW_EX_STYLE::default(),
             PCWSTR(button_class.as_ptr()),
-            PCWSTR(tray_wide("Connect").as_ptr()),
+            PCWSTR(tray_wide("Start secure support").as_ptr()),
             WS_CHILD | WS_VISIBLE | WS_TABSTOP,
-            24,
-            96,
-            350,
-            36,
+            28,
+            136,
+            400,
+            38,
             hwnd,
             HMENU(IDC_HELPER_CONNECT as isize),
             None,
@@ -1360,11 +1376,11 @@ fn run_helper_window(
         let status_hwnd = CreateWindowExW(
             WINDOW_EX_STYLE::default(),
             PCWSTR(static_class.as_ptr()),
-            PCWSTR(tray_wide("Waiting…").as_ptr()),
+            PCWSTR(tray_wide("Enter your technician's 12-digit code to begin.").as_ptr()),
             WS_CHILD | WS_VISIBLE,
-            24,
-            148,
-            350,
+            28,
+            190,
+            400,
             22,
             hwnd,
             None,
@@ -1412,7 +1428,7 @@ async fn run_helper_native(
 ) -> Result<()> {
     let (submit, mut receiver) = tokio::sync::mpsc::unbounded_channel::<HelperEvent>();
     let (shutdown_tx, shutdown_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
-    let status = Arc::new(StdMutex::new("Enter an 8-12 digit code or paste a secure link".to_owned()));
+    let status = Arc::new(StdMutex::new("Enter your technician's 12-digit code to begin.".to_owned()));
 
     let window_submit = submit.clone();
     let window_status = status.clone();
@@ -1477,8 +1493,8 @@ fn helper_html(message: Option<&str>) -> String {
     format!(
         r#"<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ReyDesk support</title>
 <style>body{{font-family:Segoe UI,sans-serif;background:#f4f7fb;color:#182230;margin:0;padding:32px}}main{{max-width:560px;margin:auto;background:white;border:1px solid #d9e2ef;border-radius:14px;padding:28px;box-shadow:0 8px 28px #12263b18}}h1{{margin-top:0}}label{{display:block;margin:16px 0 6px;font-weight:600}}input{{box-sizing:border-box;width:100%;padding:11px;border:1px solid #b9c7d8;border-radius:8px;font:inherit}}button{{margin-top:24px;padding:11px 18px;background:#1769e0;color:#fff;border:0;border-radius:8px;font-weight:600;cursor:pointer}}.muted{{color:#64748b;font-size:.94rem}}.notice{{background:#eef6ff;border:1px solid #b9dcff;border-radius:8px;padding:12px;margin-bottom:18px}}</style></head>
-<body><main><h1>ReyDesk support</h1><p class=muted>Enter the 8-12 digit support code or paste the complete secure link your technician gave you. No installation or login is needed.</p>{notice}
-<form method=post action=/connect><label for=code>Support code or secure link</label><input id=code name=code placeholder="1234567890 or https://…" autocomplete=one-time-code autofocus required><button type=submit>Connect</button></form></main></body></html>"#,
+<body><main><h1>ReyDesk support</h1><p class=muted>Enter the 12-digit technician code or paste the complete secure link your technician gave you. No installation or login is needed.</p>{notice}
+<form method=post action=/connect><label for=code>12-digit technician code or secure link</label><input id=code name=code placeholder="123456789012 or https://…" autocomplete=one-time-code autofocus required><button type=submit>Start secure support</button></form></main></body></html>"#,
         notice = notice,
     )
 }
@@ -2065,7 +2081,7 @@ fn enrollment_html(message: Option<&str>) -> String {
         r#"<!doctype html><html><head><meta charset="utf-8"><title>ReyDesk enrollment</title>
 <style>body{{font-family:Segoe UI,sans-serif;background:#f4f7fb;color:#182230;margin:0;padding:32px}}main{{max-width:560px;margin:auto;background:white;border:1px solid #d9e2ef;border-radius:14px;padding:28px;box-shadow:0 8px 28px #12263b18}}h1{{margin-top:0}}label{{display:block;margin:16px 0 6px;font-weight:600}}input{{box-sizing:border-box;width:100%;padding:11px;border:1px solid #b9c7d8;border-radius:8px;font:inherit}}button{{margin-top:24px;padding:11px 18px;background:#1769e0;color:#fff;border:0;border-radius:8px;font-weight:600;cursor:pointer}}.muted{{color:#64748b;font-size:.94rem}}.notice{{background:#eef6ff;border:1px solid #b9dcff;border-radius:8px;padding:12px;margin-bottom:18px}}</style></head>
 <body><main><h1>Connect this device to ReyDesk</h1><p class=muted>Enter the one-time enrollment code provided by your IT technician. The ReyDesk connection settings are already configured for this installer.</p>{notice}
-<form method=post action=/enroll><label for=token>Enrollment code (8–12 digits)</label><input id=token name=token inputmode=numeric pattern="[0-9]{{8,12}}" maxlength=12 placeholder="12345678" autocomplete=one-time-code autofocus required><button type=submit>Enroll this device</button></form></main></body></html>"#,
+<form method=post action=/enroll><label for=token>Enrollment code (12 digits)</label><input id=token name=token inputmode=numeric pattern="[0-9]{{12}}" maxlength=12 placeholder="123456789012" autocomplete=one-time-code autofocus required><button type=submit>Enroll this device</button></form></main></body></html>"#,
         notice = notice,
     )
 }
@@ -5214,7 +5230,8 @@ mod tests {
 
     #[test]
     fn parses_numeric_codes_and_secure_claim_links() {
-        assert_eq!(parse_support_input("1234567890").unwrap(), ("1234567890".to_owned(), None));
+        assert_eq!(parse_support_input("123456789012").unwrap(), ("123456789012".to_owned(), None));
+        assert!(parse_support_input("1234567890").is_err());
         let parsed = parse_support_input("https://support.example/connect/123456789012?claimToken=deskos_link_secret").unwrap();
         assert_eq!(parsed.0, "123456789012");
         assert_eq!(parsed.1.as_deref(), Some("deskos_link_secret"));
@@ -5285,8 +5302,8 @@ mod tests {
     #[test]
     fn enrollment_page_only_requests_the_one_time_code() {
         let page = enrollment_html(None);
-        assert!(page.contains("Enrollment code (8–12 digits)"));
-        assert!(page.contains("pattern=\"[0-9]{8,12}\""));
+        assert!(page.contains("Enrollment code (12 digits)"));
+        assert!(page.contains("pattern=\"[0-9]{12}\""));
         assert!(!page.contains("ReyDesk API URL"));
         assert!(!page.contains("Relay URL"));
     }
@@ -5307,9 +5324,9 @@ mod tests {
 
     #[test]
     fn support_helper_accepts_web_generated_code_lengths() {
-        assert_eq!(parse_support_input("12345678").unwrap().0, "12345678");
-        assert_eq!(parse_support_input("1234567890").unwrap().0, "1234567890");
         assert_eq!(parse_support_input("123456789012").unwrap().0, "123456789012");
+        assert!(parse_support_input("12345678").is_err());
+        assert!(parse_support_input("1234567890").is_err());
         assert!(parse_support_input("1234567").is_err());
         assert!(parse_support_input("1234567890123").is_err());
     }

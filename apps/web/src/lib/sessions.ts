@@ -173,7 +173,7 @@ export function createAdhocSession(body: {
   permissions: string[]
   reason?: string
   expiresInMin?: number
-  codeLength?: 10 | 11 | 12
+  codeLength?: 12
 }): Promise<AdhocSession> {
   return api('/adhoc-sessions', { method: 'POST', body })
 }

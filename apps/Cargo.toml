@@ -1,3 +1,11 @@
 [workspace]
 members = ["agent"]
 resolver = "2"
+
+# Keep the portable Windows helper practical for customers on slow links.
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = "symbols"

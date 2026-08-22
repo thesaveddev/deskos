@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
-import { useParams, useSearchParams } from 'react-router-dom'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Alert, BrandRow } from '../components/ui.js'
 
 interface ConnectInfo {
@@ -32,8 +32,10 @@ interface ChatMessage {
 }
 
 export default function ConnectPage() {
+  const navigate = useNavigate()
   const { code = '' } = useParams<{ code: string }>()
   const [searchParams] = useSearchParams()
+  const [entryCode, setEntryCode] = useState('')
   const claimToken = searchParams.get('claimToken')
   const [info, setInfo] = useState<ConnectInfo | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -47,6 +49,7 @@ export default function ConnectPage() {
   const [ending, setEnding] = useState(false)
 
   const load = useCallback(async () => {
+    if (!code) return
     setError(null)
     try {
       const query = claimToken ? `?claimToken=${encodeURIComponent(claimToken)}` : ''
@@ -68,7 +71,7 @@ export default function ConnectPage() {
   }, [code, claimToken])
 
   const loadChat = useCallback(async () => {
-    if (!sessionId) return
+    if (!sessionId || !code) return
     try {
       const res = await fetch(`/api/connect/${encodeURIComponent(code)}/messages`)
       if (!res.ok) return
@@ -77,7 +80,7 @@ export default function ConnectPage() {
     } catch {
       // Keep the connection panel usable if chat history is temporarily unavailable.
     }
-  }, [sessionId])
+  }, [sessionId, code])
 
   useEffect(() => { void load() }, [load])
   useEffect(() => {
@@ -86,6 +89,16 @@ export default function ConnectPage() {
     const timer = window.setInterval(() => { void loadChat() }, 4000)
     return () => window.clearInterval(timer)
   }, [sessionId, loadChat])
+
+  const submitEntryCode = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const normalized = entryCode.replace(/\D/g, '')
+    if (normalized.length !== 12) {
+      setError('Enter the 12-digit technician code you were given.')
+      return
+    }
+    navigate(`/connect/${normalized}`)
+  }
 
   const copyCode = async () => {
     try {
@@ -152,6 +165,29 @@ export default function ConnectPage() {
       setInfo((current) => current ? { ...current, state: 'ended' } : current)
     } catch (err) { setError(err instanceof Error ? err.message : 'The session could not be ended.') }
     finally { setEnding(false) }
+  }
+
+  if (!code) {
+    return (
+      <div className="auth-screen">
+        <div className="auth-panel connect-panel connect-entry-panel">
+          <BrandRow />
+          <span className="settings-eyebrow">Secure remote support</span>
+          <h1 className="auth-title">Connect to your technician</h1>
+          <p className="auth-sub">Enter the 12-digit technician code provided by your support team. You will review and approve every permission before access begins.</p>
+          {error ? <Alert kind="error">{error}</Alert> : null}
+          <form className="connect-entry-form" onSubmit={submitEntryCode}>
+            <label className="field">
+              <span className="field-label">Technician code</span>
+              <input className="field-input connect-entry-input" value={entryCode} onChange={(event) => setEntryCode(event.target.value.replace(/\D/g, '').slice(0, 12))} inputMode="numeric" pattern="[0-9]{12}" maxLength={12} placeholder="000 000 000 000" autoComplete="one-time-code" autoFocus required />
+              <span className="field-hint">12 digits · single-use · provided by your technician</span>
+            </label>
+            <button className="btn btn-primary btn-block" type="submit">Continue securely</button>
+          </form>
+          <p className="connect-entry-note">No account is needed. Do not share a code with anyone other than the technician assisting you.</p>
+        </div>
+      </div>
+    )
   }
 
   return (

@@ -17,18 +17,18 @@ const createSchema = z.object({
   permissions: z.array(z.enum(sessionPermissions)).min(1).max(10).default(['view_screen']),
   reason: z.string().trim().max(500).optional(),
   expiresInMin: z.number().int().min(1).max(1440).optional(),
-  codeLength: z.union([z.literal(10), z.literal(11), z.literal(12)]).default(12),
+  codeLength: z.literal(12).default(12),
 })
 
 const emailSchema = z.object({
   to: z.string().email().max(320),
-  code: z.string().regex(/^\d{8,12}$/),
+  code: z.string().regex(/^\d{12}$/),
   mode: z.enum(['code', 'email_link']).default('email_link'),
 })
 
 // Older links remain readable for compatibility; new support sessions default
 // to the stronger 12-digit code.
-const publicCodeSchema = z.string().regex(/^\d{8,12}$/)
+const publicCodeSchema = z.string().regex(/^\d{12}$/)
 
 const claimSchema = z.object({
   name: z.string().min(1).max(120).optional(),

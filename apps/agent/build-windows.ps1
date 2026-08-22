@@ -11,6 +11,13 @@ try {
   Copy-Item $source $helper -Force
 
   $upx = Get-Command upx -ErrorAction SilentlyContinue
+  if (-not $upx) {
+    $choco = Get-Command choco -ErrorAction SilentlyContinue
+    if ($choco) {
+      & $choco.Source install upx -y --no-progress | Out-Host
+      $upx = Get-Command upx -ErrorAction SilentlyContinue
+    }
+  }
   if ($upx) {
     & $upx.Source --best --lzma $helper | Out-Host
   } else {
