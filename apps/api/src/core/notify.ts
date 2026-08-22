@@ -23,6 +23,7 @@ export const NOTIFICATION_KINDS = [
   'service.approval_decided',
   'change.approval',
   'telephony.call_received',
+  'chat.message',
 ] as const
 
 export interface NotifyInput {

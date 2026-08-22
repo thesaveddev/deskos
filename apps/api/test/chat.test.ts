@@ -2,6 +2,22 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { FastifyInstance } from 'fastify'
 import { authHeaders, createTestApp, seedActiveMember, signupOwner } from './helpers.js'
 
+function multipartMessage(boundary: string, body: string, filename: string, content: string, mime = 'text/plain') {
+  return [
+    `--${boundary}`,
+    'Content-Disposition: form-data; name="body"',
+    '',
+    body,
+    `--${boundary}`,
+    `Content-Disposition: form-data; name="file"; filename="${filename}"`,
+    `Content-Type: ${mime}`,
+    '',
+    content,
+    `--${boundary}--`,
+    '',
+  ].join('\r\n')
+}
+
 describe('team chat', () => {
   let app: FastifyInstance
   let owner: Awaited<ReturnType<typeof signupOwner>>
@@ -76,6 +92,36 @@ describe('team chat', () => {
     expect(messages).toHaveLength(1)
     expect(messages[0].body).toBe('Hello team')
     expect(messages[0].sender_name).toBe('analyst user')
+  })
+
+  it('shares a file with a message and protects its download by room access', async () => {
+    const boundary = 'chat-file-boundary'
+    const sent = await app.inject({
+      method: 'POST',
+      url: `/api/v1/chat/rooms/${roomId}/messages`,
+      headers: { ...authHeaders(analyst), 'content-type': `multipart/form-data; boundary=${boundary}` },
+      payload: multipartMessage(boundary, 'Here are the diagnostics.', 'diagnostics.txt', 'cpu=22\nmem=41'),
+    })
+    expect(sent.statusCode).toBe(201)
+    const attachment = sent.json().message.attachments[0]
+    expect(attachment.filename).toBe('diagnostics.txt')
+    expect(Number(attachment.size_bytes)).toBe(13)
+
+    const download = await app.inject({
+      method: 'GET',
+      url: `/api/v1/chat/attachments/${attachment.id}`,
+      headers: authHeaders(owner),
+    })
+    expect(download.statusCode).toBe(200)
+    expect(download.headers['content-disposition']).toContain('diagnostics.txt')
+    expect(download.body).toBe('cpu=22\nmem=41')
+
+    const foreignDownload = await app.inject({
+      method: 'GET',
+      url: `/api/v1/chat/attachments/${attachment.id}`,
+      headers: authHeaders(foreign),
+    })
+    expect(foreignDownload.statusCode).toBe(404)
   })
 
   it('rejects blank or oversized message bodies', async () => {

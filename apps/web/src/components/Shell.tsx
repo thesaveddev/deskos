@@ -37,6 +37,7 @@ function notificationLabel(kind: string): string {
     'service.approval_decided': 'Approval decided',
     'change.approval': 'Change approval',
     'telephony.call_received': 'Inbound call',
+    'chat.message': 'Team chat',
   }
   return labels[kind] ?? kind.replace(/[._]/g, ' ')
 }
@@ -46,6 +47,7 @@ function notificationTarget(notification: AppNotification): string | null {
   if (notification.subject_type === 'ticket') return `/tickets/${notification.subject_id}`
   if (notification.subject_type === 'device') return `/devices/${notification.subject_id}`
   if (notification.subject_type === 'session' || notification.subject_type === 'remote_session') return `/sessions/${notification.subject_id}`
+  if (notification.subject_type === 'chat_room') return '/chat'
   return null
 }
 
