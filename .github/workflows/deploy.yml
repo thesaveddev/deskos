@@ -40,7 +40,7 @@ jobs:
         shell: pwsh
         env:
           REYDESK_API_URL: https://reydesk.com
-          REYDESK_RELAY_URL: wss://relay.reydesk.com/ws
+          REYDESK_RELAY_URL: wss://reydesk.com/ws
         run: |
           cargo build --release --manifest-path apps/Cargo.toml -p deskos-agent
           New-Item -ItemType Directory -Force -Path artifacts/windows | Out-Null

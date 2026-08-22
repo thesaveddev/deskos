@@ -46,7 +46,7 @@ services:
       REYDESK_RELAY_SECRET: ${RELAY_SECRET}
       REYDESK_PUBLIC_URL: https://reydesk.com
       REYDESK_WEB_ORIGINS: https://reydesk.com,https://www.reydesk.com
-      REYDESK_RELAY_URL: wss://relay.reydesk.com/ws
+      REYDESK_RELAY_URL: wss://reydesk.com/ws
       REYDESK_AUTO_MIGRATE: '1'
       REYDESK_BCRYPT_ROUNDS: '12'
       # SMTP (outbound email)

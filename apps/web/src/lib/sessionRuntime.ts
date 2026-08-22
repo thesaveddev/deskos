@@ -67,7 +67,10 @@ function relayUrl(): string {
   const configured = (import.meta as ImportMeta & { env?: { VITE_RELAY_URL?: string } }).env?.VITE_RELAY_URL
   if (configured) return configured
   const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-  return `${protocol}://${window.location.hostname}:4100/ws`
+  // In production nginx proxies /ws to the relay on port 4100.
+  // Connect to the same origin so the proxy handles the upgrade — do not
+  // hardcode port 4100 which is firewalled externally.
+  return `${protocol}://${window.location.host}/ws`
 }
 
 function notify(runtime: Runtime, patch: Partial<SessionRuntimeSnapshot>): void {
