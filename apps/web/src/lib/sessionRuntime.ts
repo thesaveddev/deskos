@@ -27,6 +27,7 @@ export interface SessionRuntimeSnapshot {
   remoteClipboard: string | null
   clipboardStatus: string | null
   chatMessages: Array<{ senderType: string; body: string; createdAt: string }>
+  typingUser: string | null
   terminalChannelReady: boolean
   terminalReady: boolean
   terminalOutput: string
@@ -391,6 +392,14 @@ async function connect(runtime: Runtime, joinToken: string): Promise<void> {
               createdAt: new Date().toISOString(),
             },
           ],
+          typingUser: null,
+        })
+        return
+      }
+      if (message.type === 'typing') {
+        const active = message.active !== false
+        notify(runtime, {
+          typingUser: active ? (typeof message.from === 'string' ? message.from : 'peer') : null,
         })
         return
       }
@@ -439,6 +448,7 @@ function createRuntime(id: string): Runtime {
       remoteClipboard: null,
       clipboardStatus: null,
       chatMessages: [],
+      typingUser: null,
       terminalChannelReady: false,
       terminalReady: false,
       terminalOutput: '',
@@ -515,6 +525,12 @@ export function sendSessionChat(id: string, body: string): void {
   const runtime = runtimes.get(id)
   if (!runtime) return
   send(runtime, { type: 'chat', body })
+}
+
+export function sendSessionTyping(id: string, active: boolean): void {
+  const runtime = runtimes.get(id)
+  if (!runtime) return
+  send(runtime, { type: 'typing', active })
 }
 
 export function appendSessionChat(id: string, message: { senderType: string; body: string; createdAt: string }): void {

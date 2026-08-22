@@ -4,7 +4,7 @@ import { Shell } from '../components/Shell.js'
 import { Alert, useConfirm } from '../components/ui.js'
 import { api } from '../lib/api.js'
 import { clearSessionDock, downloadRecording, endSession, getSession, inviteParticipant, joinSession, listMessages, listParticipants, listRecordings, sendMessage, transferSession, uploadRecording, writeSessionDock, type RemoteSession, type SessionEvent, type SessionParticipant, type SessionRecording } from '../lib/sessions.js'
-import { appendSessionChat, disposeSessionRuntime, endSessionRuntime, hasSessionRuntime, sendSessionChat, sendSessionControl, sendSessionFiles, sendSessionInput, sendSessionSystem, sendSessionTerminal, subscribeSessionRuntime, type RemoteMonitor, type RuntimeConsoleState } from '../lib/sessionRuntime.js'
+import { appendSessionChat, disposeSessionRuntime, endSessionRuntime, hasSessionRuntime, sendSessionChat, sendSessionControl, sendSessionFiles, sendSessionInput, sendSessionSystem, sendSessionTerminal, sendSessionTyping, subscribeSessionRuntime, type RemoteMonitor, type RuntimeConsoleState } from '../lib/sessionRuntime.js'
 
 type ConsoleState = 'loading' | RuntimeConsoleState
 type HistoryState = { joinToken?: string }
@@ -66,6 +66,8 @@ export default function SessionConsolePage() {
   const [sysdataStatus, setSysdataStatus] = useState<string | null>(null)
   const [chatMessages, setChatMessages] = useState<Array<{ senderType: string; body: string; createdAt: string }>>([])
   const [chatDraft, setChatDraft] = useState('')
+  const [peerTyping, setPeerTyping] = useState<string | null>(null)
+  const typingTimeoutRef = useRef<number | undefined>(undefined)
   const [participants, setParticipants] = useState<SessionParticipant[]>([])
   const [participantNotice, setParticipantNotice] = useState<string | null>(null)
   const [inviteUserId, setInviteUserId] = useState('')
@@ -194,6 +196,7 @@ export default function SessionConsolePage() {
           setServices(snapshot.services)
           setSysdataStatus(snapshot.sysdataStatus)
           setChatMessages(snapshot.chatMessages)
+          setPeerTyping(snapshot.typingUser)
         })
 
         if (seededCollabRef.current !== id) {
@@ -408,14 +411,15 @@ export default function SessionConsolePage() {
     if (!id || !chatDraft.trim()) return
     const body = chatDraft.trim()
     setChatDraft('')
-    try {
-      const { message } = await sendMessage(id, body)
-      appendSessionChat(id, { senderType: 'technician', body: message.body, createdAt: message.created_at })
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not send chat message')
-      return
-    }
+    // Append optimistically so the technician sees the message instantly.
+    appendSessionChat(id, { senderType: 'technician', body, createdAt: new Date().toISOString() })
+    // Deliver via relay WebSocket for instant endpoint delivery.
     sendSessionChat(id, body)
+    // Persist via API in the background — a failure here does not
+    // block the relay delivery or the local UI.
+    sendMessage(id, body).catch(() => {
+      /* API persistence is best-effort; the relay already delivered */
+    })
   }
 
   const invite = async () => {
@@ -742,8 +746,16 @@ export default function SessionConsolePage() {
                   <span>{message.body}</span>
                 </div>
               ))}
+              {peerTyping ? <div className="chat-typing"><span className="chat-typing-dot" /><span className="chat-typing-dot" /><span className="chat-typing-dot" /><span className="muted">Endpoint is typing…</span></div> : null}
             </div>
-            <textarea className="field-input terminal-input" value={chatDraft} onChange={(event) => setChatDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void sendChat() } }} placeholder="Message the endpoint user" rows={2} />
+            <textarea className="field-input terminal-input" value={chatDraft} onChange={(event) => {
+              setChatDraft(event.target.value)
+              if (id && event.target.value.trim()) {
+                sendSessionTyping(id, true)
+                window.clearTimeout(typingTimeoutRef.current)
+                typingTimeoutRef.current = window.setTimeout(() => { if (id) sendSessionTyping(id, false) }, 2_000)
+              }
+            }} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void sendChat() } }} placeholder="Message the endpoint user" rows={2} />
             <button className="btn btn-primary btn-sm btn-block" onClick={() => void sendChat()} disabled={!chatDraft.trim()}>Send message</button>
           </section>
           <section className="detail-card">
