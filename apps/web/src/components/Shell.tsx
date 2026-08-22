@@ -259,6 +259,8 @@ export function Shell({ children }: { children: ReactNode }) {
   const [sessionKeyEmailBusy, setSessionKeyEmailBusy] = useState(false)
   const [sessionKeyEmailNotice, setSessionKeyEmailNotice] = useState<string | null>(null)
   const [sessionKeyBusy, setSessionKeyBusy] = useState(false)
+  const [sessionKeyError, setSessionKeyError] = useState<string | null>(null)
+  const perms = new Set(auth.memberships.flatMap((m) => m.permissions))
   const remoteWrapRef = useRef<HTMLDivElement>(null)
   const notificationsWrapRef = useRef<HTMLDivElement>(null)
 
@@ -417,17 +419,28 @@ export function Shell({ children }: { children: ReactNode }) {
                 setSessionKeyId(null)
                 setSessionKeyRecipient('')
                 setSessionKeyEmailNotice(null)
-                createAdhocSession({
-                  permissions: ['view_screen', 'control_input', 'clipboard', 'terminal', 'elevation', 'file_transfer', 'system_manage'],
-                  expiresInMin: 10,
-                  codeLength: 12,
-                }).then((res) => {
-                  setSessionKey(res.code)
-                  setSessionKeyId(res.id)
-                  setSessionKeyExpires(res.expiresAt)
-                }).catch(() => {
-                  setSessionKey(null)
-                }).finally(() => setSessionKeyBusy(false))
+                setSessionKeyError(null)
+                {
+                  const remotePerms: string[] = ['view_screen']
+                  if (perms.has('remote.control')) {
+                    remotePerms.push('control_input', 'clipboard')
+                  }
+                  if (perms.has('remote.elevated')) {
+                    remotePerms.push('terminal', 'elevation', 'file_transfer', 'system_manage')
+                  }
+                  createAdhocSession({
+                    permissions: remotePerms as any,
+                    expiresInMin: 10,
+                    codeLength: 12,
+                  }).then((res) => {
+                    setSessionKey(res.code)
+                    setSessionKeyId(res.id)
+                    setSessionKeyExpires(res.expiresAt)
+                  }).catch((err) => {
+                    setSessionKey(null)
+                    setSessionKeyError(err instanceof Error ? err.message : 'Failed to generate key. Please try again.')
+                  }).finally(() => setSessionKeyBusy(false))
+                }
               }}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
@@ -458,7 +471,7 @@ export function Shell({ children }: { children: ReactNode }) {
                     {sessionKeyEmailNotice ? <span className="session-key-email-notice">{sessionKeyEmailNotice}</span> : null}
                   </>
                 ) : (
-                  <div className="session-key-error">Failed to generate key</div>
+                  <div className="session-key-error">{sessionKeyError ?? 'Failed to generate key. Please try again.'}</div>
                 )}
               </div>
             )}
