@@ -110,6 +110,15 @@ export async function adRoutes(app: FastifyInstance): Promise<void> {
     return result
   })
 
+  app.post('/ad/connections/:id/diagnose', { preHandler: manage }, async (request) => {
+    const ctx = request.tenantCtx!
+    const { id } = request.params as { id: string }
+    const { diagnoseConnection } = await import('./ad.js')
+    const row = await getConnection(app.db, ctx.tenantId, id)
+    const steps = await diagnoseConnection(clientFor(), row, emailKey())
+    return { steps }
+  })
+
   app.post('/ad/connections/:id/sync', { preHandler: manage }, async (request, reply) => {
     const ctx = request.tenantCtx!
     const { id } = request.params as { id: string }

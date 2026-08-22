@@ -79,6 +79,18 @@ export function testAdConnection(id: string): Promise<{ ok: boolean; users?: num
   return api(`/ad/connections/${id}/test`, { method: 'POST', body: {} })
 }
 
+export interface DiagnosticStep {
+  name: string
+  label: string
+  status: 'pending' | 'running' | 'ok' | 'warn' | 'error'
+  detail?: string
+  durationMs?: number
+}
+
+export function diagnoseAdConnection(id: string): Promise<{ steps: DiagnosticStep[] }> {
+  return api(`/ad/connections/${id}/diagnose`, { method: 'POST', body: {} })
+}
+
 export function syncAdDirectory(id: string): Promise<{ fetched: number; created: number; updated: number }> {
   return api(`/ad/connections/${id}/sync`, { method: 'POST', body: {} })
 }

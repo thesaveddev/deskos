@@ -13,6 +13,8 @@ import {
   syncEntraDevices,
   syncEntraDirectory,
   testEntraConnection,
+  diagnoseEntraConnection,
+  type DiagnosticStep,
   updateEntraConnection,
   type Contact,
   type EntraAction,
@@ -57,6 +59,10 @@ export default function EntraSettingsPage() {
   const [actionType, setActionType] = useState<'resetPassword' | 'requireMfa'>('resetPassword')
   const [actionNewPassword, setActionNewPassword] = useState('')
   const [actionBusy, setActionBusy] = useState(false)
+  const [diagSteps, setDiagSteps] = useState<DiagnosticStep[]>([])
+  const [diagOpen, setDiagOpen] = useState(false)
+  const [diagBusy, setDiagBusy] = useState(false)
+  const [diagConnectionName, setDiagConnectionName] = useState('')
 
   const refresh = useCallback(async () => {
     try {
@@ -149,6 +155,22 @@ export default function EntraSettingsPage() {
       setError(e instanceof Error ? e.message : 'Test failed')
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function handleDiagnose(id: string, name: string) {
+    setDiagBusy(true)
+    setDiagSteps([])
+    setDiagConnectionName(name)
+    setDiagOpen(true)
+    setError(null)
+    try {
+      const result = await diagnoseEntraConnection(id)
+      setDiagSteps(result.steps)
+    } catch (e) {
+      setDiagSteps([{ name: 'error', label: 'Diagnostic failed', status: 'error', detail: e instanceof Error ? e.message : 'Unknown error' }])
+    } finally {
+      setDiagBusy(false)
     }
   }
 
@@ -292,6 +314,7 @@ export default function EntraSettingsPage() {
                 </div>
                 <div className="directory-connection-actions">
                   <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void handleTest(connection.id, connection.name)}><Icon name="check" size={14} />Test</button>
+                  <button type="button" className="btn btn-ghost btn-sm" disabled={diagBusy} onClick={() => void handleDiagnose(connection.id, connection.name)}><Icon name="activity" size={14} />Diagnose</button>
                   <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void handleSync(connection.id, connection.name)}><Icon name="refresh" size={14} />Sync</button>
                   <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void handleSyncDevices(connection.id, connection.name)}><Icon name="monitor" size={14} />Sync devices</button>
                   <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => openAction(connection)}><Icon name="wrench" size={14} />Action</button>
@@ -396,6 +419,38 @@ export default function EntraSettingsPage() {
             </Field>
           ) : null}
         </form>
+      </Modal>
+
+      <Modal
+        open={diagOpen}
+        onClose={() => setDiagOpen(false)}
+        title={`Connection diagnostics — ${diagConnectionName}`}
+        width={640}
+      >
+        <p className="directory-form-intro">Step-by-step diagnostic for this directory connection. Each step tests a specific capability.</p>
+        {diagBusy ? (
+          <div className="diag-progress">
+            <span className="diag-spinner" />
+            <span>Running diagnostics…</span>
+          </div>
+        ) : diagSteps.length > 0 ? (
+          <div className="diag-steps">
+            {diagSteps.map((step) => (
+              <div key={step.name} className={`diag-step diag-${step.status}`}>
+                <div className="diag-step-header">
+                  <span className={`diag-icon diag-icon-${step.status}`}>
+                    {step.status === 'ok' ? '✓' : step.status === 'warn' ? '⚠' : step.status === 'error' ? '✗' : step.status === 'running' ? '⟳' : '○'}
+                  </span>
+                  <span className="diag-step-label">{step.label}</span>
+                  {step.durationMs != null ? <span className="diag-step-time mono">{step.durationMs}ms</span> : null}
+                </div>
+                {step.detail ? <div className="diag-step-detail">{step.detail}</div> : null}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <span className="muted">No diagnostic results yet.</span>
+        )}
       </Modal>
     </div>
   )

@@ -151,6 +151,117 @@ export async function testConnection(
   }
 }
 
+export interface DiagnosticStep {
+  name: string
+  label: string
+  status: 'pending' | 'running' | 'ok' | 'warn' | 'error'
+  detail?: string
+  durationMs?: number
+}
+
+export async function diagnoseConnection(
+  client: EntraGraphClient,
+  row: EntraConnectionRow,
+  emailKey: string,
+): Promise<DiagnosticStep[]> {
+  const secrets = {
+    azureTenantId: row.azure_tenant_id,
+    clientId: row.client_id,
+    clientSecret: decryptSecretChecked(row, emailKey),
+  }
+  const steps: DiagnosticStep[] = []
+  const start = () => Date.now()
+  const elapsed = (t: number) => Date.now() - t
+
+  // Step 1: DNS / connectivity to Microsoft identity
+  steps.push({ name: 'dns', label: 'DNS & connectivity to login.microsoftonline.com', status: 'running' })
+  let t = start()
+  try {
+    const res = await fetch(`https://login.microsoftonline.com/${encodeURIComponent(secrets.azureTenantId)}/.well-known/openid-configuration`, { signal: AbortSignal.timeout(10_000) })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    steps[steps.length - 1] = { ...steps[steps.length - 1], status: 'ok', detail: `Identity metadata reachable (${res.status})`, durationMs: elapsed(t) }
+  } catch (err) {
+    steps[steps.length - 1] = { ...steps[steps.length - 1], status: 'error', detail: err instanceof Error ? err.message : 'DNS or connectivity failed', durationMs: elapsed(t) }
+    return steps
+  }
+
+  // Step 2: OAuth2 client-credentials token exchange
+  steps.push({ name: 'oauth', label: 'OAuth2 client-credentials token exchange', status: 'running' })
+  t = start()
+  try {
+    const tokenUrl = `https://login.microsoftonline.com/${encodeURIComponent(secrets.azureTenantId)}/oauth2/v2.0/token`
+    const body = new URLSearchParams({
+      client_id: secrets.clientId,
+      client_secret: secrets.clientSecret,
+      scope: 'https://graph.microsoft.com/.default',
+      grant_type: 'client_credentials',
+    })
+    const res = await fetch(tokenUrl, { method: 'POST', body, signal: AbortSignal.timeout(15_000) })
+    const json = (await res.json()) as { access_token?: string; error?: string; error_description?: string }
+    if (!res.ok || !json.access_token) {
+      const msg = json.error_description ?? json.error ?? `HTTP ${res.status}`
+      steps[steps.length - 1] = { ...steps[steps.length - 1], status: 'error', detail: `Token exchange failed: ${msg}`, durationMs: elapsed(t) }
+      return steps
+    }
+    steps[steps.length - 1] = { ...steps[steps.length - 1], status: 'ok', detail: `Access token acquired (${json.access_token.slice(0, 8)}…)`, durationMs: elapsed(t) }
+  } catch (err) {
+    steps[steps.length - 1] = { ...steps[steps.length - 1], status: 'error', detail: err instanceof Error ? err.message : 'Token exchange failed', durationMs: elapsed(t) }
+    return steps
+  }
+
+  // Step 3: Graph permissions — list users
+  steps.push({ name: 'users', label: 'Microsoft Graph — list users (User.Read.All)', status: 'running' })
+  t = start()
+  let userCount = 0
+  try {
+    const users = await client.listUsers(secrets)
+    userCount = users.length
+    steps[steps.length - 1] = { ...steps[steps.length - 1], status: 'ok', detail: `${userCount} user(s) found`, durationMs: elapsed(t) }
+  } catch (err) {
+    steps[steps.length - 1] = { ...steps[steps.length - 1], status: 'error', detail: err instanceof Error ? err.message : 'User listing failed', durationMs: elapsed(t) }
+  }
+
+  // Step 4: Graph permissions — list groups (best-effort)
+  steps.push({ name: 'groups', label: 'Microsoft Graph — list groups (Group.Read.All)', status: 'running' })
+  t = start()
+  try {
+    const token = await (async () => {
+      const tokenUrl = `https://login.microsoftonline.com/${encodeURIComponent(secrets.azureTenantId)}/oauth2/v2.0/token`
+      const body = new URLSearchParams({ client_id: secrets.clientId, client_secret: secrets.clientSecret, scope: 'https://graph.microsoft.com/.default', grant_type: 'client_credentials' })
+      const res = await fetch(tokenUrl, { method: 'POST', body })
+      const json = (await res.json()) as { access_token?: string }
+      return json.access_token ?? ''
+    })()
+    const res = await fetch('https://graph.microsoft.com/v1.0/groups?$top=5&$select=id,displayName', {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(10_000),
+    })
+    if (res.ok) {
+      const data = (await res.json()) as { value?: unknown[] }
+      const count = data.value?.length ?? 0
+      steps[steps.length - 1] = { ...steps[steps.length - 1], status: count > 0 ? 'ok' : 'warn', detail: count > 0 ? `${count}+ group(s) accessible` : 'No groups found (may need Group.Read.All permission)', durationMs: elapsed(t) }
+    } else if (res.status === 403) {
+      steps[steps.length - 1] = { ...steps[steps.length - 1], status: 'warn', detail: 'Group listing forbidden — grant Group.Read.All permission in Azure app registration', durationMs: elapsed(t) }
+    } else {
+      steps[steps.length - 1] = { ...steps[steps.length - 1], status: 'warn', detail: `Group listing returned HTTP ${res.status}`, durationMs: elapsed(t) }
+    }
+  } catch (err) {
+    steps[steps.length - 1] = { ...steps[steps.length - 1], status: 'warn', detail: err instanceof Error ? err.message : 'Group listing failed', durationMs: elapsed(t) }
+  }
+
+  // Step 5: Device discovery (best-effort, requires Intune)
+  steps.push({ name: 'devices', label: 'Microsoft Intune — list managed devices', status: 'running' })
+  t = start()
+  try {
+    const devices = await client.listDevices(secrets)
+    steps[steps.length - 1] = { ...steps[steps.length - 1], status: devices.length > 0 ? 'ok' : 'warn', detail: `${devices.length} managed device(s) found`, durationMs: elapsed(t) }
+  } catch (err) {
+    steps[steps.length - 1] = { ...steps[steps.length - 1], status: 'warn', detail: err instanceof Error ? err.message : 'Device listing unavailable (requires Intune license)', durationMs: elapsed(t) }
+  }
+
+  return steps
+}
+
 export interface SyncRunResult {
   fetched: number
   created: number

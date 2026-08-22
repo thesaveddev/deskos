@@ -4,6 +4,7 @@ import { PasswordField } from '../components/PasswordField.js'
 import {
   createAdConnection,
   deleteAdConnection,
+  diagnoseAdConnection,
   listAdActions,
   listAdConnections,
   listAdContacts,
@@ -17,6 +18,7 @@ import {
   type AdActionType,
   type AdConnection,
   type Contact,
+  type DiagnosticStep,
   type SyncRun,
 } from '../lib/ad.js'
 
@@ -47,6 +49,10 @@ export default function AdSettingsPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [diagSteps, setDiagSteps] = useState<DiagnosticStep[]>([])
+  const [diagOpen, setDiagOpen] = useState(false)
+  const [diagBusy, setDiagBusy] = useState(false)
+  const [diagConnectionName, setDiagConnectionName] = useState('')
 
   const refresh = useCallback(() => {
     void listAdConnections().then((r) => setConnections(r.connections)).catch(() => undefined)
@@ -109,6 +115,22 @@ export default function AdSettingsPage() {
       setError(e instanceof Error ? e.message : 'Test failed')
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function handleDiagnose(id: string, name: string) {
+    setDiagBusy(true)
+    setDiagSteps([])
+    setDiagConnectionName(name)
+    setDiagOpen(true)
+    setError(null)
+    try {
+      const result = await diagnoseAdConnection(id)
+      setDiagSteps(result.steps)
+    } catch (e) {
+      setDiagSteps([{ name: 'error', label: 'Diagnostic failed', status: 'error', detail: e instanceof Error ? e.message : 'Unknown error' }])
+    } finally {
+      setDiagBusy(false)
     }
   }
 
@@ -244,6 +266,7 @@ export default function AdSettingsPage() {
             </div>
             <div className="channel-actions">
               <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => handleTest(c.id, c.name)}>Test</button>
+              <button type="button" className="btn btn-ghost btn-sm" disabled={diagBusy} onClick={() => void handleDiagnose(c.id, c.name)}>Diagnose</button>
               <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => handleSync(c.id, c.name)}>Sync</button>
               <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => handleSyncDevices(c.id, c.name)}>Sync devices</button>
               <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => handleAction(c.id)}>Action</button>
@@ -306,6 +329,34 @@ export default function AdSettingsPage() {
         ))}
         {actions.length === 0 ? <div className="empty-state">No account actions yet.</div> : null}
       </div>
+
+      {diagOpen ? (
+        <div className="modal-backdrop" onClick={() => { if (!diagBusy) setDiagOpen(false) }}>
+          <div className="modal" style={{ maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>
+            <h3 className="modal-title">Connection diagnostics — {diagConnectionName}</h3>
+            <p className="directory-form-intro" style={{ margin: '0 0 12px' }}>Step-by-step diagnostic for this LDAP connection.</p>
+            {diagBusy ? (
+              <div className="diag-progress"><span className="diag-spinner" /><span>Running diagnostics…</span></div>
+            ) : diagSteps.length > 0 ? (
+              <div className="diag-steps">
+                {diagSteps.map((step) => (
+                  <div key={step.name} className={`diag-step diag-${step.status}`}>
+                    <div className="diag-step-header">
+                      <span className={`diag-icon diag-icon-${step.status}`}>
+                        {step.status === 'ok' ? '✓' : step.status === 'warn' ? '⚠' : step.status === 'error' ? '✗' : step.status === 'running' ? '⟳' : '○'}
+                      </span>
+                      <span className="diag-step-label">{step.label}</span>
+                      {step.durationMs != null ? <span className="diag-step-time mono">{step.durationMs}ms</span> : null}
+                    </div>
+                    {step.detail ? <div className="diag-step-detail">{step.detail}</div> : null}
+                  </div>
+                ))}
+              </div>
+            ) : <span className="muted">No results.</span>}
+            <div style={{ marginTop: 16, textAlign: 'right' }}><button type="button" className="btn btn-ghost" onClick={() => setDiagOpen(false)}>Close</button></div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

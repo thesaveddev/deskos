@@ -74,6 +74,18 @@ export function testEntraConnection(id: string): Promise<{ ok: boolean; users?: 
   return api(`/entra/connections/${id}/test`, { method: 'POST', body: {} })
 }
 
+export interface DiagnosticStep {
+  name: string
+  label: string
+  status: 'pending' | 'running' | 'ok' | 'warn' | 'error'
+  detail?: string
+  durationMs?: number
+}
+
+export function diagnoseEntraConnection(id: string): Promise<{ steps: DiagnosticStep[] }> {
+  return api(`/entra/connections/${id}/diagnose`, { method: 'POST', body: {} })
+}
+
 export function syncEntraDirectory(id: string): Promise<{ fetched: number; created: number; updated: number }> {
   return api(`/entra/connections/${id}/sync`, { method: 'POST', body: {} })
 }

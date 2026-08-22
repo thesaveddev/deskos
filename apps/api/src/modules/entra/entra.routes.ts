@@ -124,6 +124,15 @@ export async function entraRoutes(app: FastifyInstance): Promise<void> {
     return result
   })
 
+  app.post('/entra/connections/:id/diagnose', { preHandler: manage }, async (request) => {
+    const ctx = request.tenantCtx!
+    const { id } = request.params as { id: string }
+    const { diagnoseConnection } = await import('./entra.js')
+    const row = await getConnection(app.db, ctx.tenantId, id)
+    const steps = await diagnoseConnection(app.entraGraph ?? graphClient, row, emailKey())
+    return { steps }
+  })
+
   app.post('/entra/connections/:id/sync', { preHandler: manage }, async (request, reply) => {
     const ctx = request.tenantCtx!
     const { id } = request.params as { id: string }

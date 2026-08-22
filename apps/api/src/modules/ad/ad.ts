@@ -150,6 +150,81 @@ export async function testConnection(
   }
 }
 
+export interface DiagnosticStep {
+  name: string
+  label: string
+  status: 'pending' | 'running' | 'ok' | 'warn' | 'error'
+  detail?: string
+  durationMs?: number
+}
+
+export async function diagnoseConnection(
+  client: AdClient,
+  row: AdConnectionRow,
+  emailKey: string,
+): Promise<DiagnosticStep[]> {
+  const secrets = secretsFor(row, emailKey)
+  const steps: DiagnosticStep[] = []
+  const start = () => Date.now()
+  const elapsed = (t: number) => Date.now() - t
+
+  // Step 1: TCP connectivity to the LDAP server
+  steps.push({ name: 'tcp', label: `TCP connectivity to ${secrets.host}:${secrets.port}`, status: 'running' })
+  let t = start()
+  try {
+    const { Socket } = await import('net')
+    await new Promise<void>((resolve, reject) => {
+      const socket = new Socket()
+      socket.setTimeout(5_000)
+      socket.on('connect', () => { socket.destroy(); resolve() })
+      socket.on('timeout', () => { socket.destroy(); reject(new Error('Connection timed out')) })
+      socket.on('error', (err) => { socket.destroy(); reject(err) })
+      socket.connect(secrets.port, secrets.host)
+    })
+    steps[steps.length - 1] = { ...steps[steps.length - 1], status: 'ok', detail: `TCP port ${secrets.port} is reachable`, durationMs: elapsed(t) }
+  } catch (err) {
+    steps[steps.length - 1] = { ...steps[steps.length - 1], status: 'error', detail: err instanceof Error ? err.message : 'TCP connection failed', durationMs: elapsed(t) }
+    return steps
+  }
+
+  // Step 2: LDAP bind with credentials
+  steps.push({ name: 'bind', label: `LDAP bind as ${secrets.bindDn}`, status: 'running' })
+  t = start()
+  try {
+    // Attempt a real LDAP bind via the client's listUsers which does a bind internally.
+    // If bind fails, listUsers will throw.
+    const users = await client.listUsers(secrets)
+    steps[steps.length - 1] = { ...steps[steps.length - 1], status: 'ok', detail: `Bind successful, ${users.length} user(s) accessible`, durationMs: elapsed(t) }
+  } catch (err) {
+    steps[steps.length - 1] = { ...steps[steps.length - 1], status: 'error', detail: err instanceof Error ? err.message : 'LDAP bind failed — check bind DN and password', durationMs: elapsed(t) }
+    return steps
+  }
+
+  // Step 3: User search
+  steps.push({ name: 'users', label: `LDAP search — users under ${secrets.baseDn}`, status: 'running' })
+  t = start()
+  let userCount = 0
+  try {
+    const users = await client.listUsers(secrets)
+    userCount = users.length
+    steps[steps.length - 1] = { ...steps[steps.length - 1], status: userCount > 0 ? 'ok' : 'warn', detail: userCount > 0 ? `${userCount} user(s) found` : 'No users found — check base DN and search filter', durationMs: elapsed(t) }
+  } catch (err) {
+    steps[steps.length - 1] = { ...steps[steps.length - 1], status: 'error', detail: err instanceof Error ? err.message : 'User search failed', durationMs: elapsed(t) }
+  }
+
+  // Step 4: Computer/device search
+  steps.push({ name: 'devices', label: 'LDAP search — computer objects', status: 'running' })
+  t = start()
+  try {
+    const computers = await client.listComputers(secrets)
+    steps[steps.length - 1] = { ...steps[steps.length - 1], status: computers.length > 0 ? 'ok' : 'warn', detail: `${computers.length} computer object(s) found`, durationMs: elapsed(t) }
+  } catch (err) {
+    steps[steps.length - 1] = { ...steps[steps.length - 1], status: 'warn', detail: err instanceof Error ? err.message : 'Computer search failed — may need extended permissions', durationMs: elapsed(t) }
+  }
+
+  return steps
+}
+
 export interface SyncRunResult {
   fetched: number
   created: number
