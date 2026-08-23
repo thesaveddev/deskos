@@ -54,7 +54,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
               onClick={() => {
                 if (!auth.user) return
                 rememberLockedUser(auth.user)
-                void auth.logout().then(() => navigate('/lock'))
+                void auth.logout().then(() => navigate('/login'))
               }}
             >
               Sign out

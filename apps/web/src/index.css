@@ -203,6 +203,8 @@
 .ticket-device-context-label { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
 .ticket-links:not(.ai-panel), .attachments { margin-left: 0; width: 100%; }
 .ticket-links-empty { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 10px 4px; color: var(--text-3); font-size: 13px; }
+.ticket-link-click { color: var(--accent); text-decoration: none; cursor: pointer; }
+.ticket-link-click:hover { text-decoration: underline; }
 /* Ticket creation: file upload zone (drop the UA white button chrome, stack the copy). */
 .ticket-upload-zone { background: transparent; }
 .ticket-upload-copy { display: flex; flex-direction: column; align-items: center; gap: 0.4rem; }

@@ -152,7 +152,7 @@ export function MobileShell({ children }: Props) {
                 setMoreOpen(false)
                 if (!auth.user) return
                 rememberLockedUser(auth.user)
-                void auth.logout().then(() => navigate('/lock'))
+                void auth.logout().then(() => navigate('/login'))
               }}>
                 <Icon name="logout" size={16} /> Sign out
               </button>

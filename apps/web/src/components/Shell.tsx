@@ -564,8 +564,7 @@ export function Shell({ children }: { children: ReactNode }) {
             className="btn btn-ghost btn-sm topbar-icon-btn"
             onClick={() => {
               if (!auth.user) return
-              rememberLockedUser(auth.user)
-              void auth.logout().then(() => navigate('/lock'))
+              void auth.logout().then(() => navigate('/login'))
             }}
             title="Sign out"
             aria-label="Sign out"

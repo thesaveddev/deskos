@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useNavigate } from 'react-router-dom'
 import { Shell } from '../components/Shell.js'
 import { Alert, Modal } from '../components/ui.js'
 import { Icon } from '../components/Icons.js'
@@ -37,6 +37,7 @@ function displayTicketValue(value: unknown): string {
 
 export default function TicketDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const auth = useAuth()
   const [ticket, setTicket] = useState<Ticket | null>(null)
   const [ticketDevice, setTicketDevice] = useState<TicketDevice | null>(null)
@@ -984,13 +985,19 @@ export default function TicketDetailPage() {
               <li key={l.id} className="attachment-row">
                 <span className="mono muted">{l.link_type}</span>
                 <span className="attachment-name">
-                  {l.target_type === 'ticket'
-                    ? `#${l.target_number} ${l.target_subject ?? ''}`
-                    : l.target_type === 'asset'
-                      ? (l.target_asset_name ?? 'asset')
-                      : l.target_type === 'kb'
-                        ? (l.target_kb_title ?? 'KB article')
-                        : 'session'}
+                  {l.target_type === 'ticket' ? (
+                    <Link to={`/tickets/${l.target_id}`} className="ticket-link-item">
+                      #{l.target_number} {l.target_subject ?? ''}
+                    </Link>
+                  ) : l.target_type === 'asset'
+                    ? (l.target_asset_name ?? 'asset')
+                    : l.target_type === 'kb'
+                      ? (
+                          <a href={`/kb/${l.target_id}`} className="ticket-link-item">
+                            {l.target_kb_title ?? 'KB article'}
+                          </a>
+                        )
+                      : 'session'}
                 </span>
                 <span className="muted mono">{l.target_type}</span>
                 <button className="btn btn-ghost btn-sm" disabled={readOnlyForLock} onClick={() => void removeLink(l)}>Unlink</button>
