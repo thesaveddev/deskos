@@ -1,3 +1,5 @@
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+
 mod helper_ui;
 
 use anyhow::{anyhow, Context, Result};
@@ -59,7 +61,7 @@ use windows::Win32::{
     UI::WindowsAndMessaging::{
         DestroyWindow, GetDlgItem, GetWindowLongPtrW, GetWindowTextW, LoadCursorW,
         SetWindowLongPtrW, SetWindowTextW, ShowWindow, CW_USEDEFAULT, ES_CENTER,
-        GWLP_USERDATA, HMENU, IDC_ARROW, SW_SHOW, WINDOW_STYLE,        WM_CLOSE, WM_COMMAND, WM_DESTROY, WM_RBUTTONUP, WM_LBUTTONDBLCLK,
+        GWLP_USERDATA, HMENU, IDC_ARROW, SW_HIDE, SW_SHOW, WINDOW_STYLE,        WM_CLOSE, WM_COMMAND, WM_DESTROY, WM_RBUTTONUP, WM_LBUTTONDBLCLK,
         WS_CHILD, WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE,
     },
 };
@@ -1169,6 +1171,8 @@ struct AgentJoinResponse {
     join_token: String,
     relay_url: String,
     permissions: Vec<String>,
+    #[serde(default)]
+    ice_servers: Vec<IceServerEntry>,
 }
 
 /// Attach to a session that was already claimed (browser companion flow) using
@@ -1216,12 +1220,14 @@ async fn run_streamer(
             heartbeat_interval_sec: 30,
         };
         let client = Arc::new(AgentClient::new(&config));
+        let ice_servers = joined.ice_servers.clone().into_iter().map(IceServerEntry::into_rtc).collect::<Vec<_>>();
         let should_reconnect = match run_relay_connection(
             &config,
             &joined.session_id,
             &joined.join_token,
             &joined.permissions,
             client,
+            Some(ice_servers),
         )
         .await
         {
@@ -1325,6 +1331,8 @@ async fn helper_ui(
 const IDC_HELPER_CODE: i32 = 1001;
 #[cfg(target_os = "windows")]
 const IDC_HELPER_CONNECT: i32 = 1002;
+#[cfg(target_os = "windows")]
+const WM_HELPER_HIDE: u32 = WM_APP + 2;
 
 #[cfg(target_os = "windows")]
 enum HelperEvent {
@@ -1364,6 +1372,10 @@ unsafe extern "system" fn helper_window_proc(
         }
         return LRESULT(0);
     }
+    if message == WM_HELPER_HIDE {
+        let _ = ShowWindow(hwnd, SW_HIDE);
+        return LRESULT(0);
+    }
     if message == WM_CLOSE {
         let _ = DestroyWindow(hwnd);
         return LRESULT(0);
@@ -1398,7 +1410,7 @@ fn run_helper_window(
     };
     unsafe { RegisterClassW(&class) };
 
-    let hwnd_holder: std::sync::Arc<std::sync::atomic::AtomicPtr<std::ffi::c_void>> = std::sync::Arc::new(std::sync::atomic::AtomicPtr::new(std::ptr::null_mut()));
+    let hwnd_holder = hwnd_out.unwrap_or_else(|| std::sync::Arc::new(std::sync::atomic::AtomicPtr::new(std::ptr::null_mut())));
     let hwnd_holder_for_state = hwnd_holder.clone();
     let state = Box::into_raw(Box::new(HelperWindowState {
         submit,
@@ -1591,15 +1603,15 @@ async fn run_helper_native(
                         let ptr = hwnd_holder.load(std::sync::atomic::Ordering::SeqCst);
                         if !ptr.is_null() {
                             unsafe {
-                                windows::Win32::UI::WindowsAndMessaging::PostMessageW(
+                                let _ = windows::Win32::UI::WindowsAndMessaging::PostMessageW(
                                     HWND(ptr as isize),
-                                    WM_CLOSE, WPARAM(0), LPARAM(0),
+                                    WM_HELPER_HIDE, WPARAM(0), LPARAM(0),
                                 );
                             }
                         }
-                        // Wait briefly for the window to close
-                        tokio::time::sleep(Duration::from_millis(300)).await;
-                        let _ = window.await;
+                        // The entry window stays hidden while the native
+                        // session/consent UI runs. Awaiting it here would block
+                        // the agent and prevent the consent window from opening.
 
                         // The session window (Disconnect / Exit / X) is the only
                         // thing that stops the agent.
@@ -1624,6 +1636,11 @@ async fn run_helper_native(
                                 helper_ui::windows_ui::close_session_window();
                                 agent_result.context("agent task failed")??;
                                 let _ = AgentClient::new(&config).end_session(&session.id).await;
+                                let ptr = hwnd_holder.load(std::sync::atomic::Ordering::SeqCst);
+                                if !ptr.is_null() {
+                                    let _ = unsafe { windows::Win32::UI::WindowsAndMessaging::PostMessageW(HWND(ptr as isize), WM_CLOSE, WPARAM(0), LPARAM(0)) };
+                                }
+                                let _ = window.await;
                                 return Ok(());
                             }
                             _ = session_window => {
@@ -1631,6 +1648,11 @@ async fn run_helper_native(
                                 // already told the agent to stop. End the session
                                 // server-side as a final cleanup.
                                 let _ = AgentClient::new(&config).end_session(&session.id).await;
+                                let ptr = hwnd_holder.load(std::sync::atomic::Ordering::SeqCst);
+                                if !ptr.is_null() {
+                                    let _ = unsafe { windows::Win32::UI::WindowsAndMessaging::PostMessageW(HWND(ptr as isize), WM_CLOSE, WPARAM(0), LPARAM(0)) };
+                                }
+                                let _ = window.await;
                                 return Ok(());
                             }
                         }
@@ -1646,15 +1668,14 @@ async fn run_helper_native(
                                 let ptr = hwnd_holder.load(std::sync::atomic::Ordering::SeqCst);
                                 if !ptr.is_null() {
                                     unsafe {
-                                        windows::Win32::UI::WindowsAndMessaging::PostMessageW(
+                                        let _ = unsafe { windows::Win32::UI::WindowsAndMessaging::PostMessageW(
                                             HWND(ptr as isize),
-                                            WM_CLOSE, WPARAM(0), LPARAM(0),
-                                        );
+                                            WM_HELPER_HIDE, WPARAM(0), LPARAM(0),
+                                        ) };
                                     }
                                 }
-                                tokio::time::sleep(Duration::from_millis(300)).await;
-                                let _ = window.await;
-
+                                // Keep the hidden entry window's message loop
+                                // alive while the streamer session runs.
                                 let (agent_shutdown_tx, agent_shutdown_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
                                 helper_ui::windows_ui::set_session_shutdown(agent_shutdown_tx);
 
@@ -1668,10 +1689,20 @@ async fn run_helper_native(
                                 tokio::select! {
                                     agent_result = agent_task => {
                                         helper_ui::windows_ui::close_session_window();
-                                        agent_result.context("streamer task failed")??;
+                                            agent_result.context("streamer task failed")??;
+                                        let ptr = hwnd_holder.load(std::sync::atomic::Ordering::SeqCst);
+                                        if !ptr.is_null() {
+                                            let _ = unsafe { windows::Win32::UI::WindowsAndMessaging::PostMessageW(HWND(ptr as isize), WM_CLOSE, WPARAM(0), LPARAM(0)) };
+                                        }
+                                        let _ = window.await;
                                         return Ok(());
                                     }
                                     _ = session_window => {
+                                        let ptr = hwnd_holder.load(std::sync::atomic::Ordering::SeqCst);
+                                        if !ptr.is_null() {
+                                            let _ = unsafe { windows::Win32::UI::WindowsAndMessaging::PostMessageW(HWND(ptr as isize), WM_CLOSE, WPARAM(0), LPARAM(0)) };
+                                        }
+                                        let _ = window.await;
                                         return Ok(());
                                     }
                                 }
@@ -1954,7 +1985,7 @@ fn chat_mailbox_dir() -> PathBuf {
             .ok()
             .filter(|value| !value.trim().is_empty())
             .unwrap_or_else(|| "C:\\ProgramData".to_owned());
-        return PathBuf::from(program_data).join("DeskOS").join("chat");
+        return PathBuf::from(program_data).join("ReyDesk").join("chat");
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -4100,17 +4131,21 @@ async fn accept_webrtc_offer(
     can_monitor: bool,
     client: Arc<AgentClient>,
     session_id: String,
+    ice_servers_override: Option<Vec<RTCIceServer>>,
 ) -> Result<Arc<webrtc::peer_connection::RTCPeerConnection>> {
     let mut media_engine = MediaEngine::default();
     media_engine
         .register_default_codecs()
         .context("register default WebRTC codecs")?;
-    let ice_servers = match client.ice_config(&session_id).await {
-        Ok(servers) => servers,
-        Err(error) => {
-            eprintln!("[ice] ICE server lookup failed ({error:#}); host-candidate-only media");
-            Vec::new()
-        }
+    let ice_servers = match ice_servers_override {
+        Some(servers) => servers,
+        None => match client.ice_config(&session_id).await {
+            Ok(servers) => servers,
+            Err(error) => {
+                eprintln!("[ice] ICE server lookup failed ({error:#}); host-candidate-only media");
+                Vec::new()
+            }
+        },
     };
     let api = APIBuilder::new().with_media_engine(media_engine).build();
     let peer = Arc::new(
@@ -4511,6 +4546,7 @@ async fn run_relay_connection(
     join_token: &str,
     permissions: &[String],
     client: Arc<AgentClient>,
+    ice_servers_override: Option<Vec<RTCIceServer>>,
 ) -> Result<bool> {
     let (socket, _) = connect_async(&config.relay_url)
         .await
@@ -4613,6 +4649,7 @@ async fn run_relay_connection(
                                     .any(|permission| permission == "view_screen"),
                                 client.clone(),
                                 session_id.to_owned(),
+                                ice_servers_override.clone(),
                             )
                             .await
                             {
@@ -4738,6 +4775,7 @@ async fn connect_relay(
             &current_token,
             &current_permissions,
             client.clone(),
+            None,
         )
         .await
         {

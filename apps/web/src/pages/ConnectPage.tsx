@@ -8,6 +8,7 @@ interface ConnectInfo {
   permissions: string[]
   helperAvailable: boolean
   claimMode: 'code' | 'email_link'
+  sessionState?: string
   sessionId?: string
 }
 
@@ -151,17 +152,17 @@ export default function ConnectPage() {
       // claimed first) we attach via agent-join, chat-only.
       const url = token
         ? `/api/connect/${encodeURIComponent(code)}/join`
-        : `/api/connect/${encodeURIComponent(code)}/agent-join`
+        : `/api/connect/${encodeURIComponent(code)}/companion-join`
       const res = await fetch(url, token
         ? { method: 'POST', headers: authHeaders(token), body: '{}' }
         : { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
       if (!res.ok) return
       const body = (await res.json()) as { joinToken?: string; sessionId?: string }
-      if (!body.joinToken) return
-      if (body.sessionId) setSessionId(body.sessionId)
+      if (!body.joinToken || !body.sessionId) return
+      setSessionId(body.sessionId)
       const socket = new WebSocket(relayUrl())
       relayRef.current = socket
-      socket.onopen = () => socket.send(JSON.stringify({ type: 'join', sessionId: sessionId ?? body.sessionId, joinToken: body.joinToken }))
+      socket.onopen = () => socket.send(JSON.stringify({ type: 'join', sessionId: body.sessionId, joinToken: body.joinToken }))
       socket.onmessage = (event) => {
         let message: Record<string, unknown>
         try {
@@ -197,13 +198,16 @@ export default function ConnectPage() {
     } catch {
       // Relay is optional — REST polling still delivers chat.
     }
-  }, [code, sessionId])
+  }, [code])
 
   const loadChat = useCallback(async () => {
     const token = sessionStorage.getItem(tokenKey) ?? deviceToken
-    if (!token || !sessionId || !code) return
+    if (!sessionId || !code) return
     try {
-      const res = await fetch(`/api/connect/${encodeURIComponent(code)}/messages`, { headers: authHeaders(token) })
+      const url = token
+        ? `/api/connect/${encodeURIComponent(code)}/messages`
+        : `/api/connect/${encodeURIComponent(code)}/companion/messages`
+      const res = await fetch(url, token ? { headers: authHeaders(token) } : undefined)
       if (!res.ok) return
       const body = (await res.json()) as { messages?: ChatMessage[] }
       for (const message of body.messages ?? []) {
@@ -232,6 +236,12 @@ export default function ConnectPage() {
     const timer = window.setInterval(() => { void loadChat() }, 3000)
     return () => window.clearInterval(timer)
   }, [sessionId, loadChat])
+
+  useEffect(() => {
+    if (!info || !sessionId || consentState === 'denied') return
+    const live = ['claimed', 'connecting', 'active', 'reconnecting'].includes(info.state) || consentState === 'granted'
+    if (live) void joinRelay(deviceToken ?? sessionStorage.getItem(tokenKey) ?? '')
+  }, [info, sessionId, consentState, deviceToken, tokenKey, joinRelay])
 
   useEffect(() => {
     const el = chatLogRef.current
@@ -320,25 +330,34 @@ export default function ConnectPage() {
     setChatDraft('')
     setChatStatus('Sending…')
     let token = deviceToken ?? sessionStorage.getItem(tokenKey)
-    if (!token) token = await ensureDevice()
+    if (!token && !['claimed', 'connecting', 'active', 'reconnecting'].includes(info?.state ?? '')) {
+      token = await ensureDevice()
+    }
+    const messageUrl = token
+      ? `/api/connect/${encodeURIComponent(code)}/messages`
+      : `/api/connect/${encodeURIComponent(code)}/companion/messages`
+    let delivered = false
+    try {
+      const response = await fetch(messageUrl, {
+        method: 'POST',
+        headers: token ? authHeaders(token) : { 'content-type': 'application/json' },
+        body: JSON.stringify({ body }),
+      })
+      if (!response.ok) throw new Error('Message could not be sent.')
+      delivered = true
+    } catch (err) {
+      setChatStatus(err instanceof Error ? err.message : 'Message could not be sent.')
+    }
     if (relayRef.current && relayJoinedRef.current && relayRef.current.readyState === WebSocket.OPEN) {
       relayRef.current.send(JSON.stringify({ type: 'chat', body }))
+      delivered = true
+    }
+    if (delivered) {
+      setChatMessages((current) => [...current, { sender_type: 'agent', body, created_at: new Date().toISOString() }])
       setChatStatus('Sent')
-    } else if (token) {
-      try {
-        const res = await fetch(`/api/connect/${encodeURIComponent(code)}/messages`, {
-          method: 'POST',
-          headers: authHeaders(token),
-          body: JSON.stringify({ body }),
-        })
-        if (!res.ok) throw new Error('Message could not be sent.')
-        setChatStatus('Sent')
-        await loadChat()
-      } catch (err) {
-        setChatStatus(err instanceof Error ? err.message : 'Message could not be sent.')
-      }
+      await loadChat()
     } else {
-      setChatStatus('Message could not be sent.')
+      setChatStatus('The support page is not connected yet. Please try again.')
     }
     if (token) void joinRelay(token)
   }
@@ -392,8 +411,8 @@ export default function ConnectPage() {
     )
   }
 
-  const canConsent = info && ['requested', 'consent_pending'].includes(info.state) && consentState !== 'denied'
-  const canChat = info && (consentState === 'granted' || ['claimed', 'connecting', 'active', 'reconnecting'].includes(info.state))
+  const canConsent = info && ['requested', 'consent_pending'].includes(info.sessionState ?? info.state) && consentState !== 'denied'
+  const canChat = info && (consentState === 'granted' || ['claimed', 'connecting', 'active', 'reconnecting'].includes(info.state) || ['connecting', 'active', 'reconnecting'].includes(info.sessionState ?? ''))
 
   return (
     <div className="auth-screen">

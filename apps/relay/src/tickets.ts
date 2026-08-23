@@ -2,7 +2,7 @@ import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 
 export interface RelayTicket {
   sid: string
-  aud: 'technician' | 'agent'
+  aud: 'technician' | 'agent' | 'companion'
   exp: number
   nonce: string
 }
@@ -22,7 +22,7 @@ export function verifyTicket(secret: string, token: string, now = Date.now()): R
   } catch {
     return null
   }
-  if (!payload.sid || !payload.nonce || !['technician', 'agent'].includes(payload.aud) || payload.exp * 1000 <= now) return null
+  if (!payload.sid || !payload.nonce || !['technician', 'agent', 'companion'].includes(payload.aud) || payload.exp * 1000 <= now) return null
   const expected = createHmac('sha256', secret).update(encodedPayload).digest('base64url')
   const actual = Buffer.from(encodedSignature)
   const expectedBuffer = Buffer.from(expected)

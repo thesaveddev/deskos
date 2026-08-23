@@ -465,8 +465,10 @@ export async function remoteRoutes(app: FastifyInstance): Promise<void> {
       if (body.userId === request.user!.id) throw AppError.badRequest('You are already a participant in this session', 'self_invite')
       const target = (
         await client.query(
-          `SELECT u.id FROM users u
+          `SELECT u.id, u.email, t.name AS tenant_name
+             FROM users u
              JOIN memberships m ON m.user_id = u.id AND m.tenant_id = $2 AND m.status = 'active'
+             JOIN tenants t ON t.id = m.tenant_id
             WHERE u.id = $1`,
           [body.userId, ctx.tenantId],
         )
@@ -481,16 +483,27 @@ export async function remoteRoutes(app: FastifyInstance): Promise<void> {
           [ctx.tenantId, id, body.userId, body.role],
         )
       ).rows[0]
+      const inviteBody = `${request.user!.name} invited you to a remote session.`
       await notify(client, ctx.tenantId, {
         userId: body.userId,
         kind: 'session_invite',
         subjectType: 'session',
         subjectId: id,
-        body: `${request.user!.name} invited you to a remote session.`,
+        body: inviteBody,
       })
+      const emailJobId = target.email && app.mailer.enabled
+        ? app.emailQueue.add(app.mailer.buildNotificationMail({
+            to: target.email,
+            tenantName: target.tenant_name,
+            kind: 'session_invite',
+            body: inviteBody,
+            action: { label: 'Open remote session', url: `${app.config.publicUrl}/sessions/${id}` },
+            settingsUrl: `${app.config.publicUrl}/settings/notifications`,
+          }))
+        : null
       await addSessionEvent(client, ctx.tenantId, id, 'session.participant_invited', 'user', request.user!.id, { userId: body.userId, role: body.role })
       await appendTicketTimeline(client, ctx.tenantId, id, 'session.participant_invited', `A ${body.role} was invited to the session.`, 'user', request.user!.id, { userId: body.userId })
-      return reply.code(201).send({ participant })
+      return reply.code(201).send({ participant, emailQueued: Boolean(emailJobId), emailJobId })
     })
   })
 

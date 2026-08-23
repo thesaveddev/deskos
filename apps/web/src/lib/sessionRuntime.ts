@@ -286,7 +286,10 @@ function makePeer(runtime: Runtime): RTCPeerConnection {
   }
   peer.ontrack = (event) => {
     const stream = event.streams[0] ?? new MediaStream([event.track])
-    notify(runtime, { remoteStream: stream, state: 'connected' })
+    // Do not report a usable session until the screen track is actually
+    // attached. Data channels can open before media, which previously made the
+    // console look connected while showing a blank stage.
+    notify(runtime, { remoteStream: stream, state: 'connected', error: null })
   }
   peer.onconnectionstatechange = () => {
     if (peer.connectionState === 'connected') notify(runtime, { state: 'connected' })
@@ -388,6 +391,9 @@ async function connect(runtime: Runtime, joinToken: string): Promise<void> {
       }
       if (message.type === 'peer_joined') {
         clearWait()
+        // Only the native endpoint helper publishes screen media. Browser
+        // companions join as chat-only peers and must never trigger another
+        // WebRTC offer.
         if (message.audience === 'agent') void offerEndpoint().catch((error) => notify(runtime, {
           state: 'error',
           error: error instanceof Error ? error.message : 'Could not create the browser media offer.',
@@ -605,7 +611,7 @@ export function reconnectSessionRuntime(id: string, joinToken: string): void {
   runtime.fileChannel = null
   runtime.sysdataChannel = null
   runtime.pendingIce = []
-  notify(runtime, { state: 'authorizing', error: null })
+  notify(runtime, { state: 'authorizing', error: null, remoteStream: null, remoteCursor: null, controlArmed: false, presence: 'waiting' })
   if (joinToken) void connect(runtime, joinToken)
 }
 

@@ -26,7 +26,7 @@ CREATE TABLE session_join_tokens (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   session_id uuid NOT NULL REFERENCES remote_sessions(id) ON DELETE CASCADE,
-  audience text NOT NULL CHECK (audience IN ('technician', 'agent')),
+  audience text NOT NULL CHECK (audience IN ('technician', 'agent', 'companion')),
   token_hash text NOT NULL UNIQUE,
   expires_at timestamptz NOT NULL,
   consumed_at timestamptz,

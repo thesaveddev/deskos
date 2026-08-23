@@ -12,6 +12,7 @@ import { requireTenant } from '../../middleware/requireTenant.js'
 import { generateEnrolCode, hashToken } from '../devices/device-auth.js'
 import { authenticateAgent } from '../devices/device-auth.js'
 import { assertSessionPermission, issueJoinToken, sessionPermissions } from './remote.routes.js'
+import { buildIceServers } from '../../core/ice.js'
 import '../../types.js'
 
 const createSchema = z.object({
@@ -96,9 +97,11 @@ async function findAdhocByCode(pool: DbPool, code: string): Promise<AdhocRow | u
 function publicAdhoc(
   row: AdhocRow,
   helperAvailable: boolean,
-): { state: string; reason: string; permissions: string[]; helperAvailable: boolean; claimMode: string; sessionId?: string } {
+  sessionState?: string,
+): { state: string; sessionState?: string; reason: string; permissions: string[]; helperAvailable: boolean; claimMode: string; sessionId?: string } {
   return {
     state: row.state,
+    ...(sessionState ? { sessionState } : {}),
     reason: row.reason,
     permissions: row.permissions,
     helperAvailable,
@@ -267,11 +270,14 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
     if (claimToken && (row.claim_mode !== 'email_link' || row.claim_token_used_at || hashToken(claimToken) !== row.claim_token_hash)) {
       return reply.code(404).send({ error: { code: 'not_found', message: 'This support link is invalid or expired.' } })
     }
-    if (row.state !== 'open' || new Date(row.expires_at).getTime() <= Date.now()) {
+    if (!['open', 'claimed'].includes(row.state) || new Date(row.expires_at).getTime() <= Date.now()) {
       return reply.code(404).send({ error: { code: 'not_found', message: 'This support link is invalid or expired.' } })
     }
     const helperAvailable = Boolean(app.config.helperBinaryPath && existsSync(app.config.helperBinaryPath))
-    return reply.send(publicAdhoc(row, helperAvailable))
+    const sessionState = row.remote_session_id
+      ? (await withTenant(app.db, row.tenant_id, (client) => client.query('SELECT state FROM remote_sessions WHERE id = $1', [row.remote_session_id]))).rows[0]?.state as string | undefined
+      : undefined
+    return reply.send(publicAdhoc(row, helperAvailable, sessionState))
   })
 
   app.get(
@@ -463,8 +469,35 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
       const ctx = request.deviceCtx!
       const { row, session } = await claimedSession(app.db, codeResult.data, ctx.deviceId)
       if (!LIVE_SESSION_STATES.has(session.state)) throw AppError.conflict('This support session is no longer live.', 'invalid_session_state')
-      const joinToken = await withTenant(app.db, row.tenant_id, (client) => issueJoinToken(client, app, row.tenant_id, session.id, 'agent'))
-      return reply.send({ relayUrl: app.config.relayUrl, joinToken })
+      const joinToken = await withTenant(app.db, row.tenant_id, (client) => issueJoinToken(client, app, row.tenant_id, session.id, 'companion'))
+      return reply.send({ relayUrl: app.config.relayUrl, joinToken, sessionId: session.id })
+    },
+  )
+
+  // A browser companion can attach for chat when the native helper claimed the
+  // code first. It receives no endpoint credentials and cannot publish media.
+  app.post(
+    '/connect/:code/companion-join',
+    { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
+    async (request, reply) => {
+      reply.header('Cache-Control', 'no-store')
+      const { code: rawCode } = request.params as { code: string }
+      const codeResult = publicCodeSchema.safeParse(rawCode)
+      if (!codeResult.success) throw AppError.notFound('This support link is invalid or expired.')
+      const row = await findAdhocByCode(app.db, codeResult.data)
+      if (!row || row.state !== 'claimed' || !row.remote_session_id || new Date(row.expires_at).getTime() <= Date.now()) {
+        throw AppError.notFound('This support session is no longer available.')
+      }
+      const session = (
+        await withTenant(app.db, row.tenant_id, (client) =>
+          client.query('SELECT id, state FROM remote_sessions WHERE id = $1', [row.remote_session_id]),
+        )
+      ).rows[0]
+      if (!session || !LIVE_SESSION_STATES.has(session.state)) {
+        throw AppError.conflict('This support session is not in a joinable state.', 'invalid_session_state')
+      }
+      const joinToken = await withTenant(app.db, row.tenant_id, (client) => issueJoinToken(client, app, row.tenant_id, session.id, 'companion'))
+      return reply.send({ sessionId: session.id, joinToken, relayUrl: app.config.relayUrl })
     },
   )
 
@@ -516,6 +549,54 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
           [row.tenant_id, session.id, ctx.deviceId, body.body],
         ),
       )
+      return reply.code(201).send({ message: message.rows[0] })
+    },
+  )
+
+  // Code-bearer chat routes are used when the native helper claimed the code
+  // first. They intentionally expose only this session's chat and never issue
+  // endpoint credentials.
+  app.get(
+    '/connect/:code/companion/messages',
+    { config: { rateLimit: { max: 120, timeWindow: '1 minute' } } },
+    async (request, reply) => {
+      reply.header('Cache-Control', 'no-store')
+      const { code: rawCode } = request.params as { code: string }
+      const codeResult = publicCodeSchema.safeParse(rawCode)
+      if (!codeResult.success) throw AppError.notFound('This support link is invalid or expired.')
+      const row = await findAdhocByCode(app.db, codeResult.data)
+      if (!row?.remote_session_id || row.state !== 'claimed') throw AppError.notFound('This support session is no longer available.')
+      const liveState = (await withTenant(app.db, row.tenant_id, (client) => client.query('SELECT state FROM remote_sessions WHERE id = $1', [row.remote_session_id]))).rows[0]?.state
+      if (!liveState || !LIVE_SESSION_STATES.has(liveState)) throw AppError.conflict('This support session is not live.', 'invalid_session_state')
+      const messages = await withTenant(app.db, row.tenant_id, (client) => client.query(
+        `SELECT m.id, m.sender_type, m.sender_id, m.body, m.created_at, u.name AS sender_name
+           FROM session_messages m
+           LEFT JOIN users u ON u.id = m.sender_id AND m.sender_type = 'technician'
+          WHERE m.session_id = $1 ORDER BY m.created_at ASC LIMIT 200`,
+        [row.remote_session_id],
+      ))
+      return reply.send({ messages: messages.rows })
+    },
+  )
+
+  app.post(
+    '/connect/:code/companion/messages',
+    { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
+    async (request, reply) => {
+      reply.header('Cache-Control', 'no-store')
+      const { code: rawCode } = request.params as { code: string }
+      const codeResult = publicCodeSchema.safeParse(rawCode)
+      if (!codeResult.success) throw AppError.notFound('This support link is invalid or expired.')
+      const body = messageSchema.parse(request.body)
+      const row = await findAdhocByCode(app.db, codeResult.data)
+      if (!row?.remote_session_id || row.state !== 'claimed') throw AppError.notFound('This support session is no longer available.')
+      const liveState = (await withTenant(app.db, row.tenant_id, (client) => client.query('SELECT state FROM remote_sessions WHERE id = $1', [row.remote_session_id]))).rows[0]?.state
+      if (!liveState || !LIVE_SESSION_STATES.has(liveState)) throw AppError.conflict('This support session is not live.', 'invalid_session_state')
+      const message = await withTenant(app.db, row.tenant_id, (client) => client.query(
+        `INSERT INTO session_messages (tenant_id, session_id, sender_type, sender_id, body)
+         VALUES ($1, $2, 'agent', NULL, $3) RETURNING id, sender_type, sender_id, body, created_at`,
+        [row.tenant_id, row.remote_session_id, body.body],
+      ))
       return reply.code(201).send({ message: message.rows[0] })
     },
   )
@@ -598,7 +679,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         throw AppError.conflict('This support session is not in a joinable state.', 'invalid_session_state')
       }
       const joinToken = await withTenant(app.db, row.tenant_id, (client) => issueJoinToken(client, app, row.tenant_id, session.id, 'agent'))
-      return reply.send({ sessionId: session.id, joinToken, relayUrl: app.config.relayUrl, permissions: session.permissions })
+      return reply.send({ sessionId: session.id, joinToken, relayUrl: app.config.relayUrl, permissions: session.permissions, iceServers: buildIceServers(app.config.ice) })
     },
   )
 }

@@ -28,8 +28,6 @@ function eventLabel(event: SessionEvent): string {
 }
 
 const URL_PATTERN = /(https?:\/\/[^\s<>"']+)/g
-const CHAT_EMOJI = ['👍', '❤️', '😂', '😮', '😢', '🙏', '🎉', '😅', '🤔', '👏', '😎', '🔥', '✅', '⚠️', '👋', '💻']
-const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏']
 
 function hostOf(url: string): string {
   try {
@@ -94,10 +92,8 @@ export default function SessionConsolePage() {
   const [chatDraft, setChatDraft] = useState('')
   const [peerTyping, setPeerTyping] = useState<string | null>(null)
   const typingTimeoutRef = useRef<number | undefined>(undefined)
-  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)
   const [pendingImages, setPendingImages] = useState<Array<{ name: string; dataUrl: string }>>([])
   const [deliveredKeys, setDeliveredKeys] = useState<Set<string>>(new Set())
-  const [reactions, setReactions] = useState<Record<string, Record<string, number>>>({})
   const seenChatKeysRef = useRef<Set<string>>(new Set())
   const chatMessagesRef = useRef<SessionChatMessage[]>([])
   const chatLogRef = useRef<HTMLDivElement | null>(null)
@@ -342,13 +338,6 @@ export default function SessionConsolePage() {
     if (el) el.scrollTop = el.scrollHeight
   }, [chatMessages, peerTyping])
 
-  useEffect(() => {
-    if (!emojiPickerOpen) return
-    const close = () => setEmojiPickerOpen(false)
-    document.addEventListener('mousedown', close)
-    return () => document.removeEventListener('mousedown', close)
-  }, [emojiPickerOpen])
-
   const canControl = session?.permissions.includes('control_input') ?? false
   const canClipboard = session?.permissions.includes('clipboard') ?? false
   const canTerminal = session?.permissions.includes('terminal') && session.permissions.includes('elevation')
@@ -542,22 +531,6 @@ export default function SessionConsolePage() {
       }
       reader.readAsDataURL(file)
     }
-  }
-
-  const insertEmoji = (emoji: string) => {
-    setChatDraft((draft) => `${draft}${emoji}`)
-    chatComposerRef.current?.focus()
-    setEmojiPickerOpen(false)
-  }
-
-  const toggleReaction = (key: string, emoji: string) => {
-    setReactions((current) => {
-      const existing = { ...(current[key] ?? {}) }
-      const count = existing[emoji] ?? 0
-      if (count > 0) delete existing[emoji]
-      else existing[emoji] = 1
-      return { ...current, [key]: existing }
-    })
   }
 
   const scrollToFiles = () => {
@@ -897,7 +870,6 @@ export default function SessionConsolePage() {
               {chatMessages.length === 0 ? <span className="muted">No messages yet.</span> : chatMessages.map((message, index) => {
                 const key = `${message.createdAt}-${index}`
                 const url = firstUrl(message.body)
-                const messageReactions = reactions[key] ?? {}
                 const delivered = deliveredKeys.has(message.createdAt)
                 const isMine = message.senderType === 'technician'
                 return (
@@ -910,12 +882,6 @@ export default function SessionConsolePage() {
                       <span className="chat-url-text"><strong>{hostOf(url)}</strong><small>{url}</small></span>
                       <span className="chat-url-arrow">↗</span>
                     </a> : null}
-                    <div className="chat-actions">
-                      {QUICK_REACTIONS.map((emoji) => (
-                        <button key={emoji} type="button" className="chat-react-btn" onClick={() => toggleReaction(key, emoji)}>{emoji}</button>
-                      ))}
-                    </div>
-                    {Object.keys(messageReactions).length > 0 ? <div className="chat-reactions">{Object.entries(messageReactions).map(([emoji, count]) => <button key={emoji} type="button" className="chat-reaction-chip" onClick={() => toggleReaction(key, emoji)}>{emoji} {count}</button>)}</div> : null}
                   </div>
                 )
               })}
@@ -928,10 +894,6 @@ export default function SessionConsolePage() {
               </div>
             ))}</div> : null}
             <div className="chat-composer-row">
-              <button type="button" className={`chat-tool-btn ${emojiPickerOpen ? 'chat-tool-btn-active' : ''}`} title="Emoji" onClick={() => setEmojiPickerOpen((open) => !open)}>😊</button>
-              <button type="button" className="chat-tool-btn" title="Share an image" onClick={() => imageInputRef.current?.click()}>
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
-              </button>
               <button type="button" className="chat-tool-btn" title="Open file transfer panel" onClick={scrollToFiles}>
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
               </button>
@@ -946,8 +908,7 @@ export default function SessionConsolePage() {
               <button className="btn btn-primary btn-sm chat-send-btn" onClick={() => void sendChat()} disabled={!chatDraft.trim() && pendingImages.length === 0}>Send</button>
             </div>
             <input ref={imageInputRef} type="file" accept="image/*" multiple hidden onChange={handleImageFiles} />
-            {emojiPickerOpen ? <div className="chat-emoji-picker">{CHAT_EMOJI.map((emoji) => <button key={emoji} type="button" onClick={() => insertEmoji(emoji)}>{emoji}</button>)}</div> : null}
-            <div className="chat-composer-hint"><span className="muted">Enter to send · Shift+Enter for a new line · paste images to share</span></div>
+            <div className="chat-composer-hint"><span className="muted">Enter to send · Shift+Enter for a new line · use Files to transfer documents</span></div>
           </section>
           <section className="detail-card">
             <div className="detail-card-head"><h2>Participants</h2><span className="mono muted">{participants.length} in session</span></div>

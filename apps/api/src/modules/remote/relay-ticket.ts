@@ -1,6 +1,6 @@
 import { createHash, createHmac, randomBytes } from 'node:crypto'
 
-export type RelayAudience = 'technician' | 'agent'
+export type RelayAudience = 'technician' | 'agent' | 'companion'
 
 interface RelayTicketPayload {
   sid: string
