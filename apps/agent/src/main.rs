@@ -60,9 +60,9 @@ use windows::Win32::{
     Graphics::Gdi::{GetSysColorBrush, COLOR_WINDOW},
     UI::WindowsAndMessaging::{
         DestroyWindow, GetDlgItem, GetWindowLongPtrW, GetWindowTextW, LoadCursorW,
-        SetWindowLongPtrW, SetWindowTextW, ShowWindow, CW_USEDEFAULT, ES_CENTER,
-        GWLP_USERDATA, HMENU, IDC_ARROW, SW_HIDE, SW_SHOW, WINDOW_STYLE,        WM_CLOSE, WM_COMMAND, WM_DESTROY, WM_RBUTTONUP, WM_LBUTTONDBLCLK,
-        WS_CHILD, WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE,
+        SetForegroundWindow, SetWindowLongPtrW, SetWindowTextW, ShowWindow, CW_USEDEFAULT, ES_CENTER,
+        GWLP_USERDATA, HMENU, IDC_ARROW, SW_HIDE, SW_SHOW, WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_DESTROY, WM_RBUTTONUP, WM_LBUTTONDBLCLK,
+        WS_CAPTION, WS_CHILD, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU, WS_THICKFRAME, WS_TABSTOP, WS_VISIBLE,
     },
 };
 #[cfg(target_os = "windows")]
@@ -92,7 +92,7 @@ use windows::{
                 GetSystemMetrics, LoadIconW, MessageBoxW, PostQuitMessage, RegisterClassW,
                 TranslateMessage, IDI_APPLICATION, IDYES, MB_ICONQUESTION, MB_SYSTEMMODAL,
                 MB_YESNO, MSG, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN,
-                SM_YVIRTUALSCREEN, WINDOW_EX_STYLE, WM_APP, WNDCLASSW, WS_OVERLAPPED, TPM_RETURNCMD, CreatePopupMenu, AppendMenuW, TrackPopupMenu, MF_SEPARATOR, MF_STRING,
+                SM_YVIRTUALSCREEN, WINDOW_EX_STYLE, WM_APP, WNDCLASSW, TPM_RETURNCMD, CreatePopupMenu, AppendMenuW, TrackPopupMenu, MF_SEPARATOR, MF_STRING,
             },
         },
     },
@@ -1332,6 +1332,12 @@ const IDC_HELPER_CODE: i32 = 1001;
 #[cfg(target_os = "windows")]
 const IDC_HELPER_CONNECT: i32 = 1002;
 #[cfg(target_os = "windows")]
+const IDC_HELPER_BRAND: i32 = 1003;
+#[cfg(target_os = "windows")]
+const HELPER_TRAY_MESSAGE: u32 = WM_APP + 3;
+#[cfg(target_os = "windows")]
+const HELPER_TRAY_ID: u32 = 0x5248;
+#[cfg(target_os = "windows")]
 const WM_HELPER_HIDE: u32 = WM_APP + 2;
 
 #[cfg(target_os = "windows")]
@@ -1355,6 +1361,36 @@ unsafe extern "system" fn helper_window_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
+    if message == HELPER_TRAY_MESSAGE {
+        let action = (lparam.0 as u32) & 0xFFFF;
+        if action == WM_RBUTTONUP || action == WM_LBUTTONDBLCLK {
+            if action == WM_LBUTTONDBLCLK {
+                let _ = ShowWindow(hwnd, SW_SHOW);
+                SetForegroundWindow(hwnd);
+            } else {
+                let Ok(menu) = CreatePopupMenu() else { return LRESULT(0) };
+                let _ = AppendMenuW(menu, MF_STRING, TRAY_STATUS, PCWSTR(tray_wide("Connection status").as_ptr()));
+                let _ = AppendMenuW(menu, MF_STRING, TRAY_DISCONNECT, PCWSTR(tray_wide("Disconnect").as_ptr()));
+                let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
+                let _ = AppendMenuW(menu, MF_STRING, TRAY_EXIT, PCWSTR(tray_wide("Exit ReyDesk helper").as_ptr()));
+                let mut point = POINT::default();
+                let _ = GetCursorPos(&mut point);
+                SetForegroundWindow(hwnd);
+                let selected = TrackPopupMenu(menu, TPM_RETURNCMD, point.x, point.y, 0, hwnd, None).0 as u32;
+                let _ = windows::Win32::UI::WindowsAndMessaging::DestroyMenu(menu);
+                match selected as usize {
+                    TRAY_STATUS => {
+                        let _ = MessageBoxW(hwnd, PCWSTR(tray_wide("The helper is ready for a technician code or an active support session.").as_ptr()), PCWSTR(tray_wide("ReyDesk connection status").as_ptr()), MB_SYSTEMMODAL);
+                    }
+                    TRAY_DISCONNECT | TRAY_EXIT => {
+                        let _ = DestroyWindow(hwnd);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        return LRESULT(0);
+    }
     if message == WM_COMMAND {
         let control_id = (wparam.0 & 0xFFFF) as i32;
         if control_id == IDC_HELPER_CONNECT {
@@ -1373,14 +1409,42 @@ unsafe extern "system" fn helper_window_proc(
         return LRESULT(0);
     }
     if message == WM_HELPER_HIDE {
+        let mut tray = NOTIFYICONDATAW {
+            cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
+            hWnd: hwnd,
+            uID: HELPER_TRAY_ID,
+            ..Default::default()
+        };
+        let _ = Shell_NotifyIconW(NIM_DELETE, &mut tray);
         let _ = ShowWindow(hwnd, SW_HIDE);
         return LRESULT(0);
+    }
+    if message == windows::Win32::UI::WindowsAndMessaging::WM_SIZE {
+        if wparam.0 == 1 {
+            let _ = ShowWindow(hwnd, SW_HIDE);
+        }
+        return LRESULT(0);
+    }
+    if message == windows::Win32::UI::WindowsAndMessaging::WM_CTLCOLORSTATIC {
+        let hdc = windows::Win32::Graphics::Gdi::HDC(wparam.0 as isize);
+        windows::Win32::Graphics::Gdi::SetBkMode(hdc, windows::Win32::Graphics::Gdi::TRANSPARENT);
+        if GetDlgItem(hwnd, IDC_HELPER_BRAND) == HWND(lparam.0) {
+            windows::Win32::Graphics::Gdi::SetTextColor(hdc, windows::Win32::Foundation::COLORREF(0x003DA3E8));
+        }
+        return LRESULT(GetSysColorBrush(COLOR_WINDOW).0 as isize);
     }
     if message == WM_CLOSE {
         let _ = DestroyWindow(hwnd);
         return LRESULT(0);
     }
     if message == WM_DESTROY {
+        let mut tray = NOTIFYICONDATAW {
+            cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
+            hWnd: hwnd,
+            uID: HELPER_TRAY_ID,
+            ..Default::default()
+        };
+        let _ = Shell_NotifyIconW(NIM_DELETE, &mut tray);
         let state = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const HelperWindowState;
         if !state.is_null() {
             let _ = (*state).submit.send(HelperEvent::Closed);
@@ -1425,11 +1489,11 @@ fn run_helper_window(
             WINDOW_EX_STYLE::default(),
             PCWSTR(class_name.as_ptr()),
             PCWSTR(title.as_ptr()),
-            WS_OVERLAPPEDWINDOW,
+            WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_THICKFRAME,
             CW_USEDEFAULT,
             CW_USEDEFAULT,
-            460,
-            290,
+            430,
+            245,
             None,
             None,
             None,
@@ -1449,24 +1513,25 @@ fn run_helper_window(
         CreateWindowExW(
             WINDOW_EX_STYLE::default(),
             PCWSTR(static_class.as_ptr()),
-            PCWSTR(tray_wide("Connect securely with ReyDesk").as_ptr()),
+            PCWSTR(tray_wide("ReyDesk").as_ptr()),
             WS_CHILD | WS_VISIBLE,
             28,
+            16,
+            360,
             24,
-            400,
-            26,
-            hwnd,            None,
+            hwnd,
+            HMENU(IDC_HELPER_BRAND as isize),
             None,
             None,
         );
         CreateWindowExW(
             WINDOW_EX_STYLE::default(),
             PCWSTR(static_class.as_ptr()),
-            PCWSTR(tray_wide("Your technician provided a single-use code for this session.").as_ptr()),
+            PCWSTR(tray_wide("Connect securely with a technician").as_ptr()),
             WS_CHILD | WS_VISIBLE,
             28,
-            54,
-            400,
+            44,
+            360,
             22,
             hwnd,
             None,
@@ -1479,8 +1544,8 @@ fn run_helper_window(
             PCWSTR::null(),
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(ES_CENTER as u32),
             28,
-            84,
-            400,
+            72,
+            374,
             34,
             hwnd,
             HMENU(IDC_HELPER_CODE as isize),
@@ -1493,9 +1558,9 @@ fn run_helper_window(
             PCWSTR(tray_wide("Start secure support").as_ptr()),
             WS_CHILD | WS_VISIBLE | WS_TABSTOP,
             28,
-            136,
-            400,
-            38,
+            118,
+            374,
+            36,
             hwnd,
             HMENU(IDC_HELPER_CONNECT as isize),
             None,
@@ -1507,14 +1572,27 @@ fn run_helper_window(
             PCWSTR(tray_wide("Enter your technician's 12-digit code to begin.").as_ptr()),
             WS_CHILD | WS_VISIBLE,
             28,
-            190,
-            400,
+            174,
+            374,
             22,
             hwnd,
             None,
             None,
             None,
         );
+        let mut tray = NOTIFYICONDATAW {
+            cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
+            hWnd: hwnd,
+            uID: HELPER_TRAY_ID,
+            uFlags: NIF_ICON | NIF_MESSAGE | NIF_TIP,
+            uCallbackMessage: HELPER_TRAY_MESSAGE,
+            hIcon: LoadIconW(None, IDI_APPLICATION).unwrap_or_default(),
+            ..Default::default()
+        };
+        let tip = tray_wide("ReyDesk support helper");
+        let tip_len = tip.len().saturating_sub(1).min(tray.szTip.len().saturating_sub(1));
+        tray.szTip[..tip_len].copy_from_slice(&tip[..tip_len]);
+        let _ = Shell_NotifyIconW(NIM_ADD, &mut tray);
         ShowWindow(hwnd, SW_SHOW);
         // Store HWND so the async task can close this window after claim
         hwnd_holder_for_state.store(hwnd.0 as *mut _, std::sync::atomic::Ordering::SeqCst);
@@ -1546,6 +1624,7 @@ fn run_helper_window(
             TranslateMessage(&message);
             DispatchMessageW(&message);
         }
+        let _ = Shell_NotifyIconW(NIM_DELETE, &mut tray);
         let _ = Box::from_raw(state);
     }
     Ok(())

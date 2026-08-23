@@ -9,7 +9,8 @@ pub mod windows_ui {
     use super::super::*;
     use std::sync::atomic::{AtomicPtr, Ordering};
     use std::sync::Once;
-    use windows::Win32::Graphics::Gdi::{GetSysColorBrush, COLOR_WINDOW};
+    use windows::Win32::Graphics::Gdi::{CreateSolidBrush, GetSysColorBrush, SetBkMode, SetTextColor, COLOR_WINDOW, TRANSPARENT};
+    use windows::Win32::Foundation::COLORREF;
     use windows::Win32::UI::Shell::{NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY, NOTIFYICONDATAW, Shell_NotifyIconW};
     use windows::Win32::UI::WindowsAndMessaging::*;
     use windows::core::PCWSTR;
@@ -19,6 +20,7 @@ pub mod windows_ui {
     const IDC_ALLOW: i32 = 3001;
     const IDC_LIMITED: i32 = 3002;
     const IDC_DENY: i32 = 3003;
+    const IDC_CONSENT_BRAND: i32 = 3004;
 
     static CONSENT_RESULT: AtomicPtr<ConsentDecision> = AtomicPtr::new(std::ptr::null_mut());
 
@@ -68,6 +70,16 @@ pub mod windows_ui {
             WM_DESTROY => {
                 PostQuitMessage(0);
                 LRESULT(0)
+            }
+            WM_CTLCOLORSTATIC => {
+                let hdc = windows::Win32::Graphics::Gdi::HDC(wparam.0 as isize);
+                SetBkMode(hdc, TRANSPARENT);
+                if GetDlgItem(hwnd, IDC_CONSENT_BRAND) == HWND(lparam.0) {
+                    SetTextColor(hdc, COLORREF(BRAND_RGB));
+                } else {
+                    SetTextColor(hdc, COLORREF(0x00A0A0A0));
+                }
+                LRESULT(GetSysColorBrush(COLOR_WINDOW).0 as isize)
             }
             _ => DefWindowProcW(hwnd, msg, wparam, lparam),
         }
@@ -124,7 +136,7 @@ pub mod windows_ui {
                 PCWSTR(tray_wide("ReyDesk").as_ptr()),
                 WS_CHILD | WS_VISIBLE,
                 28, 16, 200, 22,
-                hwnd, None, None, None,
+                hwnd, HMENU(IDC_CONSENT_BRAND as isize), None, None,
             );
 
             // Description
@@ -252,6 +264,8 @@ pub mod windows_ui {
     const IDC_DISCONNECT: i32 = 4003;
     const IDC_CHAT_LOG: i32 = 4004;
     const IDC_STATUS: i32 = 4005;
+    const IDC_BRAND: i32 = 4006;
+    const BRAND_RGB: u32 = 0x003DA3E8; // ReyDesk amber: #E8A33D in Windows COLORREF order
     const TIMER_POLL_INBOX: usize = 1;
 
     const IDM_TRAY_OPEN: i32 = 4101;
@@ -402,8 +416,10 @@ pub mod windows_ui {
                         AppendMenuW(menu, MF_STRING, IDM_TRAY_OPEN as usize, PCWSTR(tray_wide("Open session window").as_ptr()));
                         AppendMenuW(menu, MF_STRING, IDM_TRAY_DISCONNECT as usize, PCWSTR(tray_wide("Disconnect").as_ptr()));
                         AppendMenuW(menu, MF_STRING, IDM_TRAY_EXIT as usize, PCWSTR(tray_wide("Exit").as_ptr()));
+                        let mut point = POINT::default();
+                        GetCursorPos(&mut point).ok();
                         SetForegroundWindow(hwnd);
-                        let selected = TrackPopupMenu(menu, TPM_RIGHTBUTTON | TPM_RETURNCMD, 0, 0, 0, hwnd, None);
+                        let selected = TrackPopupMenu(menu, TPM_RIGHTBUTTON | TPM_RETURNCMD, point.x, point.y, 0, hwnd, None);
                         DestroyMenu(menu);
                         if selected.0 != 0 {
                             PostMessageW(hwnd, WM_COMMAND, WPARAM(selected.0 as usize), LPARAM(0));
@@ -509,6 +525,17 @@ pub mod windows_ui {
                 PostQuitMessage(0);
                 LRESULT(0)
             }
+            WM_CTLCOLORSTATIC => {
+                let hdc = windows::Win32::Graphics::Gdi::HDC(wparam.0 as isize);
+                SetBkMode(hdc, TRANSPARENT);
+                if GetDlgItem(hwnd, IDC_BRAND) == HWND(lparam.0) {
+                    SetTextColor(hdc, COLORREF(BRAND_RGB));
+                } else {
+                    SetTextColor(hdc, COLORREF(0x00A0A0A0));
+                }
+                let brush = CreateSolidBrush(COLORREF(0x001D2329));
+                LRESULT(brush.0 as isize)
+            }
             _ => DefWindowProcW(hwnd, msg, wparam, lparam),
         }
     }
@@ -540,8 +567,8 @@ pub mod windows_ui {
 
             let screen_w = GetSystemMetrics(SM_CXVIRTUALSCREEN);
             let screen_h = GetSystemMetrics(SM_CYVIRTUALSCREEN);
-            let w = 480i32;
-            let h = 520i32;
+            let w = 420i32;
+            let h = 420i32;
             let x = (screen_w - w) / 2;
             let y = (screen_h - h) / 2;
 
@@ -570,9 +597,17 @@ pub mod windows_ui {
             CreateWindowExW(
                 WINDOW_EX_STYLE::default(),
                 PCWSTR(static_class.as_ptr()),
-                PCWSTR(tray_wide("Connected — Secure session active").as_ptr()),
+                PCWSTR(tray_wide("ReyDesk  ·  Connected securely").as_ptr()),
                 WS_CHILD | WS_VISIBLE,
-                20, 14, 440, 20,
+                20, 12, 380, 20,
+                hwnd, HMENU(IDC_BRAND as isize), None, None,
+            );
+            CreateWindowExW(
+                WINDOW_EX_STYLE::default(),
+                PCWSTR(static_class.as_ptr()),
+                PCWSTR(tray_wide("Session chat").as_ptr()),
+                WS_CHILD | WS_VISIBLE,
+                20, 30, 380, 16,
                 hwnd, HMENU(IDC_STATUS as isize), None, None,
             );
 
@@ -586,7 +621,7 @@ pub mod windows_ui {
                 PCWSTR(edit_class.as_ptr()),
                 PCWSTR(tray_wide("No messages yet. The technician will appear here when connected.").as_ptr()),
                 style,
-                20, 40, 440, 330,
+                20, 40, 380, 248,
                 hwnd, HMENU(IDC_CHAT_LOG as isize), None, None,
             );
 
@@ -596,7 +631,7 @@ pub mod windows_ui {
                 PCWSTR(edit_class.as_ptr()),
                 PCWSTR::null(),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
-                20, 382, 330, 28,
+                20, 300, 280, 28,
                 hwnd, HMENU(IDC_MSG_INPUT as isize), None, None,
             );
 
@@ -606,7 +641,7 @@ pub mod windows_ui {
                 PCWSTR(button_class.as_ptr()),
                 PCWSTR(tray_wide("Send").as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
-                358, 382, 102, 28,
+                308, 300, 92, 28,
                 hwnd, HMENU(IDC_MSG_SEND as isize), None, None,
             );
 
@@ -616,7 +651,7 @@ pub mod windows_ui {
                 PCWSTR(button_class.as_ptr()),
                 PCWSTR(tray_wide("Disconnect").as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
-                150, 440, 180, 34,
+                140, 350, 140, 30,
                 hwnd, HMENU(IDC_DISCONNECT as isize), None, None,
             );
 

@@ -82,7 +82,7 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
         `SELECT a.*, d.name AS device_name, d.hostname, d.ip_address, d.last_seen_at, d.device_type, t.name AS team_name
            FROM device_assignments a JOIN devices d ON d.id = a.device_id
            LEFT JOIN teams t ON t.id = a.team_id
-          WHERE a.user_id = $1 ORDER BY a.assigned_at DESC`,
+          WHERE d.adhoc = false AND a.user_id = $1 ORDER BY a.assigned_at DESC`,
         [userId],
       )).rows
       const assets = (await client.query(
@@ -104,7 +104,7 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
     const ctx = request.tenantCtx!
     const query = request.query as { status?: string; unassigned?: string; limit?: string }
     const limit = Math.min(Math.max(Number(query.limit ?? 100) || 100, 1), 500)
-    const clauses = ['d.tenant_id = $1']
+    const clauses = ['d.tenant_id = $1', 'd.adhoc = false']
     const values: unknown[] = [ctx.tenantId]
     if (query.status === 'active') clauses.push('da.ended_at IS NULL')
     if (query.status === 'returned') clauses.push("da.assignment_status = 'returned'")
@@ -133,7 +133,7 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
     const ctx = request.tenantCtx!
     const { id } = request.params as { id: string }
     return withTenant(app.db, ctx.tenantId, async (client) => {
-      const device = (await client.query('SELECT id, name FROM devices WHERE id = $1', [id])).rows[0]
+      const device = (await client.query('SELECT id, name FROM devices WHERE id = $1 AND adhoc = false', [id])).rows[0]
       if (!device) throw AppError.notFound('Device not found')
       const result = await client.query(
         `SELECT a.*, u.name AS user_name, u.email AS user_email,
@@ -158,7 +158,7 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
     if (body.assignmentStatus !== 'shared' && !body.userId) throw AppError.badRequest('Select a staff member or choose Shared device', 'assignment_user_required')
 
     const created = await withTenant(app.db, ctx.tenantId, async (client) => {
-      const device = (await client.query('SELECT id FROM devices WHERE id = $1', [id])).rows[0]
+      const device = (await client.query('SELECT id FROM devices WHERE id = $1 AND adhoc = false', [id])).rows[0]
       if (!device) throw AppError.notFound('Device not found')
       if (body.userId) {
         const member = (await client.query("SELECT 1 FROM memberships WHERE tenant_id = $1 AND user_id = $2 AND status = 'active'", [ctx.tenantId, body.userId])).rows[0]
@@ -232,7 +232,7 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
   app.get('/devices', { preHandler: [...guards, requirePermission('device.read')] }, async (request) => {
     const ctx = request.tenantCtx!
     const q = request.query as { q?: string; groupId?: string; status?: string; limit?: string; offset?: string; cursor?: string }
-    const clauses: string[] = []
+    const clauses: string[] = ['d.adhoc = false']
     const values: unknown[] = []
     if (q.q) {
       values.push(`%${q.q}%`)
@@ -270,8 +270,8 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
                   a.tag AS asset_tag, da.assignment_status, au.name AS assigned_user_name, au.email AS assigned_user_email, da.department AS assigned_department,
                   ad.name AS linked_agent_name, ad.hostname AS linked_agent_hostname,
                   ${statusExpr} AS status
-             FROM devices d
-             LEFT JOIN device_groups g ON g.id = d.group_id
+           FROM devices d
+           LEFT JOIN device_groups g ON g.id = d.group_id
              LEFT JOIN assets a ON a.device_id = d.id
              LEFT JOIN device_assignments da ON da.device_id = d.id AND da.ended_at IS NULL
              LEFT JOIN users au ON au.id = da.user_id
@@ -303,10 +303,10 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
                   g.name AS group_name,
                   ad.name AS linked_agent_name, ad.hostname AS linked_agent_hostname,
                   ${statusExpr} AS status
-             FROM devices d
-             LEFT JOIN device_groups g ON g.id = d.group_id
+           FROM devices d
+           LEFT JOIN device_groups g ON g.id = d.group_id
              LEFT JOIN devices ad ON ad.id = d.agent_device_id
-            WHERE d.id = $1`,
+            WHERE d.id = $1 AND d.adhoc = false`,
           [id],
         )
       ).rows[0]
@@ -385,7 +385,7 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
     const body = devicePatchSchema.parse(request.body)
 
     return withTenant(app.db, ctx.tenantId, async (client) => {
-      const current = (await client.query('SELECT id FROM devices WHERE id = $1', [id])).rows[0]
+      const current = (await client.query('SELECT id FROM devices WHERE id = $1 AND adhoc = false', [id])).rows[0]
       if (!current) throw AppError.notFound('Device not found')
 
       const sets: string[] = []
@@ -425,7 +425,7 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
     const { id } = request.params as { id: string }
 
     return withTenant(app.db, ctx.tenantId, async (client) => {
-      const current = (await client.query('SELECT id FROM devices WHERE id = $1', [id])).rows[0]
+      const current = (await client.query('SELECT id FROM devices WHERE id = $1 AND adhoc = false', [id])).rows[0]
       if (!current) throw AppError.notFound('Device not found')
       await client.query('DELETE FROM devices WHERE id = $1', [id])
       await recordAudit(client, ctx.tenantId, {
@@ -450,7 +450,7 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
                   count(d.id)::int AS device_count
              FROM device_groups g
              LEFT JOIN device_groups p ON p.id = g.parent_id
-             LEFT JOIN devices d ON d.group_id = g.id
+             LEFT JOIN devices d ON d.group_id = g.id AND d.adhoc = false
             GROUP BY g.id, p.name
             ORDER BY lower(g.name) ASC`,
         )
@@ -565,7 +565,7 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
              FROM device_alerts a
              JOIN devices d ON d.id = a.device_id
              LEFT JOIN tickets t ON t.id = a.ticket_id
-            ${openOnly ? 'WHERE a.resolved_at IS NULL' : ''}
+            WHERE d.adhoc = false${openOnly ? ' AND a.resolved_at IS NULL' : ''}
             ORDER BY a.created_at DESC
             LIMIT 100`,
         )

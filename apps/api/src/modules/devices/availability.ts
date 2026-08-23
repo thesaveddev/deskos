@@ -181,7 +181,7 @@ export async function checkDeviceAvailabilityForTenant(client: DbClient, tenantI
   const devices = (await client.query(
     `SELECT d.id, d.name, d.group_id, d.device_type, d.power_source, d.last_seen_at
        FROM devices d
-      WHERE d.tenant_id = $1 AND d.last_seen_at IS NOT NULL
+      WHERE d.tenant_id = $1 AND d.adhoc = false AND d.last_seen_at IS NOT NULL
         AND NOT EXISTS (SELECT 1 FROM remote_sessions rs WHERE rs.device_id = d.id AND rs.state IN ('active', 'connecting', 'consent_pending'))`,
     [tenantId],
   )).rows as DeviceRow[]
@@ -196,7 +196,7 @@ export async function checkDeviceAvailabilityForTenant(client: DbClient, tenantI
     const open = (await client.query(
       `SELECT a.id, a.ticket_id, a.ticket_due_at, d.name AS device_name, a.message
          FROM device_alerts a JOIN devices d ON d.id = a.device_id
-        WHERE a.device_id = $1 AND a.kind = 'offline' AND a.resolved_at IS NULL
+        WHERE d.adhoc = false AND a.device_id = $1 AND a.kind = 'offline' AND a.resolved_at IS NULL
         LIMIT 1`,
       [device.id],
     )).rows[0] as { id: string; ticket_id: string | null; ticket_due_at: string | null; device_name: string; message: string } | undefined
@@ -222,7 +222,7 @@ export async function checkDeviceAvailabilityForTenant(client: DbClient, tenantI
   const due = (await client.query(
     `SELECT a.id, a.device_id, a.message, d.name AS device_name
        FROM device_alerts a JOIN devices d ON d.id = a.device_id
-      WHERE a.tenant_id = $1 AND a.kind = 'offline' AND a.availability_alert = true
+      WHERE d.adhoc = false AND a.tenant_id = $1 AND a.kind = 'offline' AND a.availability_alert = true
         AND a.resolved_at IS NULL AND a.ticket_id IS NULL AND a.ticket_due_at IS NOT NULL AND a.ticket_due_at <= now()`,
     [tenantId],
   )).rows as Array<{ id: string; device_id: string; message: string; device_name: string }>
@@ -231,7 +231,7 @@ export async function checkDeviceAvailabilityForTenant(client: DbClient, tenantI
   const recovered = (await client.query(
     `UPDATE device_alerts a SET resolved_at = now()
        FROM devices d
-      WHERE a.device_id = d.id AND a.kind = 'offline' AND a.resolved_at IS NULL
+      WHERE d.adhoc = false AND a.device_id = d.id AND a.kind = 'offline' AND a.resolved_at IS NULL
         AND d.last_seen_at > a.created_at
       RETURNING a.id, a.ticket_id, a.device_id, d.name, a.availability_policy_id`,
   )).rows as Array<{ id: string; ticket_id: string | null; device_id: string; name: string; availability_policy_id: string | null }>

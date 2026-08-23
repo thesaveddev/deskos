@@ -734,6 +734,12 @@ export default function SessionConsolePage() {
             }
           }}
         >
+          {monitors.length > 0 ? <div className="session-display-switcher" role="group" aria-label="Remote displays">
+            <span className="session-display-label">Displays</span>
+            <button type="button" className={`session-display-chip ${selectedMonitorId === null ? 'active' : ''}`} onClick={() => selectMonitor('all')} disabled={!canSelectMonitor} title="Show all available displays">All</button>
+            {monitors.map((monitor) => <button type="button" className={`session-display-chip ${selectedMonitorId === monitor.id ? 'active' : ''}`} onClick={() => selectMonitor(String(monitor.id))} disabled={!canSelectMonitor} key={monitor.id} title={`${monitor.name} · ${monitor.width}×${monitor.height}`}>{monitor.id + 1}{monitor.primary ? ' · Primary' : ''}</button>)}
+            {monitorStatus ? <span className="session-display-status" role="status">{monitorStatus}</span> : null}
+          </div> : null}
           {remoteStream ? <div ref={videoWrapRef} className="session-video-wrap">
             <video
               ref={videoRef}
@@ -788,15 +794,7 @@ export default function SessionConsolePage() {
           <section className="detail-card">
             <div className="detail-card-head"><h2>Session state</h2><span className="mono muted">live</span></div>
             {canControl ? <button className={`btn btn-sm btn-block ${controlArmed ? 'btn-danger' : 'btn-primary'}`} onClick={() => setControlArmed((armed) => !armed)}>{controlArmed ? 'Disable input control' : 'Enable input control'}</button> : null}
-            {monitors.length > 0 ? <div className="monitor-selector">
-              <label className="field-label" htmlFor="session-monitor">Remote display</label>
-              <select id="session-monitor" className="field-input" value={selectedMonitorId === null ? 'all' : String(selectedMonitorId)} onChange={(event) => selectMonitor(event.target.value)} disabled={!canSelectMonitor}>
-                <option value="all">All displays</option>
-                {monitors.map((monitor) => <option value={monitor.id} key={monitor.id}>{monitor.name}{monitor.primary ? ' · Primary' : ''} ({monitor.width}×{monitor.height})</option>)}
-              </select>
-              <span className="field-hint">Switching changes the shared view and mouse coordinate space.</span>
-            </div> : null}
-            {monitorStatus ? <span className="muted clipboard-status">{monitorStatus}</span> : null}
+            {monitors.length > 0 ? <p className="console-help">{selectedMonitor ? `${selectedMonitor.name} is selected for control.` : 'All available displays are shown. Use the display controls above the screen to switch.'}</p> : null}
             <div className="console-state-line"><span className={`status-pill session-state-${session?.state ?? 'requested'}`}>{session?.state ?? 'requested'}</span><span className="mono muted">{stateLabel(consoleState)}</span></div>
             {consoleState === 'error' ? <button className="btn btn-primary btn-sm btn-block" onClick={() => void reconnectNow()}>Reconnect</button> : null}
             <p className="console-help">The session remains connected while you navigate ReyDesk. Return using the session dock; the peer, video stream, and input channels stay owned by the browser session runtime.</p>
