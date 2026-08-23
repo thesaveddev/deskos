@@ -105,17 +105,15 @@ async function seedLockIdentity(page: Page) {
 }
 
 test.describe('authentication and lock screen', () => {
-  test('signs out to the named lock screen', async ({ page }) => {
+  test('signs out to the sign-in page', async ({ page }) => {
     await mockDeskOsApi(page)
     await page.goto('/')
 
     await expect(page.getByText(/Good (morning|afternoon|evening), James\./)).toBeVisible()
     await page.getByRole('button', { name: 'Sign out' }).click()
 
-    await expect(page).toHaveURL(/\/lock$/)
-    await expect(page.getByText('James Adeyemi')).toBeVisible()
-    await expect(page.getByText('james@example.com')).toBeVisible()
-    await expect(page.getByText(/Welcome back, James/)).toBeVisible()
+    await expect(page).toHaveURL(/\/login$/)
+    await expect(page.getByRole('heading', { name: /sign in/i })).toBeVisible()
   })
 
   test('unlocks with the password on desktop and mobile', async ({ page }) => {
