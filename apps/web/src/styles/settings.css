@@ -121,3 +121,54 @@
   .settings-form-grid .settings-form-actions { grid-column: auto; }
   .settings-overview-stat { width: 100%; text-align: left; }
 }
+
+/* ---- Customer portal settings ---- */
+.portal-address-card,
+.portal-how-it-works,
+.portal-toggles {
+  margin-top: 8px;
+}
+.portal-url-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px solid var(--line-1);
+  border-radius: 10px;
+  background: var(--bg-2);
+}
+.portal-url {
+  flex: 1 1 260px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--text-1);
+}
+.portal-slug-row {
+  margin-top: 14px;
+  max-width: 460px;
+}
+.portal-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.portal-steps li {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-1);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.portal-steps li strong { font-size: 13px; }
+.portal-steps li span { color: var(--text-2); font-size: 12.5px; line-height: 1.5; }
+.field-input-invalid { border-color: var(--danger, #d64545) !important; }
+.field-error { margin: 6px 0 0; color: var(--danger, #d64545); font-size: 12px; }

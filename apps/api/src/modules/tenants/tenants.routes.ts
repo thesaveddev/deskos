@@ -165,6 +165,8 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
       allow_public_kb: true,
       show_device_context: true,
       allow_customer_resolution: true,
+      // Empty = use the organisation slug for the portal URL path.
+      slug: '',
     },
     magic_links: {
       portal_enabled: true,
@@ -222,6 +224,7 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
       allow_public_kb: z.boolean().optional(),
       show_device_context: z.boolean().optional(),
       allow_customer_resolution: z.boolean().optional(),
+      slug: z.string().trim().max(64).regex(/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/).optional(),
     }).partial().optional(),
     magic_links: z.object({
       portal_enabled: z.boolean().optional(),
@@ -284,9 +287,18 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
     { preHandler: [authenticate, requireTenant, requirePermission('ticket.read')] },
     async (request) => {
       const ctx = request.tenantCtx!
-      const { rows } = await app.db.query('SELECT settings FROM tenants WHERE id = $1', [ctx.tenantId])
+      const { rows } = await app.db.query('SELECT settings, slug FROM tenants WHERE id = $1', [ctx.tenantId])
       const raw = (rows[0]?.settings ?? {}) as Record<string, unknown>
-      return { settings: mergeTenantSettings(raw) }
+      const settings = mergeTenantSettings(raw)
+      const tenantSlug = rows[0]?.slug as string | undefined
+      const portalSlug = String(((settings.portal as Record<string, unknown> | undefined)?.slug ?? '')).trim() || tenantSlug || ctx.slug
+      return {
+        settings,
+        portal: {
+          slug: portalSlug,
+          url: `${app.config.publicUrl.replace(/\/$/, '')}/portal/${encodeURIComponent(portalSlug)}`,
+        },
+      }
     },
   )
 
@@ -307,8 +319,16 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
       }
       const merged = mergeTenantSettings(current)
       await app.db.query('UPDATE tenants SET settings = $2::jsonb WHERE id = $1', [ctx.tenantId, JSON.stringify(merged)])
+      const tenantSlug = rows[0]?.slug as string | undefined
+      const portalSlug = String(((merged.portal as Record<string, unknown> | undefined)?.slug ?? '')).trim() || tenantSlug || ctx.slug
       reply.code(200)
-      return { settings: merged }
+      return {
+        settings: merged,
+        portal: {
+          slug: portalSlug,
+          url: `${app.config.publicUrl.replace(/\/$/, '')}/portal/${encodeURIComponent(portalSlug)}`,
+        },
+      }
     },
   )
 }

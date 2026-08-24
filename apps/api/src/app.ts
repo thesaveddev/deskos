@@ -59,6 +59,7 @@ import { pushRoutes } from './modules/push/push.routes.js'
 import { sendPushToUser } from './modules/push/push.js'
 import { openApiRoutes } from './modules/openapi/openapi.routes.js'
 import { portalRoutes } from './modules/portal/portal.routes.js'
+import { publicPortalRoutes } from './modules/portal/public-portal.routes.js'
 import { reportRoutes } from './modules/reports/reports.routes.js'
 import { rmmRoutes } from './modules/rmm/rmm.routes.js'
 import { adhocSessionRoutes, connectRoutes } from './modules/remote/adhoc.routes.js'
@@ -372,6 +373,7 @@ export async function buildApp(config: AppConfig): Promise<FastifyInstance> {
     await v1.register(openApiRoutes)
     await v1.register(createEmailRoutes(emailWorker))
     await v1.register(portalRoutes)
+    await v1.register(publicPortalRoutes)
     await v1.register(kbRoutes)
     await v1.register(adhocSessionRoutes)
     await v1.register(probeRoutes)

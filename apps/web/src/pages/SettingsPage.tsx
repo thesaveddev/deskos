@@ -42,6 +42,7 @@ interface WorkspaceSettings {
     allow_public_kb: boolean
     show_device_context: boolean
     allow_customer_resolution: boolean
+    slug: string
   }
   remote_support: {
     require_consent: boolean
@@ -77,7 +78,7 @@ const DEFAULT_SETTINGS: WorkspaceSettings = {
   require_description: true, allow_attachments: true, public_notes_visible: true,
   default_priority: 'p3', default_type: 'incident',
   ai_triage: { enabled: true, autoReply: true, autoResolve: true, maxRounds: 4, resolveConfidence: 0.92, sources: ['portal', 'email', 'phone'] },
-  portal: { enabled: true, allow_public_kb: true, show_device_context: true, allow_customer_resolution: true },
+  portal: { enabled: true, allow_public_kb: true, show_device_context: true, allow_customer_resolution: true, slug: '' },
   remote_support: { require_consent: true, default_expiry_minutes: 30, allow_file_transfer: true, allow_clipboard: true, allow_terminal: false, allow_system_manage: false, default_recording_mode: 'metadata', recording_retention_days: 30 },
   endpoints: { offline_after_minutes: 10, heartbeat_interval_seconds: 30, allow_self_enrollment: true, enrollment_code_expiry_minutes: 15 },
   monitoring: { create_tickets_by_default: true, offline_ticket_mode: 'alert_only', default_ticket_priority: 'p3', default_severity: 'warning' },
@@ -152,14 +153,16 @@ const GROUPS: Array<{ label: string; links: SettingLink[] }> = [
 
 function useWorkspaceSettings() {
   const [settings, setSettings] = useState<WorkspaceSettings | null>(null)
+  const [portalInfo, setPortalInfo] = useState<{ slug: string; url: string } | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const response = await api<{ settings: WorkspaceSettings }>('/tenant/settings')
+      const response = await api<{ settings: WorkspaceSettings; portal: { slug: string; url: string } }>('/tenant/settings')
       setSettings(normalizeWorkspaceSettings(response.settings))
+      setPortalInfo(response.portal ?? null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load workspace settings')
     } finally {
@@ -171,11 +174,12 @@ function useWorkspaceSettings() {
 
   const save = async (patch: Partial<WorkspaceSettings>) => {
     setError(null)
-    const response = await api<{ settings: WorkspaceSettings }>('/tenant/settings', { method: 'PATCH', body: patch })
+    const response = await api<{ settings: WorkspaceSettings; portal: { slug: string; url: string } }>('/tenant/settings', { method: 'PATCH', body: patch })
     setSettings(normalizeWorkspaceSettings(response.settings))
+    setPortalInfo(response.portal ?? null)
   }
 
-  return { settings, loading, error, setError, save, reload: load }
+  return { settings, portalInfo, loading, error, setError, save, reload: load }
 }
 
 function SettingsNavigation({ active }: { active: SettingsTab }) {
@@ -360,12 +364,80 @@ function BrandingSettings() {
   </SettingSection>
 }
 
+function PortalSettingsTab({ settings, portalInfo, update, error, message }: {
+  settings: WorkspaceSettings
+  portalInfo: { slug: string; url: string } | null
+  update: (patch: Partial<WorkspaceSettings>) => Promise<void>
+  error: string | null
+  message: string | null
+}) {
+  const [slugDraft, setSlugDraft] = useState(settings.portal.slug)
+  const [slugInvalid, setSlugInvalid] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const portalUrl = portalInfo?.url ?? ''
+  const displaySlug = portalInfo?.slug ?? ''
+
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(portalUrl)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 2000)
+    } catch { /* clipboard unavailable */ }
+  }
+
+  const saveSlug = async () => {
+    const next = slugDraft.trim().toLowerCase()
+    if (!/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/.test(next)) { setSlugInvalid(true); return }
+    setSlugInvalid(false)
+    await update({ portal: { ...settings.portal, slug: next } })
+  }
+
+  return <SettingSection title="Customer portal" description="Your team's self-service home for raising requests, tracking tickets, and reading the knowledge base."><>
+    {error && <Alert kind="error">{error}</Alert>}
+    {message && <Alert kind="info">{message}</Alert>}
+
+    <div className="portal-address-card">
+      <div className="branding-section-heading"><span className="branding-section-icon"><Icon name="external" size={15} /></span><div><h3>Portal address</h3><p>Send this link to your staff — this is how they find the IT portal.</p></div></div>
+      <div className="portal-url-row">
+        <code className="portal-url mono">{portalUrl || 'Loading portal address…'}</code>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => void copyLink()} disabled={!portalUrl}><Icon name="copy" size={14} />{copied ? 'Copied' : 'Copy link'}</button>
+        {portalUrl ? <a className="btn btn-ghost btn-sm" href={portalUrl} target="_blank" rel="noreferrer"><Icon name="external" size={14} />Open portal</a> : null}
+      </div>
+      <div className="portal-slug-row">
+        <Field label="Portal address path" hint="Lowercase letters, numbers, and hyphens. Leave blank to use your organisation slug.">
+          <div className="settings-inline-field">
+            <input className={`field-input mono${slugInvalid ? ' field-input-invalid' : ''}`} value={slugDraft} onChange={(e) => { setSlugDraft(e.target.value.toLowerCase()); setSlugInvalid(false) }} placeholder={displaySlug} maxLength={64} aria-label="Portal URL path" />
+            <button type="button" className="btn btn-primary btn-sm" onClick={() => void saveSlug()} disabled={slugDraft.trim().toLowerCase() === settings.portal.slug}><Icon name="save" size={14} />Update link</button>
+          </div>
+        </Field>
+        {slugInvalid ? <p className="field-error">Use lowercase letters, numbers, and hyphens only (no spaces or special characters).</p> : null}
+      </div>
+    </div>
+
+    <div className="portal-how-it-works">
+      <div className="branding-section-heading"><span className="branding-section-icon"><Icon name="user" size={15} /></span><div><h3>How your staff use it</h3><p>Three steps, then they are self-sufficient.</p></div></div>
+      <ol className="portal-steps">
+        <li><strong>Share the link</strong><span>Send the portal address above by email, intranet, or a sign on your reception desk.</span></li>
+        <li><strong>They sign in with work email</strong><span>Staff with accounts sign in with their ReyDesk email. When portal magic links are enabled (Settings → Authentication), they receive a one-click sign-in email with no password needed.</span></li>
+        <li><strong>Request, track, and read</strong><span>They raise requests, follow their tickets, and browse published knowledge-base articles — without seeing any internal console tools.</span></li>
+      </ol>
+    </div>
+
+    <div className="portal-toggles">
+      <ToggleRow label="Enable customer portal" description="Allow requesters to view and raise support requests at the portal address." checked={settings.portal.enabled} onChange={(v) => void update({ portal: { ...settings.portal, enabled: v } })} />
+      <ToggleRow label="Show public knowledge base" description="Let anyone with the portal link read articles marked Public — no sign-in required." checked={settings.portal.allow_public_kb} onChange={(v) => void update({ portal: { ...settings.portal, allow_public_kb: v } })} />
+      <ToggleRow label="Show device context" description="Include linked device details when a requester views a ticket." checked={settings.portal.show_device_context} onChange={(v) => void update({ portal: { ...settings.portal, show_device_context: v } })} />
+      <ToggleRow label="Allow requester resolution" description="Let requesters mark their own resolved tickets as complete." checked={settings.portal.allow_customer_resolution} onChange={(v) => void update({ portal: { ...settings.portal, allow_customer_resolution: v } })} />
+    </div>
+  </></SettingSection>
+}
+
 function OperationalSettings({ tab }: { tab: 'portal' | 'remote' | 'devices' | 'monitoring' | 'data' }) {
-  const { settings, loading, error, setError, save } = useWorkspaceSettings()
+  const { settings, portalInfo, loading, error, setError, save } = useWorkspaceSettings()
   const [message, setMessage] = useState<string | null>(null)
   if (loading || !settings) return <div className="settings-card"><span className="etch">Loading settings…</span></div>
   const update = async (patch: Partial<WorkspaceSettings>) => { try { await save(patch); setMessage('Settings saved.') } catch (e) { setError(e instanceof Error ? e.message : 'Save failed') } }
-  if (tab === 'portal') return <SettingSection title="Customer portal" description="Control the self-service experience for requesters and customers."><>{error && <Alert kind="error">{error}</Alert>}{message && <Alert kind="info">{message}</Alert>}<ToggleRow label="Enable customer portal" description="Allow authenticated requesters to view and raise support requests." checked={settings.portal.enabled} onChange={(v) => void update({ portal: { ...settings.portal, enabled: v } })} /><ToggleRow label="Show public knowledge base" description="Expose articles marked public without requiring a portal login." checked={settings.portal.allow_public_kb} onChange={(v) => void update({ portal: { ...settings.portal, allow_public_kb: v } })} /><ToggleRow label="Show device context" description="Include linked device details when a requester views a ticket." checked={settings.portal.show_device_context} onChange={(v) => void update({ portal: { ...settings.portal, show_device_context: v } })} /><ToggleRow label="Allow requester resolution" description="Let requesters mark their own resolved tickets as complete." checked={settings.portal.allow_customer_resolution} onChange={(v) => void update({ portal: { ...settings.portal, allow_customer_resolution: v } })} /></></SettingSection>
+  if (tab === 'portal') return <PortalSettingsTab settings={settings} portalInfo={portalInfo} update={update} error={error} message={message} />
   if (tab === 'remote') return <SettingSection title="Remote support" description="Set safe defaults for attended and unattended support sessions. Endpoint consent remains mandatory for attended access."><>{error && <Alert kind="error">{error}</Alert>}{message && <Alert kind="info">{message}</Alert>}<ToggleRow label="Require endpoint consent" description="Never allow attended screen sharing to start without explicit user approval." checked={settings.remote_support.require_consent} onChange={(v) => void update({ remote_support: { ...settings.remote_support, require_consent: v } })} /><div className="settings-form-grid"><Field label="Default session expiry (minutes)"><input className="field-input" type="number" min={5} max={1440} value={settings.remote_support.default_expiry_minutes} onChange={(e) => void update({ remote_support: { ...settings.remote_support, default_expiry_minutes: Number(e.target.value) } })} /></Field><Field label="Default recording mode"><select className="field-input" value={settings.remote_support.default_recording_mode} onChange={(e) => void update({ remote_support: { ...settings.remote_support, default_recording_mode: e.target.value as WorkspaceSettings['remote_support']['default_recording_mode'] } })}><option value="off">Off</option><option value="metadata">Metadata only</option><option value="video">Video</option></select></Field><Field label="Recording retention (days)"><input className="field-input" type="number" min={1} max={3650} value={settings.remote_support.recording_retention_days} onChange={(e) => void update({ remote_support: { ...settings.remote_support, recording_retention_days: Number(e.target.value) } })} /></Field></div><ToggleRow label="Allow file transfer by default" description="New sessions may request file transfer; technicians can still scope each session." checked={settings.remote_support.allow_file_transfer} onChange={(v) => void update({ remote_support: { ...settings.remote_support, allow_file_transfer: v } })} /><ToggleRow label="Allow clipboard by default" description="Enable clipboard synchronization in newly generated support sessions." checked={settings.remote_support.allow_clipboard} onChange={(v) => void update({ remote_support: { ...settings.remote_support, allow_clipboard: v } })} /><ToggleRow label="Allow elevated terminal by default" description="Keep disabled unless your support policy explicitly permits terminal access." checked={settings.remote_support.allow_terminal} onChange={(v) => void update({ remote_support: { ...settings.remote_support, allow_terminal: v } })} /><ToggleRow label="Allow process and service management" description="Controls the default request; endpoint consent and technician permissions still apply." checked={settings.remote_support.allow_system_manage} onChange={(v) => void update({ remote_support: { ...settings.remote_support, allow_system_manage: v } })} /></></SettingSection>
   if (tab === 'devices') return <SettingSection title="Devices & agents" description="Choose how enrolled endpoints report health and how new devices join the organization."><>{error && <Alert kind="error">{error}</Alert>}{message && <Alert kind="info">{message}</Alert>}<div className="settings-form-grid"><Field label="Offline after (minutes)" hint="Used to classify a device as offline."><input className="field-input" type="number" min={1} max={1440} value={settings.endpoints.offline_after_minutes} onChange={(e) => void update({ endpoints: { ...settings.endpoints, offline_after_minutes: Number(e.target.value) } })} /></Field><Field label="Heartbeat interval (seconds)"><input className="field-input" type="number" min={10} max={3600} value={settings.endpoints.heartbeat_interval_seconds} onChange={(e) => void update({ endpoints: { ...settings.endpoints, heartbeat_interval_seconds: Number(e.target.value) } })} /></Field><Field label="Enrollment code expiry (minutes)"><input className="field-input" type="number" min={5} max={1440} value={settings.endpoints.enrollment_code_expiry_minutes} onChange={(e) => void update({ endpoints: { ...settings.endpoints, enrollment_code_expiry_minutes: Number(e.target.value) } })} /></Field></div><ToggleRow label="Allow self-enrollment" description="Permit technicians to generate one-time enrollment codes from the Devices page." checked={settings.endpoints.allow_self_enrollment} onChange={(v) => void update({ endpoints: { ...settings.endpoints, allow_self_enrollment: v } })} /></></SettingSection>
   if (tab === 'monitoring') return <SettingSection title="Monitoring defaults" description="Set the default response when endpoint metrics generate alerts. Individual rules can override these values."><>{error && <Alert kind="error">{error}</Alert>}{message && <Alert kind="info">{message}</Alert>}<ToggleRow label="Create tickets by default" description="New monitoring rules start with automatic ticket creation enabled." checked={settings.monitoring.create_tickets_by_default} onChange={(v) => void update({ monitoring: { ...settings.monitoring, create_tickets_by_default: v } })} /><Field label="Offline device response" hint="Laptops that are shut down can raise alerts without opening tickets."><select className="field-input" value={settings.monitoring.offline_ticket_mode} onChange={(e) => void update({ monitoring: { ...settings.monitoring, offline_ticket_mode: e.target.value as WorkspaceSettings['monitoring']['offline_ticket_mode'] } })}><option value="alert_only">Alert only — recommended for laptops</option><option value="ticket">Open a ticket</option></select></Field><div className="settings-form-grid"><Field label="Default ticket priority"><select className="field-input" value={settings.monitoring.default_ticket_priority} onChange={(e) => void update({ monitoring: { ...settings.monitoring, default_ticket_priority: e.target.value } })}><option value="p1">P1 — Critical</option><option value="p2">P2 — High</option><option value="p3">P3 — Normal</option><option value="p4">P4 — Low</option></select></Field><Field label="Default severity"><select className="field-input" value={settings.monitoring.default_severity} onChange={(e) => void update({ monitoring: { ...settings.monitoring, default_severity: e.target.value as WorkspaceSettings['monitoring']['default_severity'] } })}><option value="info">Info</option><option value="warning">Warning</option><option value="critical">Critical</option></select></Field></div><p className="settings-note"><Icon name="alert" size={14} /> Individual monitoring rules always take precedence over these defaults.</p></></SettingSection>

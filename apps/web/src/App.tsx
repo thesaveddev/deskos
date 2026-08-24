@@ -64,6 +64,7 @@ const DeveloperPage = lazy(() => import('./pages/DeveloperPage.js'))
 const TicketsPage = lazy(() => import('./pages/TicketsPage.js'))
 const WebhooksPage = lazy(() => import('./pages/WebhooksPage.js'))
 const PortalHomePage = lazy(() => import('./pages/portal/PortalHomePage.js'))
+const PortalPublicPage = lazy(() => import('./pages/portal/PortalPublicPage.js'))
 const PortalNewTicketPage = lazy(() => import('./pages/portal/PortalNewTicketPage.js'))
 const PortalTicketPage = lazy(() => import('./pages/portal/PortalTicketPage.js'))
 import { useAuth } from './lib/auth.js'
@@ -286,6 +287,8 @@ export default function App() {
       <Route path="/portal" element={<Protected><PortalHomePage /></Protected>} />
       <Route path="/portal/new" element={<Protected><PortalNewTicketPage /></Protected>} />
       <Route path="/portal/tickets/:number" element={<Protected><PortalTicketPage /></Protected>} />
+      {/* Public tenant portal — reydesk.com/portal/<organisation-slug> */}
+      <Route path="/portal/:slug" element={<PortalPublicPage />} />
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
       </Suspense>

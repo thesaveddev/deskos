@@ -20,6 +20,8 @@ export default function LoginPage() {
   const navigate = useNavigate()
   const auth = useAuth()
   const [searchParams] = useSearchParams()
+  const next = searchParams.get('next')
+  const signInDestination = next && next.startsWith('/') && !next.startsWith('//') ? next : '/'
   const initialMagicToken = searchParams.get('magic_token')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -60,7 +62,7 @@ export default function LoginPage() {
       const result = await api<LoginResponse>('/auth/magic-link/verify', { method: 'POST', auth: false, retryOn401: false, body: { token, ...(code ? { mfaCode: code } : {}) } })
       await auth.applySession(result)
       if (result.tenant?.id) auth.switchTenant(result.tenant.id)
-      navigate('/', { replace: true })
+      navigate(signInDestination, { replace: true })
     } catch (err) {
       if (err instanceof ApiError && err.code === 'magic_mfa_required') {
         const challenge = typeof err.details?.challenge_token === 'string' ? err.details.challenge_token : token
@@ -86,7 +88,7 @@ export default function LoginPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialMagicToken])
 
-  if (auth.status === 'authed') return <Navigate to="/" replace />
+  if (auth.status === 'authed') return <Navigate to={signInDestination} replace />
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
@@ -95,7 +97,7 @@ export default function LoginPage() {
       const body = phase === 'mfa' ? { email, password, mfaCode } : { email, password }
       const result = await api<LoginResponse>('/auth/login', { method: 'POST', body, auth: false, retryOn401: false })
       await auth.applySession(result)
-      navigate('/', { replace: true })
+      navigate(signInDestination, { replace: true })
     } catch (err) {
       if (err instanceof ApiError && err.code === 'mfa_required') {
         setPhase('mfa'); setBusy(false); return
@@ -151,9 +153,9 @@ export default function LoginPage() {
     setError(null)
     try {
       await auth.applySession(pendingSession)
-      navigate('/', { replace: true })
+      navigate(signInDestination, { replace: true })
     } catch (err) {
-      // The setup transaction has already completed. Keep the issued session
+      // The setup transaction has already completed but keep the issued session
       // and give the user a retry instead of sending them back to credentials.
       setError(err instanceof ApiError
         ? `MFA is enabled, but ReyDesk could not open the dashboard: ${err.message}`
@@ -173,7 +175,7 @@ export default function LoginPage() {
     try {
       const result = await assertPasskey(email, password)
       if (!('accessToken' in result)) { setError('No passkey is registered for this account. Use password sign-in instead.'); return }
-      await auth.applySession(result); navigate('/', { replace: true })
+      await auth.applySession(result); navigate(signInDestination, { replace: true })
     } catch (err) { setError(err instanceof Error ? err.message : 'Passkey sign-in failed') }
     finally { setBusy(false) }
   }
