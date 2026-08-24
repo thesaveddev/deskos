@@ -128,6 +128,24 @@ describe('relay WebSocket trust boundary', () => {
     agent.socket.close()
   })
 
+  it('forwards agent monitor replies (display switching metadata) to technicians', async () => {
+    const technician = await openClient(url)
+    technician.socket.send(JSON.stringify({ type: 'join', sessionId: SESSION, joinToken: joinToken('technician') }))
+    await waitFor(technician, (message) => message.type === 'joined')
+
+    const agent = await openClient(url)
+    agent.socket.send(JSON.stringify({ type: 'join', sessionId: SESSION, joinToken: joinToken('agent') }))
+    await waitFor(agent, (message) => message.type === 'joined')
+
+    agent.socket.send(JSON.stringify({ type: 'monitor', action: 'list', monitors: [{ id: 0, name: 'Primary', width: 1920, height: 1080 }] }))
+    const received = await waitFor(technician, (message) => message.type === 'monitor')
+    expect(received.action).toBe('list')
+    expect(received.monitors[0].name).toBe('Primary')
+    expect(received.from).toBe('agent')
+    technician.socket.close()
+    agent.socket.close()
+  })
+
   it('restricts session_end to technicians', async () => {
     const technician = await openClient(url)
     technician.socket.send(JSON.stringify({ type: 'join', sessionId: SESSION, joinToken: joinToken('technician') }))

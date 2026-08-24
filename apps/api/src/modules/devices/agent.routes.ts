@@ -197,7 +197,7 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
   })
 
   // -- Heartbeat: mark the device alive; resolves open offline alerts --------
-  app.post('/agent/heartbeat', { preHandler: [authenticateAgent] }, async (request, _reply) => {
+  app.post('/agent/heartbeat', { preHandler: [authenticateAgent], config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }, async (request, _reply) => {
     heartbeatSchema.parse(request.body ?? {})
     const ctx = request.deviceCtx!
 
@@ -244,7 +244,7 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
   })
 
   // -- Inventory: update device facts ----------------------------------------
-  app.put('/agent/inventory', { preHandler: [authenticateAgent] }, async (request) => {
+  app.put('/agent/inventory', { preHandler: [authenticateAgent], config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }, async (request) => {
     const body = inventorySchema.parse(request.body)
     const ctx = request.deviceCtx!
 
@@ -287,7 +287,7 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
   })
 
   // -- Metrics: record a sample (CPU/mem/disk) -------------------------------
-  app.post('/agent/metrics', { preHandler: [authenticateAgent] }, async (request) => {
+  app.post('/agent/metrics', { preHandler: [authenticateAgent], config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }, async (request) => {
     const body = metricsSchema.parse(request.body)
     const ctx = request.deviceCtx!
 
@@ -347,7 +347,7 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
   // -- DEX application experience events ------------------------------------
   // These are raw real-user-monitoring facts; scoring remains best-effort and
   // can be recomputed later when an organization changes its weights.
-  app.post('/agent/dex/events', { preHandler: [authenticateAgent] }, async (request) => {
+  app.post('/agent/dex/events', { preHandler: [authenticateAgent], config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }, async (request) => {
     const body = z.object({
       userId: z.string().uuid().nullable().optional(),
       applicationName: z.string().trim().min(1).max(200),
@@ -367,14 +367,14 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
   })
 
   // -- Updates: offer the configured release via a deterministic rollout ring --
-  app.get('/agent/update', { preHandler: [authenticateAgent] }, async (request) => {
+  app.get('/agent/update', { preHandler: [authenticateAgent], config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }, async (request) => {
     const ctx = request.deviceCtx!
     const query = request.query as { version?: string }
     const currentVersion = typeof query.version === 'string' && query.version.trim() ? query.version.trim() : '0.0.0'
     return checkUpdate(app.config.update, ctx.deviceId, currentVersion)
   })
 
-  app.post('/agent/update/telemetry', { preHandler: [authenticateAgent] }, async (request, reply) => {
+  app.post('/agent/update/telemetry', { preHandler: [authenticateAgent], config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }, async (request, reply) => {
     const body = updateTelemetrySchema.parse(request.body)
     const ctx = request.deviceCtx!
     await withTenant(app.db, ctx.tenantId, (client) =>

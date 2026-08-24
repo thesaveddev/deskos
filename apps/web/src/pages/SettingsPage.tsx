@@ -196,12 +196,6 @@ function SettingsNavigation({ active }: { active: SettingsTab }) {
           ))}
         </div>
       ))}
-      <div className="settings-navigation-group">
-        <div className="settings-navigation-label">Account</div>
-        <NavLink to="/profile" className="settings-navigation-link"><Icon name="user" size={16} /><span><strong>My profile</strong><small>Name, email, password, and photo</small></span></NavLink>
-        <NavLink to="/staff" className="settings-navigation-link"><Icon name="user" size={16} /><span><strong>Staff management</strong><small>Members, roles, and invitations</small></span></NavLink>
-        <NavLink to="/billing" className="settings-navigation-link"><Icon name="key" size={16} /><span><strong>Billing</strong><small>Subscription, payment methods, and invoices</small></span></NavLink>
-      </div>
     </aside>
   )
 }

@@ -359,7 +359,7 @@ export async function createRelayRuntime(options: RelayRuntimeOptions): Promise<
       return
     }
 
-    if (['sdp', 'ice', 'control', 'chat', 'typing', 'state'].includes(String(message.type))) {
+    if (['sdp', 'ice', 'control', 'chat', 'typing', 'state', 'monitor'].includes(String(message.type))) {
       void broadcast(peer.sessionId, peer.connectionId, {
         ...message,
         from: peer.audience,

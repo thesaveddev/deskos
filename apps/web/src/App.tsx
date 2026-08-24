@@ -277,6 +277,7 @@ export default function App() {
       <Route path="/settings/ai" element={<Protected><SettingsPage /></Protected>} />
       <Route path="/settings/security" element={<Protected><SettingsPage /></Protected>} />
       <Route path="/settings/active-directory" element={<Protected><SettingsPage /></Protected>} />
+      <Route path="/settings/ad" element={<Protected><SettingsPage /></Protected>} />
       <Route path="/settings/branding" element={<Protected><SettingsPage /></Protected>} />
       <Route path="/settings/portal" element={<Protected><SettingsPage /></Protected>} />
       <Route path="/settings/remote" element={<Protected><SettingsPage /></Protected>} />

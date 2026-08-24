@@ -114,7 +114,11 @@ export async function buildApp(config: AppConfig): Promise<FastifyInstance> {
 
   const app = Fastify({
     logger: { level: config.env === 'test' ? 'silent' : 'info' },
-    trustProxy: false,
+    // Trust a single reverse-proxy hop (nginx on the VPS). Without this every
+    // client — and every enrolled agent — shares the nginx IP, so the global
+    // rate limiter keys them all to one bucket and agent heartbeats start
+    // failing with 429s while the devices still answer remote control.
+    trustProxy: 1,
   })
 
   const pool = createPool(config.databaseUrl, { max: config.dbPoolMax })

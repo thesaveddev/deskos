@@ -614,3 +614,137 @@
   .public-portal-search { width: 100%; }
   .public-portal-actions .btn { width: 100%; }
 }
+
+/* ---- Directory sync (Entra) workspace ---- */
+.directory-page, .public-api-page { display: flex; flex-direction: column; gap: 14px; }
+.directory-hero, .public-api-hero {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 20px;
+  padding: 22px 24px; border: 1px solid var(--line-1); border-radius: var(--radius);
+  background: var(--gradient-hero);
+}
+.directory-hero-copy { min-width: 0; }
+.directory-hero-copy h2, .public-api-hero h2 { margin: 6px 0 6px; font-size: 19px; letter-spacing: -0.01em; }
+.directory-hero-description, .public-api-hero p { max-width: 680px; margin: 0; color: var(--text-2); font-size: 12.5px; line-height: 1.6; }
+.directory-hero-icon { display: inline-flex; align-items: center; justify-content: center; width: 52px; height: 52px; flex: 0 0 auto; border: 1px solid var(--line-2); border-radius: 14px; background: var(--bg-1); color: var(--accent); }
+.directory-stat-grid, .public-api-stat-grid {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px;
+}
+.directory-stat, .public-api-stat {
+  display: flex; min-width: 0; flex-direction: column; gap: 3px; padding: 13px 15px;
+  border: 1px solid var(--line-1); border-radius: var(--radius); background: var(--bg-1);
+}
+.directory-stat span, .public-api-stat span { color: var(--text-2); font-size: 11px; }
+.directory-stat strong, .public-api-stat strong { color: var(--text-1); font: 600 23px var(--font-mono); line-height: 1.1; }
+.directory-stat small, .public-api-stat small { color: var(--text-3); font-size: 10px; }
+.directory-tabs, .public-api-tabs {
+  display: flex; gap: 4px; padding: 4px; border: 1px solid var(--line-1); border-radius: var(--radius);
+  background: var(--bg-1); overflow-x: auto;
+}
+.directory-tab, .public-api-tab {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 38px; padding: 0 13px;
+  border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent;
+  color: var(--text-2); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap;
+}
+.directory-tab:hover, .public-api-tab:hover { background: var(--bg-2); color: var(--text-1); }
+.directory-tab.active, .public-api-tab.active { border-color: var(--line-2); background: var(--bg-2); color: var(--text-1); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.directory-tab > span, .public-api-tab > span { display: flex; flex-direction: column; gap: 1px; text-align: left; }
+.directory-tab strong, .public-api-tab strong { font-size: 12px; }
+.directory-tab small, .public-api-tab small { color: var(--text-3); font-size: 10px; }
+.directory-section, .public-api-section {
+  padding: 18px; border: 1px solid var(--line-1); border-radius: var(--radius); background: var(--bg-1);
+}
+.directory-section-head, .public-api-section-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 14px;
+}
+.directory-section-head h3, .public-api-section-head h3, .public-api-overview-card h4, .public-api-client-title h4 { margin: 0 0 3px; font-size: 14px; }
+.directory-section-head p, .public-api-section-head p { margin: 0; color: var(--text-3); font-size: 11px; }
+.directory-section-count { flex: 0 0 auto; padding: 3px 9px; border: 1px solid var(--line-1); border-radius: 999px; background: var(--bg-2); color: var(--text-2); font: 11px var(--font-mono); }
+.directory-connection-list, .public-api-client-list { display: flex; flex-direction: column; gap: 8px; }
+.directory-connection-card, .public-api-client-card {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 13px 14px;
+  border: 1px solid var(--line-1); border-radius: var(--radius-sm); background: var(--bg-0);
+}
+.directory-connection-main, .public-api-client-main { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.directory-connection-title { display: flex; align-items: center; gap: 9px; }
+.directory-provider-icon { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; flex: 0 0 30px; border-radius: 8px; background: color-mix(in srgb, var(--accent) 14%, var(--bg-2)); color: var(--accent); }
+.directory-connection-title h4, .public-api-client-title h4 { margin: 0; font-size: 13px; }
+.directory-connection-title > div { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.directory-connection-meta { margin: 0; color: var(--text-3); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.directory-connection-actions, .public-api-client-main .directory-connection-actions { display: flex; flex-wrap: wrap; gap: 6px; flex: 0 0 auto; }
+.directory-empty, .public-api-empty {
+  display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 8px;
+  min-height: 150px; padding: 30px; text-align: center; color: var(--text-2);
+  border: 1px dashed var(--line-2); border-radius: var(--radius-sm);
+}
+.directory-empty strong, .public-api-empty strong { color: var(--text-1); font-size: 13px; }
+.directory-empty span, .public-api-empty span { color: var(--text-3); font-size: 11px; max-width: 320px; line-height: 1.5; }
+.directory-table-wrap { width: 100%; overflow-x: auto; border: 1px solid var(--line-1); border-radius: var(--radius-sm); }
+.directory-table { width: 100%; min-width: 720px; border-collapse: collapse; }
+.directory-table th { padding: 9px 12px; border-bottom: 1px solid var(--line-1); background: var(--bg-2); color: var(--text-3); font: 10px var(--font-mono); text-align: left; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
+.directory-table td { padding: 10px 12px; border-bottom: 1px solid var(--line-1); color: var(--text-2); font-size: 12px; }
+.directory-table tbody tr:last-child td { border-bottom: 0; }
+.directory-table tbody tr:hover { background: var(--bg-2); }
+.directory-table-empty { padding: 22px; text-align: center; color: var(--text-3); }
+.directory-guide-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.directory-guide-card { display: flex; flex-direction: column; gap: 5px; padding: 15px; border: 1px solid var(--line-1); border-radius: var(--radius-sm); background: var(--bg-0); }
+.directory-guide-number { color: var(--accent); font: 11px var(--font-mono); }
+.directory-guide-card h4 { margin: 2px 0 0; font-size: 13px; }
+.directory-guide-card p { margin: 0; color: var(--text-2); font-size: 11.5px; line-height: 1.55; }
+.directory-warning { display: flex; gap: 10px; margin-top: 12px; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--line-1)); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--warn) 7%, var(--bg-1)); color: var(--text-2); font-size: 12px; line-height: 1.5; }
+.directory-warning .icon { flex: 0 0 auto; color: var(--warn); }
+.directory-warning strong { color: var(--text-1); }
+.directory-warning span { min-width: 0; }
+@media (max-width: 860px) {
+  .directory-stat-grid, .public-api-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .directory-guide-grid { grid-template-columns: 1fr; }
+  .directory-connection-card, .public-api-client-card { align-items: flex-start; flex-direction: column; }
+}
+
+/* ---- Public API workspace ---- */
+.public-api-hero-actions { display: flex; gap: 8px; flex: 0 0 auto; }
+.public-api-secret {
+  display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line-1));
+  border-radius: var(--radius-sm); background: color-mix(in srgb, var(--accent) 6%, var(--bg-1));
+}
+.public-api-secret > div { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.public-api-secret strong { color: var(--text-1); font-size: 12px; }
+.public-api-secret span { color: var(--text-3); font-size: 10px; }
+.public-api-secret code { flex: 1; min-width: 0; padding: 7px 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: var(--radius-sm); background: var(--bg-2); border: 1px solid var(--line-1); color: var(--accent-hi); font: 12px var(--font-mono); }
+.public-api-overview-grid { display: grid; grid-template-columns: repeat(3, minma
+
+/* ---- Billing redesign ---- */
+.billing-hero {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 20px;
+  padding: 22px 24px; margin-bottom: 18px;
+  border: 1px solid var(--line-1); border-radius: var(--radius); background: var(--gradient-hero);
+}
+.billing-hero-main { min-width: 0; flex: 1; }
+.billing-hero-title { display: flex; align-items: center; gap: 10px; margin: 5px 0 4px; }
+.billing-hero-title h3 { margin: 0; font-size: 21px; letter-spacing: -0.01em; }
+.billing-hero-desc { margin: 0 0 10px; color: var(--text-2); font-size: 12.5px; max-width: 640px; line-height: 1.55; }
+.billing-hero-meta { display: flex; flex-wrap: wrap; gap: 6px 16px; color: var(--text-2); font-size: 12px; }
+.billing-hero-meta span { display: inline-flex; align-items: center; gap: 6px; }
+.billing-hero-meta svg { color: var(--ok); }
+.billing-hero-limits { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; max-width: 480px; }
+.billing-limit-row { display: grid; grid-template-columns: 86px 1fr 70px; align-items: center; gap: 10px; font-size: 12px; }
+.billing-limit-label { color: var(--text-2); }
+.billing-limit-track { height: 6px; border-radius: 3px; background: var(--bg-1); overflow: hidden; border: 1px solid var(--line-1); }
+.billing-limit-fill { display: block; height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.3s ease; }
+.billing-limit-value { color: var(--text-2); text-align: right; }
+.billing-hero-actions { display: flex; flex-direction: column; gap: 8px; flex: 0 0 auto; }
+.billing-plan-annual { display: block; margin-top: 2px; color: var(--ok); font-family: var(--font-sans); font-size: 11px; }
+.billing-plan-card.recommended { border-color: var(--info); box-shadow: 0 0 0 1px color-mix(in srgb, var(--info) 35%, transparent); }
+.billing-plan-badge-recommended { background: var(--info); }
+.billing-plan-features li { display: flex; align-items: flex-start; gap: 7px; }
+.billing-plan-features svg { flex: 0 0 auto; margin-top: 2px; color: var(--ok); }
+.card-brand { display: inline-flex; align-items: center; justify-content: center; min-width: 48px; height: 28px; padding: 0 8px; border-radius: 6px; background: var(--bg-1); border: 1px solid var(--line-2); color: var(--text-2); font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.04em; }
+.card-brand.visa { color: #2563eb; border-color: #2563eb55; }
+.card-brand.mc { color: #d97706; border-color: #d9770655; }
+.card-brand.amex { color: #1f9d8a; border-color: #1f9d8a55; }
+.card-brand.disc { color: #7c3aed; border-color: #7c3aed55; }
+@media (max-width: 760px) {
+  .billing-hero { flex-direction: column; }
+  .billing-hero-actions { flex-direction: row; }
+  .billing-limit-row { grid-template-columns: 78px 1fr 64px; }
+}
