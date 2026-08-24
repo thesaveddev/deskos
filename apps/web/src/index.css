@@ -748,3 +748,46 @@
   .billing-hero-actions { flex-direction: row; }
   .billing-limit-row { grid-template-columns: 78px 1fr 64px; }
 }
+
+/* ---- billing: region + gateway checkout ---- */
+.billing-region-card { display: flex; flex-direction: column; gap: 14px; }
+.billing-region-current { display: flex; align-items: center; gap: 12px; }
+.billing-region-current > div { display: flex; flex-direction: column; gap: 2px; }
+.billing-region-flag { display: inline-flex; align-items: center; justify-content: center; min-width: 42px; height: 30px; padding: 0 8px; border: 1px solid var(--line-2); border-radius: var(--radius-sm); background: var(--bg-2); color: var(--accent); font-family: var(--font-mono); font-size: 13px; font-weight: 600; letter-spacing: 0.05em; }
+.billing-region-gateways { display: flex; flex-direction: column; gap: 6px; }
+.gateway-chip { display: flex; align-items: center; gap: 8px; color: var(--text-2); font-size: 12px; }
+.gateway-chip.disabled { opacity: 0.55; }
+.gateway-badge { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 999px; font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.gateway-paystack { background: rgba(0, 157, 224, 0.14); color: #009de0; border: 1px solid rgba(0, 157, 224, 0.35); }
+.gateway-stripe { background: rgba(99, 91, 255, 0.14); color: #635bff; border: 1px solid rgba(99, 91, 255, 0.35); }
+.gateway-manual { background: var(--bg-2); color: var(--text-2); border: 1px solid var(--line-2); }
+.billing-region-editor { display: grid; grid-template-columns: minmax(220px, 0.8fr) minmax(320px, 1.2fr); gap: 16px; margin-bottom: 24px; }
+.billing-region-field { display: flex; flex-direction: column; gap: 6px; }
+.billing-region-field .field-input { height: 38px; }
+.billing-region-preview { display: flex; flex-direction: column; gap: 10px; }
+.billing-gateway-card { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; background: var(--bg-1); border: 1px solid var(--line-1); border-radius: var(--radius); }
+.billing-gateway-card.disabled { opacity: 0.6; }
+.billing-gateway-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.billing-gateway-status { color: var(--text-3); font-size: 11px; }
+.billing-gateway-methods { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; padding: 0; list-style: none; }
+.billing-gateway-methods li { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); font-size: 12px; }
+.billing-section-spacer { margin-top: 28px; }
+.billing-checkout-modal { max-width: 520px; }
+.billing-checkout-region { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; padding: 12px 14px; background: var(--bg-2); border: 1px solid var(--line-1); border-radius: var(--radius); }
+.billing-checkout-region-row { display: flex; align-items: center; gap: 10px; color: var(--text-2); font-size: 13px; }
+.billing-checkout-gateways { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.billing-gateway-option { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border: 1px solid var(--line-1); border-radius: var(--radius); background: var(--bg-1); cursor: pointer; }
+.billing-gateway-option.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.billing-gateway-option input[type="radio"] { position: absolute; opacity: 0; pointer-events: none; }
+.billing-gateway-option-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.billing-checkout-methods { display: flex; flex-wrap: wrap; gap: 8px; }
+.billing-method-pill { display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px; border: 1px solid var(--line-2); border-radius: 999px; background: var(--bg-0); color: var(--text-2); font-size: 12px; cursor: pointer; }
+.billing-method-pill:hover { border-color: var(--accent); color: var(--accent-hi); }
+.billing-method-pill.selected { border-color: var(--accent); background: rgba(232, 163, 61, 0.12); color: var(--accent-hi); }
+.billing-method-pill small { color: var(--text-3); }
+.billing-checkout-note { display: flex; align-items: flex-start; gap: 8px; margin: 14px 0 0; color: var(--text-3); font-size: 12px; line-height: 1.45; }
+.billing-checkout-note .icon { flex-shrink: 0; margin-top: 1px; }
+@media (max-width: 760px) {
+  .billing-region-editor { grid-template-columns: 1fr; }
+  .billing-checkout-modal { max-width: 100%; }
+}

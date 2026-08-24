@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Icon } from '../components/Icons.js'
-import { Alert, Field, Modal, PageHeader, Panel } from '../components/ui.js'
+import { Alert, PageHeader, Panel } from '../components/ui.js'
 import { Shell } from '../components/Shell.js'
 import { useAuth } from '../lib/auth.js'
 import {
-  listPlans, getSubscription, changePlan, cancelSubscription,
+  listPlans, getSubscription, createSubscription, changePlan, cancelSubscription,
   listInvoices, listPaymentMethods, removePaymentMethod, setDefaultPaymentMethod,
-  addPaymentMethod, formatCents,
+  addPaymentMethod, getBillingMeta, setBillingCountry, startCheckout, checkoutStatus,
+  formatCents,
   type Plan, type Subscription, type Invoice, type PaymentMethod,
+  type GatewayInfo,
 } from '../lib/billing.js'
 
 function StatusBadge({ status }: { status: string }) {
@@ -34,6 +36,10 @@ function LimitBar({ label, used, max }: { label: string; used: number; max: numb
   )
 }
 
+function GatewayBadge({ slug }: { slug: string }) {
+  return <span className={`gateway-badge gateway-${slug}`}>{slug === 'paystack' ? 'Paystack' : slug === 'stripe' ? 'Stripe' : 'Invoice'}</span>
+}
+
 export default function BillingPage() {
   const auth = useAuth()
   const isOwner = auth.memberships.some((m) => m.tenant.id === auth.activeTenantId && m.orgRole === 'owner')
@@ -54,20 +60,53 @@ export default function BillingPage() {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
+  // ── Region-aware billing ───────────────────────────────────
+  const [meta, setMeta] = useState<{ country: string; detectedCountry: string; currency: string | null; gateways: GatewayInfo[]; countries: Array<{ code: string; name: string; gateway: string }>; paystackPublicKey: string } | null>(null)
+  const [regionDraft, setRegionDraft] = useState('')
+  const [savingRegion, setSavingRegion] = useState(false)
+  // Checkout modal state
+  const [checkoutPlan, setCheckoutPlan] = useState<Plan | null>(null)
+  const [checkoutGateway, setCheckoutGateway] = useState<string>('auto')
+  const [checkoutMethod, setCheckoutMethod] = useState<string>('')
+  const [startingCheckout, setStartingCheckout] = useState(false)
+
+  const refreshBilling = useCallback(async () => {
+    const [s, i, pm] = await Promise.allSettled([getSubscription(), listInvoices(), listPaymentMethods()])
+    if (s.status === 'fulfilled') setSub(s.value.subscription)
+    if (i.status === 'fulfilled') setInvoices(i.value.invoices)
+    if (pm.status === 'fulfilled') setMethods(pm.value.methods)
+  }, [])
+
   useEffect(() => {
     Promise.allSettled([
-      listPlans(), getSubscription(), listInvoices(), listPaymentMethods(),
+      listPlans(), getSubscription(), listInvoices(), listPaymentMethods(), getBillingMeta(),
       fetch('/api/v1/members').then((r) => r.json() as Promise<{ members?: unknown[] }>),
       fetch('/api/v1/devices?pageSize=1').then((r) => r.json() as Promise<{ total?: number }>),
-    ]).then(([p, s, i, pm, m, d]) => {
+    ]).then(([p, s, i, pm, m, mem, d]) => {
       if (p.status === 'fulfilled') setPlans(p.value.plans)
       if (s.status === 'fulfilled') setSub(s.value.subscription)
       if (i.status === 'fulfilled') setInvoices(i.value.invoices)
       if (pm.status === 'fulfilled') setMethods(pm.value.methods)
-      if (m.status === 'fulfilled') setStaffCount(m.value.members?.length ?? 0)
+      if (m.status === 'fulfilled') { setMeta(m.value); setRegionDraft(m.value.country || m.value.detectedCountry || 'US') }
+      if (mem.status === 'fulfilled') setStaffCount(mem.value.members?.length ?? 0)
       if (d.status === 'fulfilled') setDeviceCount(d.value.total ?? 0)
     }).finally(() => setLoading(false))
-  }, [])
+
+    // Handle the return from a hosted gateway checkout (?checkout=paystack&reference=…).
+    const params = new URLSearchParams(window.location.search)
+    const reference = params.get('reference')
+    if (params.get('checkout') && reference) {
+      checkoutStatus(reference).then((res) => {
+        if (res.ok && res.paid) {
+          setNotice('Payment successful — your subscription is now active. Thank you!')
+          void refreshBilling()
+        } else if (res.ok && res.status === 'incomplete') {
+          setNotice('Checkout was not completed. No payment was taken.')
+        }
+      }).catch(() => setNotice('We could not confirm your payment yet. Check your invoices shortly.'))
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+  }, [refreshBilling])
 
   const handleChangePlan = async (slug: string) => {
     if (!isOwner) return
@@ -77,7 +116,7 @@ export default function BillingPage() {
         const { subscription } = await changePlan(slug)
         setSub(subscription)
       } else {
-        const { subscription } = await (await import('../lib/billing.js')).createSubscription(slug, cycle)
+        const { subscription } = await createSubscription(slug, cycle)
         setSub(subscription)
       }
     } catch (err) { setError(err instanceof Error ? err.message : 'Could not change plan') }
@@ -122,8 +161,45 @@ export default function BillingPage() {
     } catch (err) { setError(err instanceof Error ? err.message : 'Could not update default') }
   }
 
+  const saveRegion = async () => {
+    if (!regionDraft || regionDraft === meta?.country) return
+    setSavingRegion(true)
+    try {
+      const res = await setBillingCountry(regionDraft)
+      setMeta((prev) => prev ? { ...prev, country: res.billing.country, currency: res.billing.currency || prev.currency, gateways: res.gateways } : prev)
+      setNotice(`Payment region set to ${regionDraft.toUpperCase()}.`)
+    } catch (err) { setError(err instanceof Error ? err.message : 'Could not update payment region') }
+    setSavingRegion(false)
+  }
+
+  const openCheckout = (plan: Plan) => {
+    setCheckoutPlan(plan)
+    setCheckoutGateway('auto')
+    setCheckoutMethod('')
+  }
+
+  const beginCheckout = async () => {
+    if (!checkoutPlan) return
+    setStartingCheckout(true)
+    try {
+      const res = await startCheckout(checkoutPlan.slug, cycle)
+      if (res.gateway === 'manual') {
+        // Offline invoice: activated immediately, no gateway redirect.
+        setCheckoutPlan(null)
+        setNotice(`You're on the ${checkoutPlan.name} plan — we've raised an offline invoice you can settle by bank transfer.`)
+        void refreshBilling()
+      } else {
+        window.location.href = res.url
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not start checkout')
+      setStartingCheckout(false)
+    }
+  }
+
   const currentPlan = plans.find((p) => p.slug === sub?.plan_slug)
   const price = (plan: Plan) => cycle === 'annual' ? plan.price_annual_cents : plan.price_monthly_cents
+  const currency = meta?.currency ?? 'USD'
   const usedFeatures = useMemo(() => currentPlan?.features.slice(0, 4) ?? [], [currentPlan])
   const tabItems = [
     { id: 'overview', label: 'Overview' },
@@ -131,6 +207,15 @@ export default function BillingPage() {
     { id: 'payment', label: 'Payment methods', count: methods.length },
     { id: 'invoices', label: 'Invoices', count: invoices.length },
   ] as const
+
+  // Gateways offered for the selected region (auto = best available).
+  const gatewaysForRegion = meta?.gateways ?? []
+  const autoGateway = gatewaysForRegion.find((g) => g.enabled && g.slug !== 'manual') ?? gatewaysForRegion.find((g) => g.enabled)
+  const activeGateway = checkoutGateway === 'auto'
+    ? autoGateway
+    : gatewaysForRegion.find((g) => g.slug === checkoutGateway)
+  const activeMethods = activeGateway?.methods ?? []
+  const chosenMethod = activeMethods.find((m) => m.id === checkoutMethod) ?? activeMethods[0]
 
   if (loading) {
     return (
@@ -190,6 +275,21 @@ export default function BillingPage() {
             <button className="btn btn-ghost btn-sm" onClick={() => setActiveTab('invoices')}><Icon name="file" size={14} />View invoices</button>
           </div>
         </Panel>
+        <Panel title="Payment region" subtitle="Determines the payment providers and currencies offered.">
+          <div className="billing-region-card">
+            <div className="billing-region-current">
+              <span className="billing-region-flag">{meta?.country || '—'}</span>
+              <div>
+                <strong>{meta?.countries.find((c) => c.code === meta.country)?.name || 'Not set'}</strong>
+                {meta?.detectedCountry && meta.detectedCountry !== meta?.country ? <small className="muted">Detected from your location: {meta.detectedCountry}</small> : <small className="muted">Set by your organization owner.</small>}
+              </div>
+            </div>
+            <div className="billing-region-gateways">
+              {meta?.gateways.map((g) => <span key={g.slug} className={`gateway-chip ${g.enabled ? '' : 'disabled'}`}><GatewayBadge slug={g.slug} />{g.enabled ? g.methods.map((m) => m.label).join(' · ') : 'Unavailable'}</span>)}
+            </div>
+            {isOwner ? <button className="btn btn-ghost btn-sm" onClick={() => setActiveTab('payment')}><Icon name="settings" size={14} />Change region</button> : null}
+          </div>
+        </Panel>
       </div> : null}
 
       {activeTab === 'plans' && isOwner ? (
@@ -210,7 +310,7 @@ export default function BillingPage() {
               <h3 className="billing-plan-name">{plan.name}</h3>
               <p className="billing-plan-desc">{plan.description}</p>
               <div className="billing-plan-price">
-                {p === 0 ? 'Free' : <>{formatCents(p)}<span className="billing-plan-period">/{cycle === 'annual' ? 'mo' : 'month'}</span></>}
+                {p === 0 ? 'Free' : <>{formatCents(p, currency)}<span className="billing-plan-period">/{cycle === 'annual' ? 'mo' : 'month'}</span></>}
                 {p !== 0 && cycle === 'annual' ? <span className="billing-plan-annual">billed annually</span> : null}
               </div>
               {plan.max_technicians > 0 ? (
@@ -220,9 +320,9 @@ export default function BillingPage() {
                 {plan.features.map((f, i) => <li key={i}><Icon name="check" size={13} />{f}</li>)}
               </ul>
               {isOwner && !isCurrent ? (
-                <button className="btn btn-primary billing-plan-btn" onClick={() => handleChangePlan(plan.slug)} disabled={changing === plan.slug}>
-                  {changing === plan.slug ? 'Switching…' : sub ? 'Switch plan' : 'Get started'}
-                </button>
+                p === 0
+                  ? <button className="btn btn-primary billing-plan-btn" onClick={() => void handleChangePlan(plan.slug)} disabled={changing === plan.slug}>{changing === plan.slug ? 'Switching…' : 'Get started'}</button>
+                  : <button className="btn btn-primary billing-plan-btn" onClick={() => openCheckout(plan)}>{sub ? 'Switch plan' : 'Choose plan'}</button>
               ) : isCurrent ? <button className="btn btn-ghost billing-plan-btn" disabled>Current plan</button> : null}
             </div>
           )
@@ -242,11 +342,35 @@ export default function BillingPage() {
         </div>
       </div> : null}
 
-      {/* Payment methods */}
+      {/* Payment methods */} 
       {activeTab === 'payment' ? <div className="billing-section">
         <div className="billing-section-header">
-          <div><h2 className="billing-section-title">Payment methods</h2><p className="billing-section-subtitle">Cards used to pay for subscription charges.</p></div>
-          {isOwner && <button className="btn btn-primary btn-sm" onClick={() => setShowAddCard((open) => !open)}><Icon name="add" size={14} />{showAddCard ? 'Cancel' : 'Add card'}</button>}
+          <div><h2 className="billing-section-title">Payment region</h2><p className="billing-section-subtitle">Pick the region this organization bills from — it decides which providers and local payment methods are offered.</p></div>
+          <button className="btn btn-primary btn-sm" onClick={() => void saveRegion()} disabled={savingRegion || !regionDraft || regionDraft === meta?.country}><Icon name="check" size={14} />{savingRegion ? 'Saving…' : 'Save region'}</button>
+        </div>
+        <div className="billing-region-editor">
+          <div className="billing-region-field">
+            <label className="field-label">Billing country</label>
+            <select className="field-input" value={regionDraft} onChange={(e) => setRegionDraft(e.target.value)}>
+              {meta?.countries.map((c) => <option key={c.code} value={c.code}>{c.name} ({c.code}) — {c.gateway === 'paystack' ? 'Paystack' : 'Stripe'}</option>)}
+            </select>
+            {meta?.detectedCountry && meta.detectedCountry !== meta?.country ? <p className="field-hint">We detected <strong>{meta.detectedCountry}</strong> from your connection — you can override it for this organization.</p> : null}
+          </div>
+          <div className="billing-region-preview">
+            {meta?.gateways.map((g) => (
+              <div key={g.slug} className={`billing-gateway-card ${g.enabled ? '' : 'disabled'}`}>
+                <div className="billing-gateway-head"><GatewayBadge slug={g.slug} /><span className="billing-gateway-status">{g.enabled ? 'Available' : 'Not configured'}</span></div>
+                <ul className="billing-gateway-methods">
+                  {g.methods.map((m) => <li key={m.id}><Icon name="check" size={13} />{m.label}{m.note ? <span className="muted"> — {m.note}</span> : null}</li>)}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="billing-section-header billing-section-spacer">
+          <div><h2 className="billing-section-title">Payment methods</h2><p className="billing-section-subtitle">Cards and authorizations on file for subscription charges.</p></div>
+          {isOwner && <button className="btn btn-ghost btn-sm" onClick={() => setShowAddCard((open) => !open)}><Icon name="add" size={14} />{showAddCard ? 'Cancel' : 'Add card manually'}</button>}
         </div>
         {showAddCard ? (
           <div className="billing-add-card">
@@ -262,7 +386,7 @@ export default function BillingPage() {
           </div>
         ) : null}
         {methods.length === 0 ? (
-          <p className="dash-empty">No payment methods on file.</p>
+          <p className="dash-empty">No payment methods on file. Adding a card happens when you complete a secure checkout.</p>
         ) : (
           <div className="billing-methods-list">
             {methods.map((m) => (
@@ -271,6 +395,7 @@ export default function BillingPage() {
                 <span className="billing-method-details">
                   {m.brand.toUpperCase()} •••• {m.last4}
                   {m.exp_month && m.exp_year ? <span className="muted"> · Expires {m.exp_month}/{m.exp_year}</span> : null}
+                  {m.gateway && m.gateway !== 'manual' ? <span className="muted"> · via {m.gateway}</span> : null}
                 </span>
                 {m.is_default && <span className="status-pill status-active">Default</span>}
                 {isOwner ? (
@@ -301,7 +426,7 @@ export default function BillingPage() {
               <div key={inv.id} className="billing-invoice-row">
                 <span className="mono">#{inv.number}</span>
                 <span>{new Date(inv.created_at).toLocaleDateString()}</span>
-                <span className="mono">{formatCents(inv.amount_cents)}</span>
+                <span className="mono">{formatCents(inv.amount_cents, inv.currency || currency)}</span>
                 <StatusBadge status={inv.status} />
               </div>
             ))}
@@ -320,6 +445,58 @@ export default function BillingPage() {
             <div className="modal-actions">
               <button className="btn btn-ghost" onClick={() => setShowCancel(false)}>Keep subscription</button>
               <button className="btn btn-danger" onClick={() => void handleCancel()}>Cancel subscription</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Hosted checkout modal — pick gateway + method for the chosen plan */}
+      {checkoutPlan ? (
+        <div className="modal-backdrop" onClick={() => setCheckoutPlan(null)}>
+          <div className="modal billing-checkout-modal" onClick={(e) => e.stopPropagation()}>
+            <h3 className="modal-title">Checkout — {checkoutPlan.name}</h3>
+            <p className="modal-desc">
+              {formatCents(price(checkoutPlan), currency)}/{cycle === 'annual' ? 'mo, billed annually' : 'month'}
+              {sub ? ' · your current plan will be upgraded on payment.' : ' · starts your subscription today.'}
+            </p>
+
+            <div className="billing-checkout-region">
+              <span className="field-label">Payment region</span>
+              <div className="billing-checkout-region-row">
+                <span className="billing-region-flag">{meta?.country || '—'}</span>
+                <span>{meta?.countries.find((c) => c.code === meta.country)?.name || 'Not set'}</span>
+              </div>
+            </div>
+
+            <div className="billing-checkout-gateways">
+              {gatewaysForRegion.filter((g) => g.enabled).map((g) => (
+                <label key={g.slug} className={`billing-gateway-option ${checkoutGateway === g.slug ? 'selected' : ''}`}>
+                  <input type="radio" name="gateway" value={g.slug} checked={checkoutGateway === g.slug} onChange={() => { setCheckoutGateway(g.slug); setCheckoutMethod('') }} />
+                  <span className="billing-gateway-option-head"><GatewayBadge slug={g.slug} /><span className="muted">{g.methods.length} methods</span></span>
+                  {checkoutGateway === g.slug ? (
+                    <span className="billing-checkout-methods">
+                      {g.methods.map((m) => (
+                        <button key={m.id} type="button" className={`billing-method-pill ${checkoutMethod === m.id ? 'selected' : ''}`} onClick={() => setCheckoutMethod(m.id)}>
+                          {m.label}{m.note ? <small> · {m.note}</small> : null}
+                        </button>
+                      ))}
+                    </span>
+                  ) : null}
+                </label>
+              ))}
+            </div>
+
+            {activeGateway?.slug === 'manual' || checkoutGateway === 'manual' ? (
+              <p className="billing-checkout-note"><Icon name="alert" size={13} />Offline payment: we'll email an invoice; your plan activates once we confirm the transfer.</p>
+            ) : (
+              <p className="billing-checkout-note"><Icon name="lock" size={13} />You'll be redirected to {activeGateway?.label ?? 'our payment provider'} to complete payment securely. {meta?.paystackPublicKey ? 'Paystack handles all local payment methods.' : ''}</p>
+            )}
+
+            <div className="modal-actions">
+              <button className="btn btn-ghost" onClick={() => setCheckoutPlan(null)}>Cancel</button>
+              <button className="btn btn-primary" onClick={() => void beginCheckout()} disabled={startingCheckout}>
+                <Icon name="lock" size={14} />{startingCheckout ? 'Redirecting…' : `Pay with ${activeGateway?.label ?? 'gateway'}${chosenMethod ? ` · ${chosenMethod.label}` : ''}`}
+              </button>
             </div>
           </div>
         </div>

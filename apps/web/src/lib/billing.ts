@@ -52,6 +52,40 @@ export interface PaymentMethod {
   exp_year: number | null
   is_default: boolean
   created_at: string
+  gateway?: string
+  gateway_method?: string
+  external_id?: string
+}
+
+export interface GatewayMethodInfo {
+  id: string
+  label: string
+  description: string
+  note?: string
+}
+
+export interface GatewayInfo {
+  slug: 'paystack' | 'stripe' | 'manual'
+  label: string
+  enabled: boolean
+  methods: GatewayMethodInfo[]
+}
+
+export interface BillingMeta {
+  country: string
+  detectedCountry: string
+  currency: string | null
+  gateways: GatewayInfo[]
+  countries: Array<{ code: string; name: string; gateway: string }>
+  paystackPublicKey: string
+}
+
+export interface CheckoutResult {
+  url: string
+  reference: string
+  gateway: string
+  country: string
+  currency: string
 }
 
 export function listPlans(): Promise<{ plans: Plan[] }> {
@@ -94,6 +128,29 @@ export function setDefaultPaymentMethod(id: number): Promise<{ ok: boolean }> {
   return api(`/billing/payment-methods/${id}/default`, { method: 'PATCH' })
 }
 
-export function formatCents(cents: number): string {
-  return `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+export function getBillingMeta(): Promise<{ country: string; detectedCountry: string; currency: string | null; gateways: GatewayInfo[]; countries: BillingMeta['countries']; paystackPublicKey: string }> {
+  return api('/billing/meta')
+}
+
+export function setBillingCountry(country: string): Promise<{ billing: { country: string; currency: string }; gateways: GatewayInfo[] }> {
+  return api('/billing/meta', { method: 'PATCH', body: { country } })
+}
+
+export function startCheckout(plan: string, billing_cycle: string): Promise<CheckoutResult> {
+  return api('/billing/checkout', { method: 'POST', body: { plan, billing_cycle } })
+}
+
+export function checkoutStatus(reference: string): Promise<{ ok: boolean; paid?: boolean; status?: string; subscription?: Subscription | null; invoices?: Invoice[] }> {
+  return api(`/billing/checkout/status?reference=${encodeURIComponent(reference)}`)
+}
+
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: '$', NGN: '₦', GHS: 'GH₵', KES: 'KSh', ZAR: 'R', EGP: 'E£',
+  XOF: 'CFA', UGX: 'USh', RWF: 'FRw', TZS: 'TSh', GBP: '£',
+}
+
+export function formatCents(cents: number, currency = 'USD'): string {
+  const symbol = CURRENCY_SYMBOLS[currency.toUpperCase()] ?? `${currency.toUpperCase()} `
+  const value = (cents / 100).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+  return `${symbol}${value}`
 }

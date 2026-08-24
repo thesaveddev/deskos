@@ -68,6 +68,7 @@ import { marketplaceRoutes } from './modules/marketplace/marketplace.routes.js'
 import { supportRoutes } from './modules/support/support.routes.js'
 import { notesRoutes } from './modules/notes/notes.routes.js'
 import { billingRoutes } from './modules/billing/billing.routes.js'
+import { billingWebhookRoutes } from './modules/billing/billing-webhooks.routes.js'
 import { recordingRoutes } from './modules/remote/recording.routes.js'
 import { remoteRoutes } from './modules/remote/remote.routes.js'
 import { scriptRoutes } from './modules/scripts/scripts.routes.js'
@@ -391,6 +392,10 @@ export async function buildApp(config: AppConfig): Promise<FastifyInstance> {
   // Registered under /api/connect so the JSON info/claim endpoints never shadow
   // the human-facing /connect/:code SPA page served by the web app.
   await app.register(connectRoutes, { prefix: '/api' })
+
+  // Gateway webhooks (Paystack / Stripe). Registered outside the v1 scope so
+  // their raw-body JSON parser applies only to these routes.
+  await app.register(billingWebhookRoutes, { prefix: '/api/v1' })
 
   // Serve the React frontend in production (SPA bundled alongside the API).
   // dist/app.js (prod) or src/app.ts (dev) -> apps/web/dist

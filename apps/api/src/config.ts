@@ -44,6 +44,18 @@ export interface AppConfig {
   ai: AiConfig
   webauthn: WebauthnConfig
   push: PushConfig
+  billing: BillingConfig
+}
+
+export interface BillingConfig {
+  /** Paystack secret key; empty disables the Paystack provider. */
+  paystackSecretKey: string
+  /** Paystack public (publishable) key, safe to expose to browsers. */
+  paystackPublicKey: string
+  /** Stripe secret key; empty disables the Stripe provider. */
+  stripeSecretKey: string
+  /** Stripe webhook signing secret — required to trust Stripe events. */
+  stripeWebhookSecret: string
 }
 
 export interface SentryConfig {
@@ -279,6 +291,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       privateKey: value('REYDESK_VAPID_PRIVATE_KEY') ?? '',
       subject: value('REYDESK_VAPID_SUBJECT') ?? 'mailto:admin@reydesk.local',
       ttlSec: Math.max(60, Number(value('REYDESK_PUSH_TTL_SEC') ?? 86400)),
+    },
+    billing: {
+      paystackSecretKey: value('REYDESK_PAYSTACK_SECRET_KEY') ?? '',
+      paystackPublicKey: value('REYDESK_PAYSTACK_PUBLIC_KEY') ?? '',
+      stripeSecretKey: value('REYDESK_STRIPE_SECRET_KEY') ?? '',
+      stripeWebhookSecret: value('REYDESK_STRIPE_WEBHOOK_SECRET') ?? '',
     },
   }
 }
