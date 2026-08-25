@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { PortalShell } from '../../components/PortalShell.js'
+import { Icon } from '../../components/Icons.js'
 import { Alert } from '../../components/ui.js'
-import { formatWhen } from '../../lib/tickets.js'
+import { formatWhen, STATUS_LABELS } from '../../lib/tickets.js'
 import { portalTickets, type PortalTicket } from '../../lib/portal.js'
 
 export default function PortalHomePage() {
@@ -23,52 +24,62 @@ export default function PortalHomePage() {
 
   return (
     <PortalShell>
-      <div className="page-head">
-        <h1 className="page-title">My requests</h1>
-        <div className="page-actions">
-          <Link to="/portal/new" className="btn btn-primary btn-sm">New request</Link>
+      <div className="portal-queue">
+        <div className="portal-queue-header">
+          <h2>My requests</h2>
+          <Link to="/portal/new" className="btn btn-primary btn-sm">
+            <Icon name="add" size={14} /> New request
+          </Link>
         </div>
-      </div>
 
-      {error ? <Alert kind="error">{error}</Alert> : null}
+        {error ? <Alert kind="error">{error}</Alert> : null}
 
-      {tickets === null ? (
-        <span className="etch">Loading your requests…</span>
-      ) : tickets.length === 0 ? (
-        <div className="empty-state">
-          <p>You don&apos;t have any requests yet.</p>
-          <Link to="/portal/new" className="btn btn-primary">Submit your first request</Link>
-        </div>
-      ) : (
-        <div className="queue-table">
-          <table>
-            <thead>
-              <tr>
-                <th className="col-num">#</th>
-                <th>Subject</th>
-                <th className="col-status">Status</th>
-                <th className="col-updated">Last updated</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tickets.map((t) => (
-                <tr key={t.id}>
-                  <td className="col-num mono">#{t.number}</td>
-                  <td>
-                    <Link to={`/portal/tickets/${t.number}`} className="subject-cell">
-                      {t.subject}
-                    </Link>
-                  </td>
-                  <td className="col-status">
-                    <span className={`status-pill status-${t.status}`}>{t.status.replace('_', ' ')}</span>
-                  </td>
-                  <td className="col-updated muted mono">{formatWhen(t.updated_at)}</td>
+        {tickets === null ? (
+          <span className="etch">Loading your requests…</span>
+        ) : tickets.length === 0 ? (
+          <div className="portal-empty">
+            <div className="portal-empty-icon">
+              <Icon name="ticket" size={24} />
+            </div>
+            <h3>No requests yet</h3>
+            <p>When you submit a support request, it will appear here so you can track its progress.</p>
+            <Link to="/portal/new" className="btn btn-primary btn-sm">Submit your first request</Link>
+          </div>
+        ) : (
+          <div style={{ border: '1px solid var(--line-1)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
+            <table className="portal-queue-table">
+              <thead>
+                <tr>
+                  <th style={{ width: 80 }}>#</th>
+                  <th>Subject</th>
+                  <th style={{ width: 120 }}>Status</th>
+                  <th style={{ width: 140 }}>Last updated</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+              </thead>
+              <tbody>
+                {tickets.map((t) => (
+                  <tr key={t.id}>
+                    <td className="mono" style={{ color: 'var(--text-3)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>#{t.number}</td>
+                    <td>
+                      <Link to={`/portal/tickets/${t.number}`} className="subject-link">
+                        {t.subject}
+                      </Link>
+                    </td>
+                    <td>
+                      <span className={`status-pill status-${t.status}`}>
+                        {STATUS_LABELS[t.status] ?? t.status.replace('_', ' ')}
+                      </span>
+                    </td>
+                    <td className="mono" style={{ color: 'var(--text-3)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+                      {formatWhen(t.updated_at)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </PortalShell>
   )
 }

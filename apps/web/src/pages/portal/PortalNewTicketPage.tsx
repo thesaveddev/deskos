@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { PortalShell } from '../../components/PortalShell.js'
+import { Icon } from '../../components/Icons.js'
 import { Alert, Field } from '../../components/ui.js'
 import { createPortalTicket } from '../../lib/portal.js'
 
@@ -27,37 +28,52 @@ export default function PortalNewTicketPage() {
 
   return (
     <PortalShell>
-      <div className="page-head">
-        <h1 className="page-title">New request</h1>
-      </div>
-      {error ? <Alert kind="error">{error}</Alert> : null}
-      <form className="form-panel" onSubmit={handleSubmit}>
-        <Field label="Subject" hint="A short summary of what you need help with">
-          <input
-            className="field-input"
-            value={subject}
-            onChange={(e) => setSubject(e.target.value)}
-            minLength={3}
-            maxLength={300}
-            required
-            autoFocus
-          />
-        </Field>
-        <Field label="Description" hint="The more detail you give, the faster we can help">
-          <textarea
-            className="field-input"
-            rows={8}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            maxLength={20000}
-          />
-        </Field>
-        <div className="form-actions">
-          <button type="submit" className="btn btn-primary" disabled={busy || subject.trim().length < 3}>
-            {busy ? 'Submitting…' : 'Submit request'}
-          </button>
+      <div style={{ maxWidth: 680 }}>
+        <div className="portal-queue-header">
+          <h2>New request</h2>
         </div>
-      </form>
+
+        {error ? <Alert kind="error">{error}</Alert> : null}
+
+        <div className="portal-new-help">
+          <Icon name="sparkles" size={16} />
+          <span>
+            Describe your issue in detail. The more information you provide — including error messages, steps to reproduce, and affected devices — the faster our team can help.
+          </span>
+        </div>
+
+        <form className="portal-new-form" onSubmit={handleSubmit} style={{ marginTop: 18 }}>
+          <Field label="Subject" hint="A short summary of what you need help with">
+            <input
+              className="field-input"
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              placeholder="e.g. Printer not responding on 3rd floor"
+              minLength={3}
+              maxLength={300}
+              required
+              autoFocus
+            />
+          </Field>
+
+          <Field label="Description" hint="Include steps to reproduce, error messages, and any relevant details">
+            <textarea
+              className="field-input"
+              rows={8}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="What happened? What did you expect? What have you already tried?"
+              maxLength={20000}
+            />
+          </Field>
+
+          <div className="form-actions">
+            <button type="submit" className="btn btn-primary" disabled={busy || subject.trim().length < 3}>
+              {busy ? 'Submitting…' : 'Submit request'}
+            </button>
+          </div>
+        </form>
+      </div>
     </PortalShell>
   )
 }

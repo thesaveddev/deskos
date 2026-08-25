@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { BrandRow } from '../../components/ui.js'
+import { Icon } from '../../components/Icons.js'
 import { formatWhen } from '../../lib/tickets.js'
 
 interface PortalMeta {
@@ -16,7 +17,7 @@ interface PublicArticle {
   title: string
   summary: string
   body?: string
-  tags: string[]
+  tags: string[] | null
   updated_at: string
 }
 
@@ -114,19 +115,36 @@ export default function PortalPublicPage() {
           <h1>How can we help?</h1>
           <p>Find an answer in the knowledge base or raise a request with the {meta.name} support team.</p>
           <div className="public-portal-actions">
-            <Link to="/login?next=/portal/new" className="btn btn-primary btn-lg"><span>Submit a request</span></Link>
-            <Link to="/login?next=/portal" className="btn btn-ghost btn-lg"><span>Track my requests</span></Link>
+            <Link to="/login?next=/portal/new" className="btn btn-primary btn-lg">
+              <span>Submit a request</span>
+            </Link>
+            <Link to="/login?next=/portal" className="btn btn-ghost btn-lg">
+              <span>Track my requests</span>
+            </Link>
           </div>
         </section>
 
         {meta.allowPublicKb ? (
           <section id="kb" className="public-portal-kb">
             <div className="public-portal-kb-head">
-              <div><h2>Knowledge base</h2><p>Self-service answers from {meta.name} — no sign-in required.</p></div>
-              <input className="field-input public-portal-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search articles…" aria-label="Search the knowledge base" />
+              <div>
+                <h2>Knowledge base</h2>
+                <p>Self-service answers from {meta.name} — no sign-in required.</p>
+              </div>
+              <input
+                className="field-input public-portal-search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search articles…"
+                aria-label="Search the knowledge base"
+              />
             </div>
-            {articles === null ? <span className="etch">Loading articles…</span> : articles.length === 0 ? (
-              <div className="empty-state"><p>{query ? `No articles match “${query}”.` : 'No public articles published yet.'}</p></div>
+            {articles === null ? (
+              <span className="etch">Loading articles…</span>
+            ) : articles.length === 0 ? (
+              <div className="empty-state">
+                <p>{query ? `No articles match "${query}".` : 'No public articles published yet.'}</p>
+              </div>
             ) : (
               <div className="public-portal-article-grid">
                 {articles.map((item) => (
@@ -143,11 +161,19 @@ export default function PortalPublicPage() {
 
         {article ? (
           <section className="public-portal-article-reader">
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setArticle(null)}>← All articles</button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setArticle(null)}>
+              ← All articles
+            </button>
             <h2>{article.title}</h2>
             {article.summary ? <p className="muted">{article.summary}</p> : null}
             <div className="public-portal-article-body" dangerouslySetInnerHTML={{ __html: article.body ?? '' }} />
           </section>
+        ) : null}
+
+        {error ? (
+          <div className="empty-state" style={{ marginTop: 20 }}>
+            <p style={{ color: 'var(--warn)' }}>{error}</p>
+          </div>
         ) : null}
       </main>
 

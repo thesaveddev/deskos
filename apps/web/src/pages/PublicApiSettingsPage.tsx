@@ -173,7 +173,7 @@ export default function PublicApiSettingsPage() {
       {tab === 'clients' && <ClientsTab clients={clients} busy={busy} onCreate={openCreate} onDelete={(client) => void remove(client)} />}
       {tab === 'scopes' && <ScopesTab scopes={availableScopes} clients={clients} />}
       {tab === 'docs' && <DocsTab baseUrl={baseUrl} tokenUrl={tokenUrl} authorizeUrl={authorizeUrl} specUrl={specUrl} overview={overview} />}
-      {tab === 'security' && <SecurityTab />}
+      {tab === 'security' && <SecurityTab clients={clients} />}
 
       <Modal open={editorOpen} onClose={() => { if (!busy) setEditorOpen(false) }} title="Register OAuth client" width={650} footer={<><button type="button" className="btn btn-ghost" onClick={() => setEditorOpen(false)} disabled={busy}>Cancel</button><button type="submit" form="oauth-client-form" className="btn btn-primary" disabled={busy || !name.trim() || scopes.length === 0 || grants.length === 0}><Icon name="save" size={14} />{busy ? 'Creating…' : 'Create client'}</button></>}>
         <form id="oauth-client-form" onSubmit={(event) => void submit(event)} className="public-api-form">
@@ -207,6 +207,151 @@ function DocsTab({ baseUrl, tokenUrl, authorizeUrl, specUrl, overview }: { baseU
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN"`}</pre></div><div className="public-api-doc-links"><a className="btn btn-ghost btn-sm" href="/api-docs" target="_blank" rel="noreferrer"><Icon name="external" size={14} />Open interactive API docs</a><span>{overview?.endpoints?.length ?? 0} documented endpoint{overview?.endpoints?.length === 1 ? '' : 's'} available</span></div></div>
 }
 
-function SecurityTab() {
-  return <div className="public-api-section"><div className="public-api-section-head"><div><h3>Security and lifecycle</h3><p>Recommended practices for running integrations safely in production.</p></div></div><div className="public-api-security-list"><article><Icon name="key" size={18} /><div><h4>Use one client per integration</h4><p>Separate clients make it possible to revoke a single connector without interrupting unrelated systems.</p></div></article><article><Icon name="shield" size={18} /><div><h4>Follow least privilege</h4><p>Grant the smallest scope set that meets the integration's needs. Review the Scopes tab before issuing credentials.</p></div></article><article><Icon name="lock" size={18} /><div><h4>Protect secrets</h4><p>Store client secrets in a deployment secret manager. Never commit them to source control or expose them in browser code.</p></div></article><article><Icon name="refresh" size={18} /><div><h4>Rotate by replacement</h4><p>To rotate a secret, create a replacement client, update the integration, verify it, then delete the old client.</p></div></article></div><div className="public-api-security-note"><Icon name="alert" size={16} /><span>Deleting a client immediately prevents new tokens from being issued. Existing access tokens remain subject to their configured expiry.</span></div></div>
+function SecurityTab({ clients }: { clients: OAuthClient[] }) {
+  const totalScopes = new Set(clients.flatMap((c) => c.scopes)).size
+  const m2mCount = clients.filter((c) => c.grantTypes.includes('client_credentials')).length
+  const delegatedCount = clients.filter((c) => c.grantTypes.includes('authorization_code')).length
+
+  return (
+    <div className="public-api-section">
+      <div className="public-api-section-head">
+        <div><h3>Security posture</h3><p>Protect credentials, enforce least privilege, and keep integrations healthy.</p></div>
+      </div>
+
+      {/* Posture summary cards */}
+      <div className="public-api-security-grid">
+        <div className="public-api-security-card">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <h4>Client credentials</h4>
+            <span className="public-api-security-badge security-badge-green"><Icon name="check" size={10} /> Active</span>
+          </div>
+          <p>{clients.length} client{clients.length !== 1 ? 's' : ''} registered. {m2mCount} machine-to-machine, {delegatedCount} delegated.</p>
+        </div>
+        <div className="public-api-security-card">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <h4>Scope coverage</h4>
+            <span className="public-api-security-badge security-badge-amber"><Icon name="shield" size={10} /> {totalScopes} scope{totalScopes !== 1 ? 's' : ''}</span>
+          </div>
+          <p>{totalScopes === 0 ? 'No scopes assigned to any client yet.' : `Across ${clients.length} client${clients.length !== 1 ? 's' : ''} — review the Scopes tab to confirm least privilege.`}</p>
+        </div>
+        <div className="public-api-security-card">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <h4>Token lifetime</h4>
+            <span className="public-api-security-badge security-badge-green"><Icon name="clock" size={10} /> Short-lived</span>
+          </div>
+          <p>Access tokens expire after 15 minutes. Refresh tokens last 30 days and are revoked on password change.</p>
+        </div>
+        <div className="public-api-security-card">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <h4>Tenant isolation</h4>
+            <span className="public-api-security-badge security-badge-green"><Icon name="lock" size={10} /> Enforced</span>
+          </div>
+          <p>Tokens are bound to this organization. Row-level security prevents cross-tenant data access at the database level.</p>
+        </div>
+      </div>
+
+      {/* Token lifecycle controls */}
+      <div style={{ marginTop: 18 }}>
+        <div className="public-api-section-head">
+          <div><h3>Token lifecycle</h3><p>How access and refresh tokens behave, and what you can do about it.</p></div>
+        </div>
+        <div className="public-api-security-list">
+          <article>
+            <Icon name="clock" size={18} />
+            <div>
+              <h4>Access tokens expire in 15 minutes</h4>
+              <p>Short-lived access tokens limit the window of exposure if a token is leaked. Clients must exchange a refresh token for a new access token automatically.</p>
+            </div>
+          </article>
+          <article>
+            <Icon name="refresh" size={18} />
+            <div>
+              <h4>Refresh tokens last 30 days</h4>
+              <p>Refresh tokens are single-use and rotated on each exchange. If a refresh token is reused after rotation, all tokens for that client are revoked.</p>
+            </div>
+          </article>
+          <article>
+            <Icon name="key" size={18} />
+            <div>
+              <h4>Revoke by deleting the client</h4>
+              <p>Deleting a client immediately prevents new tokens from being issued. Existing access tokens expire naturally within 15 minutes. Existing refresh tokens are invalidated.</p>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      {/* Scope enforcement */}
+      <div style={{ marginTop: 18 }}>
+        <div className="public-api-section-head">
+          <div><h3>Scope enforcement</h3><p>Every token carries only the scopes granted to its client. The API rejects any request outside the token's scope.</p></div>
+        </div>
+        <div className="public-api-security-list">
+          <article>
+            <Icon name="shield" size={18} />
+            <div>
+              <h4>Least-privilege by default</h4>
+              <p>Start with read-only scopes (e.g. <code>tickets:read</code>) and add write or management scopes only when the integration needs them. Review scope assignments in the Scopes tab.</p>
+            </div>
+          </article>
+          <article>
+            <Icon name="lock" size={18} />
+            <div>
+              <h4>Scope checks are real-time</h4>
+              <p>Scopes are evaluated on every API request, not just at token issuance. If you remove a scope from a client, existing tokens lose that permission immediately.</p>
+            </div>
+          </article>
+          <article>
+            <Icon name="alert" size={18} />
+            <div>
+              <h4>Write scopes require caution</h4>
+              <p>Scopes like <code>tickets:write</code> and <code>devices:manage</code> allow data modification. Only grant these to clients you fully control and trust.</p>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      {/* Best practices */}
+      <div style={{ marginTop: 18 }}>
+        <div className="public-api-section-head">
+          <div><h3>Best practices</h3><p>Recommended patterns for running integrations safely in production.</p></div>
+        </div>
+        <div className="public-api-security-list">
+          <article>
+            <Icon name="key" size={18} />
+            <div>
+              <h4>One client per integration</h4>
+              <p>Separate clients make it possible to revoke a single connector without interrupting unrelated systems. A monitoring tool should not share credentials with a ticket sync.</p>
+            </div>
+          </article>
+          <article>
+            <Icon name="lock" size={18} />
+            <div>
+              <h4>Protect secrets in deployment</h4>
+              <p>Store client secrets in a secret manager (Vault, AWS Secrets Manager, etc.). Never commit them to source control, CI pipelines, or browser code.</p>
+            </div>
+          </article>
+          <article>
+            <Icon name="refresh" size={18} />
+            <div>
+              <h4>Rotate by replacement</h4>
+              <p>To rotate a secret: create a replacement client, update the integration to use it, verify the new client works, then delete the old one. This avoids downtime.</p>
+            </div>
+          </article>
+          <article>
+            <Icon name="shield" size={18} />
+            <div>
+              <h4>Monitor token usage</h4>
+              <p>Check the Audit log for unusual token exchange patterns. A spike in client-credentials grants from an unexpected IP may indicate a compromised secret.</p>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      {/* Deletion warning */}
+      <div className="public-api-security-note">
+        <Icon name="alert" size={16} />
+        <span>Deleting a client immediately prevents new tokens from being issued. Existing access tokens remain valid until their 15-minute expiry. Refresh tokens for that client are revoked immediately.</span>
+      </div>
+    </div>
+  )
 }
