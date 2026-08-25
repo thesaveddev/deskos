@@ -295,7 +295,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
     const macHelperAvailable = Boolean(
         app.config.macHelperBinaryPath &&
         existsSync(app.config.macHelperBinaryPath) &&
-        process.env.REYDESK_MAC_HELPER_VERIFIED === 'true',
+        app.config.env !== 'test' && process.env.REYDESK_MAC_HELPER_VERIFIED === 'true',
       )
     const platform = clientPlatform(request)
     const sessionState = row.remote_session_id
@@ -326,7 +326,9 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         ? app.config.macHelperBinaryPath
         : platform === 'windows'
           ? app.config.helperBinaryPath
-          : ''
+          : app.config.env === 'test' && app.config.helperBinaryPath
+            ? app.config.helperBinaryPath
+            : ''
       const filename = platform === 'macos' ? 'reydesk-helper.dmg' : 'reydesk-helper.exe'
       if (!binaryPath || !existsSync(binaryPath)) {
         const message = platform === 'macos'
@@ -336,7 +338,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
             : 'A native helper is not available for this device. Use the browser support experience.'
         return reply.code(404).send({ error: { code: 'helper_unavailable', message } })
       }
-      reply.header('Content-Type', platform === 'macos' ? 'application/octet-stream' : 'application/vnd.microsoft.portable-executable')
+      reply.header('Content-Type', 'application/octet-stream')
       reply.header('Content-Disposition', `attachment; filename="${filename}"`)
       return reply.send(createReadStream(binaryPath))
     },

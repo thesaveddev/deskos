@@ -431,11 +431,18 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
         })
         const jobId = await app.emailQueue.addAndSend(mail)
         jobIds.push(jobId)
-        await app.db.query(
-          `INSERT INTO portal_invitation_history (tenant_id, sent_by, recipient_email, portal_url, personal_message, delivery_status, job_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-          [ctx.tenantId, ctx.userId, email, portalUrl, body.message ?? '', app.mailer.enabled ? 'sent' : 'not_configured', jobId],
-        )
+        try {
+          await app.db.query(
+            `INSERT INTO portal_invitation_history (tenant_id, sent_by, recipient_email, portal_url, personal_message, delivery_status, job_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            [ctx.tenantId, ctx.userId, email, portalUrl, body.message ?? '', app.mailer.enabled ? 'sent' : 'not_configured', jobId],
+          )
+        } catch (error) {
+          // Keep invitations functional during rolling deploys where the new
+          // history migration has not run yet; the history endpoint will fill
+          // in once the schema is available.
+          app.log.warn({ error, tenantId: ctx.tenantId }, 'Portal invitation history is unavailable')
+        }
         if (app.mailer.enabled) delivered += 1
       }
       app.log.info({ tenantId: ctx.tenantId, recipients: unique.length, jobIds }, 'Portal invitation emails queued')
@@ -453,13 +460,18 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/tenant/settings/portal/invite/history', { preHandler: [authenticate, requireTenant, requirePermission('settings.manage')] }, async (request) => {
     const ctx = request.tenantCtx!
-    const { rows } = await app.db.query(
-      `SELECT h.id, h.recipient_email, h.portal_url, h.personal_message, h.delivery_status, h.job_id, h.created_at, u.name AS sent_by_name
-         FROM portal_invitation_history h LEFT JOIN users u ON u.id = h.sent_by
-        WHERE h.tenant_id = $1 ORDER BY h.created_at DESC LIMIT 50`,
-      [ctx.tenantId],
-    )
-    return { invitations: rows }
+    try {
+      const { rows } = await app.db.query(
+        `SELECT h.id, h.recipient_email, h.portal_url, h.personal_message, h.delivery_status, h.job_id, h.created_at, u.name AS sent_by_name
+           FROM portal_invitation_history h LEFT JOIN users u ON u.id = h.sent_by
+          WHERE h.tenant_id = $1 ORDER BY h.created_at DESC LIMIT 50`,
+        [ctx.tenantId],
+      )
+      return { invitations: rows }
+    } catch (error) {
+      app.log.warn({ error, tenantId: ctx.tenantId }, 'Portal invitation history is unavailable')
+      return { invitations: [] }
+    }
   })
 }
 
