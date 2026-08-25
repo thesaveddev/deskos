@@ -44,20 +44,9 @@ jobs:
           REYDESK_SIGN_CERT_THUMBPRINT: ${{ secrets.REYDESK_SIGN_CERT_THUMBPRINT }}
           REYDESK_SIGN_TIMESTAMP_URL: ${{ vars.REYDESK_SIGN_TIMESTAMP_URL }}
         run: |
+          # build-windows.ps1 performs the optional UPX compression once after
+          # copying the release binary. Do not pack the same EXE a second time.
           ./apps/agent/build-windows.ps1
-          # UPX is optional locally, but the hosted build compresses the portable
-          # helper so customers on slower connections receive a smaller download.
-          try {
-            choco install upx -y --no-progress
-          } catch {
-            Write-Warning "UPX installation failed; continuing with the stripped release binary. $($_.Exception.Message)"
-          }
-          $upx = Get-Command upx -ErrorAction SilentlyContinue
-          if ($upx) {
-            & $upx.Source --best --lzma artifacts/windows/reydesk-helper.exe | Out-Host
-          } else {
-            Write-Warning 'UPX was not available; continuing with the stripped release binary.'
-          }
 
       - name: Upload portable helper
         uses: actions/upload-artifact@v4
