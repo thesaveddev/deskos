@@ -341,4 +341,78 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
       }
     },
   )
+
+  const inviteSchema = z.object({
+    // Comma- or newline-separated list of recipient addresses.
+    to: z.string().trim().min(3).max(4000),
+    message: z.string().trim().max(2000).optional(),
+  })
+
+  /** Send shareable portal-invitation emails to one or more addresses. */
+  app.post(
+    '/tenant/settings/portal/invite',
+    { preHandler: [authenticate, requireTenant, requirePermission('settings.manage')] },
+    async (request, reply) => {
+      const ctx = request.tenantCtx!
+      const body = inviteSchema.parse(request.body)
+      const emails = body.to
+        .split(/[,\n;]+/)
+        .map((address) => address.trim().toLowerCase())
+        .filter(Boolean)
+      if (emails.length === 0) {
+        throw new AppError(400, 'invalid_recipients', 'Provide at least one recipient email address.')
+      }
+      for (const email of emails) {
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          throw new AppError(400, 'invalid_recipients', `“${email}” is not a valid email address.`)
+        }
+      }
+
+      const { rows } = await app.db.query('SELECT name, slug, settings FROM tenants WHERE id = $1', [ctx.tenantId])
+      const tenant = rows[0]
+      const raw = (tenant?.settings ?? {}) as Record<string, unknown>
+      const settings = mergeTenantSettings(raw)
+      const tenantSlug = tenant?.slug as string | undefined
+      const portalSlug = String(((settings.portal as Record<string, unknown> | undefined)?.slug ?? '')).trim() || tenantSlug || ctx.slug
+      const portalUrl = `${app.config.publicUrl.replace(/\/$/, '')}/portal/${encodeURIComponent(portalSlug)}`
+      const tenantName = safeTenantName(tenant?.name as string | undefined)
+
+      const senderResult = await app.db.query(
+        `SELECT u.name FROM memberships m JOIN users u ON u.id = m.user_id
+          WHERE m.tenant_id = $1 AND m.user_id = $2 AND m.status = 'active'`,
+        [ctx.tenantId, ctx.userId],
+      )
+      const senderName = (senderResult.rows[0]?.name as string | undefined)?.trim() || undefined
+
+      const unique = [...new Set(emails)]
+      const jobIds: string[] = []
+      let delivered = 0
+      for (const email of unique) {
+        const mail = app.mailer.buildPortalInviteMail({
+          to: email,
+          tenantName,
+          portalUrl,
+          senderName,
+          message: body.message,
+        })
+        const jobId = await app.emailQueue.addAndSend(mail)
+        jobIds.push(jobId)
+        if (app.mailer.enabled) delivered += 1
+      }
+      app.log.info({ tenantId: ctx.tenantId, recipients: unique.length, jobIds }, 'Portal invitation emails queued')
+
+      reply.code(200)
+      return {
+        ok: true,
+        recipients: unique.length,
+        delivered,
+        mailConfigured: app.mailer.enabled,
+        portalUrl,
+      }
+    },
+  )
+}
+
+function safeTenantName(name: string | undefined): string {
+  return (name ?? '').trim().slice(0, 120) || 'ReyDesk'
 }

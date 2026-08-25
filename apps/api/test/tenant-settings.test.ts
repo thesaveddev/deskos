@@ -155,3 +155,85 @@ describe('tenant settings', () => {
     expect(res.statusCode).toBe(403)
   })
 })
+
+describe('portal invitations by email', () => {
+  let app: FastifyInstance
+  let owner: Awaited<ReturnType<typeof signupOwner>>
+
+  const SMTP_ENV = {
+    DESKOS_SMTP_HOST: 'smtp.test.local',
+    DESKOS_SMTP_PORT: '587',
+    DESKOS_SMTP_USER: 'relay-user',
+    DESKOS_SMTP_PASS: 'relay-pass',
+    DESKOS_SMTP_FROM: 'support@deskos.test',
+    DESKOS_SMTP_JSON: 'true',
+  }
+
+  beforeAll(async () => {
+    app = await createTestApp(SMTP_ENV)
+    owner = await signupOwner(app, { tenantName: 'Portal Invites Org' })
+  })
+
+  afterAll(async () => {
+    await app.close()
+  })
+
+  it('sends a branded invitation email with the portal URL and personal message', async () => {
+    const settings = await app.inject({ method: 'GET', url: '/api/v1/tenant/settings', headers: authHeaders(owner) })
+    const portalUrl = settings.json().portal.url
+    expect(portalUrl).toContain(owner.tenantSlug)
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/tenant/settings/portal/invite',
+      headers: authHeaders(owner),
+      payload: {
+        to: 'alice@example.com, bob@example.com\ncarol@example.com',
+        message: 'Hi team — please set up your portal account.',
+      },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ ok: true, recipients: 3, mailConfigured: true })
+    expect(res.json().portalUrl).toBe(portalUrl)
+
+    const invites = app.mailer.sent.filter((mail) => mail.subject.includes('support portal is ready'))
+    expect(invites).toHaveLength(3)
+    expect(invites.map((mail) => mail.to).sort()).toEqual(['alice@example.com', 'bob@example.com', 'carol@example.com'])
+    expect(invites[0].html).toContain(portalUrl)
+    expect(invites[0].html).toContain('Hi team — please set up your portal account.')
+    expect(invites[0].html).toContain('Open your portal')
+    expect(invites[0].text).toContain('Sign in with your work email')
+  })
+
+  it('rejects invalid recipients and deduplicates repeated addresses', async () => {
+    const bad = await app.inject({
+      method: 'POST',
+      url: '/api/v1/tenant/settings/portal/invite',
+      headers: authHeaders(owner),
+      payload: { to: 'not-an-email' },
+    })
+    expect(bad.statusCode).toBe(400)
+
+    const before = app.mailer.sent.length
+    const dup = await app.inject({
+      method: 'POST',
+      url: '/api/v1/tenant/settings/portal/invite',
+      headers: authHeaders(owner),
+      payload: { to: 'alice@example.com, ALICE@example.com' },
+    })
+    expect(dup.statusCode).toBe(200)
+    expect(dup.json().recipients).toBe(1)
+    expect(app.mailer.sent.length).toBe(before + 1)
+  })
+
+  it('requires settings.manage permission to send invitations', async () => {
+    const analyst = await seedActiveMember(app, owner.tenantId!, 'analyst')
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/tenant/settings/portal/invite',
+      headers: authHeaders(analyst),
+      payload: { to: 'nobody@example.com' },
+    })
+    expect(res.statusCode).toBe(403)
+  })
+})

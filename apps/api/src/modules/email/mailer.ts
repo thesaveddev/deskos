@@ -364,6 +364,48 @@ export class Mailer {
     }
   }
 
+  buildPortalInviteMail(ctx: {
+    to: string
+    tenantName: string
+    portalUrl: string
+    senderName?: string
+    message?: string
+  }): EmailMessage {
+    const tenantName = safeText(ctx.tenantName) || 'ReyDesk'
+    const senderName = safeText(ctx.senderName ?? '') || 'your IT team'
+    const personalHtml = (ctx.message ?? '').trim()
+      ? `<p style="margin:0 0 18px;color:#c3cbd3;font-size:15px;line-height:1.65;">${escapeHtml(ctx.message!.trim()).replace(/\n/g, '<br>')}</p>`
+      : ''
+    const standardHtml = `<p style="margin:0 0 18px;color:#c3cbd3;font-size:15px;line-height:1.65;">Everything lives in your portal: raise a new request in seconds, follow the status of open tickets, and read the knowledge base without waiting on a phone call.</p>`
+    return {
+      to: ctx.to,
+      subject: `Your ${tenantName} support portal is ready`,
+      text: [
+        `${senderName} invited you to the ${tenantName} support portal.`,
+        '',
+        `Open the portal: ${ctx.portalUrl}`,
+        '',
+        'Sign in with your work email to raise requests, track tickets, and browse the knowledge base.',
+        '',
+        'If you were not expecting this invitation, you can safely ignore this email.',
+      ].join('\n'),
+      html: renderBrandedEmail({
+        tenantName,
+        eyebrow: 'Support portal',
+        preheader: `Your ${tenantName} support portal is ready`,
+        title: 'You’ve been invited to the support portal',
+        greeting: `${escapeHtml(senderName)} invited you to the ${escapeHtml(tenantName)} support portal. Sign in with your work email to get help, track your requests, and browse self-service answers.`,
+        htmlBody: personalHtml + standardHtml,
+        action: { label: 'Open your portal', url: ctx.portalUrl },
+        metadata: [
+          { label: 'Portal address', value: ctx.portalUrl },
+          { label: 'Sent by', value: senderName },
+        ],
+        footer: `This invitation was sent by ${senderName} through ReyDesk. If you were not expecting it, you can safely ignore this email.`,
+      }),
+    }
+  }
+
   buildPasswordResetMail(to: string, resetUrl: string): EmailMessage {
     return {
       to,

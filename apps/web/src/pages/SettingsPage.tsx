@@ -373,6 +373,11 @@ function PortalSettingsTab({ settings, portalInfo, update, error, message }: {
   const [copied, setCopied] = useState(false)
   const [welcomeDraft, setWelcomeDraft] = useState(settings.portal.welcome_message)
   const [domainDraft, setDomainDraft] = useState('')
+  const [inviteTo, setInviteTo] = useState('')
+  const [inviteMessage, setInviteMessage] = useState('')
+  const [inviteBusy, setInviteBusy] = useState(false)
+  const [inviteResult, setInviteResult] = useState<string | null>(null)
+  const [inviteError, setInviteError] = useState<string | null>(null)
   const portalUrl = portalInfo?.url ?? ''
   const displaySlug = portalInfo?.slug ?? ''
 
@@ -406,6 +411,30 @@ function PortalSettingsTab({ settings, portalInfo, update, error, message }: {
 
   const removeDomain = (domain: string) => {
     void update({ portal: { ...settings.portal, registration_domains: settings.portal.registration_domains.filter((d) => d !== domain) } })
+  }
+
+  const sendInvites = async () => {
+    if (!inviteTo.trim() || inviteBusy) return
+    setInviteBusy(true)
+    setInviteResult(null)
+    setInviteError(null)
+    try {
+      const response = await api<{ ok: boolean; recipients: number; mailConfigured: boolean }>('/tenant/settings/portal/invite', {
+        method: 'POST',
+        body: { to: inviteTo, message: inviteMessage.trim() || undefined },
+      })
+      if (!response.mailConfigured) {
+        setInviteResult(`Invitation queued for ${response.recipients} recipient${response.recipients === 1 ? '' : 's'} — but email sending is not configured, so nothing was delivered.`)
+      } else {
+        setInviteResult(`Invitation email sent to ${response.recipients} recipient${response.recipients === 1 ? '' : 's'}.`)
+      }
+      setInviteTo('')
+      setInviteMessage('')
+    } catch (err) {
+      setInviteError(err instanceof Error ? err.message : 'Could not send the invitation email.')
+    } finally {
+      setInviteBusy(false)
+    }
   }
 
   return <SettingSection title="Customer portal" description="Your team's self-service home for raising requests, tracking tickets, and reading the knowledge base."><>
@@ -468,13 +497,50 @@ function PortalSettingsTab({ settings, portalInfo, update, error, message }: {
     <div className="portal-how-it-works">
       <div className="branding-section-heading"><span className="branding-section-icon"><Icon name="user" size={15} /></span><div><h3>How your staff use it</h3><p>Three steps, then they are self-sufficient.</p></div></div>
       <ol className="portal-steps">
-        <li><strong>Share the link</strong><span>Send the portal address above by email, intranet, or a sign on your reception desk.</span></li>
-        <li><strong>They sign in with work email</strong><span>Staff with accounts sign in with their ReyDesk email. New requesters can register at the portal when registration is enabled, or IT can invite them — with magic links enabled (@Settings → Authentication), they receive a one-click sign-in email.</span></li>
+        <li><strong>Share the link</strong><span>Send the portal address to your staff by email, intranet, or a sign on your reception desk.</span></li>
+        <li><strong>They sign in with work email</strong><span>Staff with accounts sign in with their ReyDesk email. New requesters can register at the portal when registration is enabled, or IT can invite them — with magic links enabled (<code>Settings → Authentication</code>), they receive a one-click sign-in email.</span></li>
         <li><strong>Request, track, and read</strong><span>They raise requests, follow their tickets, and browse published knowledge-base articles — without seeing any internal console tools.</span></li>
       </ol>
     </div>
+
+    <div className="portal-address-card">
+      <div className="branding-section-heading"><span className="branding-section-icon"><Icon name="mail" size={15} /></span><div><h3>Invite your staff by email</h3><p>Send a branded invitation with the portal link and sign-in instructions to your team.</p></div></div>
+      <div className="portal-slug-row">
+        <Field label="Recipients" hint="Comma-separated work email addresses. Each gets an individual invitation.">
+          <input
+            className="field-input"
+            type="text"
+            value={inviteTo}
+            onChange={(e) => setInviteTo(e.target.value)}
+            placeholder="jane@company.com, john@company.com"
+            aria-label="Recipient email addresses"
+          />
+        </Field>
+      </div>
+      <div className="portal-slug-row">
+        <Field label="Personal message (optional)" hint="A short note your team sees at the top of the invitation.">
+          <textarea
+            className="field-input portal-welcome-input"
+            rows={2}
+            value={inviteMessage}
+            onChange={(e) => setInviteMessage(e.target.value)}
+            maxLength={2000}
+            placeholder="Hi team — please set up your portal account so you can raise IT requests quickly."
+            aria-label="Personal message for the invitation"
+          />
+        </Field>
+      </div>
+      {inviteError ? <Alert kind="error">{inviteError}</Alert> : null}
+      {inviteResult ? <Alert kind="info">{inviteResult}</Alert> : null}
+      <div className="settings-inline-field">
+        <button type="button" className="btn btn-primary" onClick={() => void sendInvites()} disabled={inviteBusy || !inviteTo.trim()}>
+          <Icon name="mail" size={14} />{inviteBusy ? 'Sending…' : 'Send invitations'}
+        </button>
+        <span className="settings-note">The email includes your portal link, the sign-in instructions, and your organisation name.</span>
+      </div>    </div>
   </></SettingSection>
 }
+
 
 function OperationalSettings({ tab }: { tab: 'portal' | 'remote' | 'devices' | 'monitoring' | 'data' }) {
   const { settings, portalInfo, loading, error, setError, save } = useWorkspaceSettings()
