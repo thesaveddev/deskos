@@ -9,6 +9,7 @@ import { withTenant } from '../../db/pool.js'
 import { authenticate } from '../../middleware/authenticate.js'
 import { requirePermission } from '../../middleware/requirePermission.js'
 import { requireTenant } from '../../middleware/requireTenant.js'
+import { requireEntitlement } from '../../middleware/requireEntitlement.js'
 import '../../types.js'
 
 const inviteSchema = z.object({
@@ -69,7 +70,7 @@ export async function memberRoutes(app: FastifyInstance): Promise<void> {
     return { members: rows }
   })
 
-  app.post('/members/invite', { preHandler: [...guards, requirePermission('member.manage')] }, async (request) => {
+  app.post('/members/invite', { preHandler: [...guards, requirePermission('member.manage'), requireEntitlement('technicians')] }, async (request) => {
     const ctx = request.tenantCtx!
     const body = inviteSchema.parse(request.body)
     const role = body.orgRole as OrgRole

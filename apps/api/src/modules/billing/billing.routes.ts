@@ -14,6 +14,7 @@ import {
   createCheckoutInvoice, confirmGatewayCheckout, activateManualSubscription,
   getBillingSettings, setBillingSettings, makeReference, cancelGatewaySubscription,
 } from './billing.service.js'
+import { requireEntitlement } from '../../middleware/requireEntitlement.js'
 import type { BillingConfig } from '../../config.js'
 
 function buildGateways(config: BillingConfig): GatewayMap {
@@ -230,6 +231,21 @@ export async function billingRoutes(app: FastifyInstance) {
       listInvoices(app.db, ctx.tenantId),
     ])
     return reply.send({ ok: true, paid: true, subscription, invoices })
+  })
+
+  // ── Entitlement info ────────────────────────────────────────
+  app.get('/billing/entitlement', async (req, reply) => {
+    const ctx = req.tenantCtx!
+    const { getEntitlementInfo } = await import('../../middleware/requireEntitlement.js')
+    const info = await getEntitlementInfo(app.db, ctx.tenantId)
+    return reply.send(info)
+  })
+
+  // ── Billing analytics (owner/admin only) ──────────────────────
+  app.get('/billing/analytics', { preHandler: requirePermission('billing.manage') }, async (_req, reply) => {
+    const { getBillingAnalytics } = await import('./analytics.service.js')
+    const analytics = await getBillingAnalytics(app.db)
+    return reply.send(analytics)
   })
 }
 

@@ -69,6 +69,7 @@ import { supportRoutes } from './modules/support/support.routes.js'
 import { notesRoutes } from './modules/notes/notes.routes.js'
 import { billingRoutes } from './modules/billing/billing.routes.js'
 import { billingWebhookRoutes } from './modules/billing/billing-webhooks.routes.js'
+import { runDunningCycle } from './modules/billing/dunning.js'
 import { recordingRoutes } from './modules/remote/recording.routes.js'
 import { remoteRoutes } from './modules/remote/remote.routes.js'
 import { scriptRoutes } from './modules/scripts/scripts.routes.js'
@@ -130,6 +131,26 @@ export async function buildApp(config: AppConfig): Promise<FastifyInstance> {
     void purgeExpiredAiUsage(pool).catch((error) => app.log.warn({ error }, 'AI usage retention purge failed'))
   }, 6 * 60 * 60 * 1000)
   aiRetentionTimer.unref?.()
+
+  // Dunning scheduler: check past-due subscriptions every 6 hours
+  const dunningTimer = setInterval(() => {
+    void runDunningCycle(pool, async (email, tenantName, planName, day) => {
+      // Build a branded dunning email using the mailer
+      await mailer.sendMail({
+        to: email,
+        subject: `Action required: ReyDesk payment overdue for ${tenantName}`,
+        text: `Your ${planName} subscription for ${tenantName} has been overdue for ${day} day(s). Update your payment at https://reydesk.com/billing`,
+        html: `<div style="font-family:system-ui,sans-serif;max-width:560px;margin:0 auto;padding:32px">
+          <h2 style="color:#47003A">Payment overdue</h2>
+          <p>Your <strong>${planName}</strong> subscription for <strong>${tenantName}</strong> has been overdue for ${day} day${day === 1 ? '' : 's'}.</p>
+          <p>Please update your payment method to avoid service interruption. After 14 days past due your account will be downgraded to the free plan.</p>
+          <a href="https://reydesk.com/billing" style="display:inline-block;padding:12px 24px;background:#47003A;color:#fff;text-decoration:none;border-radius:6px;margin-top:16px">Update payment</a>
+          <p style="color:#666;margin-top:24px;font-size:13px">If you believe this is an error, contact support@reydesk.com.</p>
+        </div>`,
+      })
+    }, app.log)
+  }, 6 * 60 * 60 * 1000)
+  dunningTimer.unref?.()
   const metrics = new MetricsRegistry()
   const otel = new OtelTraceExporter(config.otel)
 
@@ -217,6 +238,7 @@ export async function buildApp(config: AppConfig): Promise<FastifyInstance> {
     setTriageDispatcher(null)
     instance.emailWorker?.stop()
     clearInterval(aiRetentionTimer)
+    clearInterval(dunningTimer)
     await notificationRealtime.stop()
     await instance.otel.stop()
     await instance.db.end()

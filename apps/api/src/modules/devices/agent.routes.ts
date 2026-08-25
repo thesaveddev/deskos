@@ -123,6 +123,30 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
     const credentialType = tokenRow.rows[0]?.credential_type as 'fleet_token' | 'enrol_code' | undefined
     if (!tenantId || !credentialType) throw AppError.unauthorized('Invalid, expired, or already used enrollment code')
 
+    // Enforce device plan cap (skip for fleet-token re-enrolments and free-tier tenants)
+    if (credentialType === 'enrol_code') {
+      const planRow = (await app.db.query(
+        `SELECT p.max_devices FROM tenant_subscriptions s
+           JOIN subscription_plans p ON p.id = s.plan_id
+          WHERE s.tenant_id = $1 AND s.status IN ('active', 'trialing')
+          ORDER BY s.created_at DESC LIMIT 1`,
+        [tenantId],
+      )).rows[0]
+      if (planRow) {
+        const deviceCap = Number(planRow.max_devices) || 10
+        const currentCount = (await app.db.query(
+          'SELECT count(*)::int AS n FROM devices WHERE tenant_id = $1 AND adhoc = false',
+          [tenantId],
+      )).rows[0]?.n as number
+        if (currentCount >= deviceCap) {
+          throw AppError.forbidden(
+            `Device limit reached (${currentCount}/${deviceCap}) on this plan. Upgrade to add more endpoints.`,
+            'plan_limit_exceeded',
+          )
+        }
+      }
+    }
+
     const deviceToken = `deskos_dev_${randomBytes(24).toString('base64url')}`
 
     const created = await withTenant(app.db, tenantId, async (client) => {
