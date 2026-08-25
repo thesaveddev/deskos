@@ -47,6 +47,24 @@ export interface AppConfig {
   webauthn: WebauthnConfig
   push: PushConfig
   billing: BillingConfig
+  storage: StorageConfig
+}
+
+export interface StorageConfig {
+  /** 'local' or 's3'. Defaults to 'local'. */
+  driver: 'local' | 's3'
+  /** S3 endpoint URL (e.g. https://s3.amazonaws.com or http://localhost:9000 for MinIO). */
+  s3Endpoint: string
+  /** S3 region (e.g. us-east-1). */
+  s3Region: string
+  /** S3 bucket name. */
+  s3Bucket: string
+  /** S3 access key ID. */
+  s3AccessKey: string
+  /** S3 secret access key. */
+  s3SecretKey: string
+  /** Public base URL for serving files (e.g. https://cdn.example.com). Falls back to endpoint/bucket. */
+  s3PublicBaseUrl: string
 }
 
 export interface BillingConfig {
@@ -308,6 +326,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       paystackPublicKey: value('REYDESK_PAYSTACK_PUBLIC_KEY') ?? '',
       stripeSecretKey: value('REYDESK_STRIPE_SECRET_KEY') ?? '',
       stripeWebhookSecret: value('REYDESK_STRIPE_WEBHOOK_SECRET') ?? '',
+    },
+    storage: {
+      driver: (value('REYDESK_STORAGE_DRIVER') as 'local' | 's3') ?? 'local',
+      s3Endpoint: value('REYDESK_S3_ENDPOINT') ?? 'https://s3.amazonaws.com',
+      s3Region: value('REYDESK_S3_REGION') ?? 'us-east-1',
+      s3Bucket: value('REYDESK_S3_BUCKET') ?? '',
+      s3AccessKey: value('REYDESK_S3_ACCESS_KEY') ?? '',
+      s3SecretKey: value('REYDESK_S3_SECRET_KEY') ?? '',
+      s3PublicBaseUrl: value('REYDESK_S3_PUBLIC_BASE_URL') ?? '',
     },
   }
 }

@@ -1,9 +1,5 @@
-import { createReadStream } from 'node:fs'
-import { mkdir, stat } from 'node:fs/promises'
-import path from 'node:path'
-import { pipeline } from 'node:stream/promises'
-import { createWriteStream } from 'node:fs'
 import { randomBytes } from 'node:crypto'
+import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { AppError } from '../../core/errors.js'
 import { withTenant } from '../../db/pool.js'
@@ -42,19 +38,7 @@ export async function portalAttachmentRoutes(app: FastifyInstance): Promise<void
     if (!part) throw AppError.badRequest('No file provided', 'missing_file')
 
     const filename = sanitizeFilename(part.filename ?? 'attachment')
-    const storageKey = `${ctx.tenantId}/${randomBytes(16).toString('hex')}-${filename}`
-    const fullPath = path.join(app.config.uploadDir, storageKey)
-    await mkdir(path.dirname(fullPath), { recursive: true })
-
-    let size = 0
-    const counting = async function* () {
-      for await (const chunk of part.file) {
-        size += chunk.length
-        if (size > maxBytes) throw AppError.badRequest('File exceeds the size limit', 'file_too_large')
-        yield chunk
-      }
-    }
-    await pipeline(counting(), createWriteStream(fullPath))
+    const { storageKey, sizeBytes: size } = await app.storage.uploadStream('attachments', ctx.tenantId, filename, part.mimetype || 'application/octet-stream', part.file, maxBytes)
 
     const attachment = await withTenant(app.db, ctx.tenantId, async (client) => {
       const res = await client.query(
@@ -114,17 +98,11 @@ export async function portalAttachmentRoutes(app: FastifyInstance): Promise<void
     })
     if (!attachment) throw AppError.notFound('Attachment not found')
 
-    const fullPath = path.join(app.config.uploadDir, attachment.storage_key)
-    try {
-      await stat(fullPath)
-    } catch {
-      throw AppError.notFound('Attachment file missing from storage')
-    }
-
     const safeName = String(attachment.filename).replace(/["\r\n]/g, '_')
+    const stream = await app.storage.downloadStream(attachment.storage_key)
     return reply
       .header('content-type', attachment.mime)
       .header('content-disposition', `attachment; filename="${safeName}"`)
-      .send(createReadStream(fullPath))
+      .send(stream)
   })
 }

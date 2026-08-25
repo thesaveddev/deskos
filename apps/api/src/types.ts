@@ -4,6 +4,7 @@ import type { DbPool } from './db/pool.js'
 import type { OrgRole } from './core/permissions.js'
 import type { MetricsRegistry } from './core/metrics.js'
 import type { OtelTraceExporter } from './core/otel.js'
+import type { ObjectStorage } from './core/storage.js'
 import type { EmailWorker } from './modules/email/email.worker.js'
 import type { EmailQueue } from './modules/email/email.queue.js'
 import type { Mailer } from './modules/email/mailer.js'
@@ -45,6 +46,7 @@ declare module 'fastify' {
     mailer: Mailer
     metrics: MetricsRegistry
     otel: OtelTraceExporter
+    storage: ObjectStorage
   }
   interface FastifyRequest {
     user?: AuthUser

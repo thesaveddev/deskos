@@ -8,7 +8,7 @@ export interface Membership {
 }
 
 interface MeResponse {
-  user: { id: string; email: string; name: string }
+  user: { id: string; email: string; name: string; avatarUrl?: string | null }
   memberships: Membership[]
 }
 

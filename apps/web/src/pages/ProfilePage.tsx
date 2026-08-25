@@ -24,6 +24,7 @@ export default function ProfilePage() {
   const [pwNotice, setPwNotice] = useState<string | null>(null)
 
   // Avatar
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(user?.avatarUrl ?? null)
   const [avatarUploading, setAvatarUploading] = useState(false)
 
   const handleProfileSave = async (e: FormEvent) => {
@@ -83,6 +84,8 @@ export default function ProfilePage() {
         body: formData,
       })
       if (!res.ok) throw new Error('Upload failed')
+      const data = await res.json() as { avatarUrl: string }
+      setAvatarUrl(data.avatarUrl)
       setNotice('Profile picture updated.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to upload avatar')
@@ -100,7 +103,9 @@ export default function ProfilePage() {
         {/* Avatar section */}
         <div className="profile-avatar-section">
           <div className="profile-avatar-large">
-            {initials}
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="Profile" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+            ) : initials}
           </div>
           <label className="btn btn-ghost btn-sm" style={{ cursor: 'pointer' }}>
             {avatarUploading ? 'Uploading…' : 'Change photo'}

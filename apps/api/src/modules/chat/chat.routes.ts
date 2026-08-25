@@ -1,8 +1,5 @@
-import { createReadStream, createWriteStream } from 'node:fs'
-import { mkdir, stat, unlink } from 'node:fs/promises'
-import path from 'node:path'
-import { pipeline } from 'node:stream/promises'
 import { randomBytes } from 'node:crypto'
+import path from 'node:path'
 import { z } from 'zod'
 import type { FastifyInstance } from 'fastify'
 import { recordAudit } from '../../core/audit.js'
@@ -263,18 +260,13 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       return row
     })
 
-    const fullPath = path.join(app.config.uploadDir, attachment.storage_key)
-    try {
-      await stat(fullPath)
-    } catch {
-      throw AppError.notFound('Chat attachment file missing from storage')
-    }
     const safeName = String(attachment.filename).replace(/["\r\n]/g, '_')
+    const stream = await app.storage.downloadStream(attachment.storage_key)
     return reply
       .header('content-type', attachment.mime || 'application/octet-stream')
       .header('content-disposition', `attachment; filename="${safeName}"`)
       .header('x-content-type-options', 'nosniff')
-      .send(createReadStream(fullPath))
+      .send(stream)
   })
 
   app.post('/chat/rooms/:id/messages', { preHandler: write }, async (request, reply) => {
@@ -293,13 +285,8 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
           }
           if (part.fieldname !== 'file') continue
           const filename = sanitizeFilename(part.filename ?? 'attachment')
-          const storageKey = `chat/${ctx.tenantId}/${randomBytes(16).toString('hex')}-${filename}`
-          const fullPath = path.join(app.config.uploadDir, storageKey)
-          await mkdir(path.dirname(fullPath), { recursive: true })
-          await pipeline(part.file, createWriteStream(fullPath))
-          if (part.file.truncated) throw AppError.badRequest('File exceeds the 10 MB chat limit', 'file_too_large')
-          const fileStat = await stat(fullPath)
-          storedFile = { filename, mime: part.mimetype || 'application/octet-stream', sizeBytes: fileStat.size, storageKey, fullPath }
+          const { storageKey, sizeBytes } = await app.storage.uploadStream('chat', ctx.tenantId, filename, part.mimetype || 'application/octet-stream', part.file, CHAT_FILE_MAX_BYTES)
+          storedFile = { filename, mime: part.mimetype || 'application/octet-stream', sizeBytes, storageKey, fullPath: '' }
         }
       } else {
         bodyText = String((request.body as { body?: unknown } | undefined)?.body ?? '')
@@ -370,7 +357,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       })
       return reply.code(201).send({ message })
     } catch (error) {
-      if (storedFile) await unlink(storedFile.fullPath).catch(() => undefined)
+      if (storedFile?.storageKey) await app.storage.delete(storedFile.storageKey)
       throw error
     }
   })

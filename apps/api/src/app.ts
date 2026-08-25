@@ -14,6 +14,7 @@ import { BRAND } from './core/brand.js'
 import { MetricsRegistry } from './core/metrics.js'
 import { OtelTraceExporter, unixNano } from './core/otel.js'
 import { captureError, initSentry } from './core/sentry.js'
+import { createStorage } from './core/storage.js'
 import { buildTraceparent, newSpanId, newTraceId, parseTraceparent, parseTraceparentContext } from './core/tracing.js'
 import { createPool } from './db/pool.js'
 import { assetRoutes } from './modules/assets/assets.routes.js'
@@ -162,6 +163,7 @@ export async function buildApp(config: AppConfig): Promise<FastifyInstance> {
   app.decorate('mailer', mailer)
   app.decorate('metrics', metrics)
   app.decorate('otel', otel)
+  app.decorate('storage', createStorage(config))
   const notificationRealtime = await startNotificationRealtime(pool, app.log)
 
   // Web Push: wire the fire-and-forget dispatcher into the notification

@@ -1,8 +1,4 @@
 import { randomBytes } from 'node:crypto'
-import { createReadStream, createWriteStream } from 'node:fs'
-import { mkdir, stat, unlink } from 'node:fs/promises'
-import path from 'node:path'
-import { pipeline } from 'node:stream/promises'
 import type { FastifyInstance } from 'fastify'
 import { recordAudit } from '../../core/audit.js'
 import { AppError } from '../../core/errors.js'
@@ -28,7 +24,7 @@ async function addRecordingEvent(
 }
 
 /** Delete rows whose retention window has elapsed, removing files best-effort. */
-async function purgeExpired(client: DbClient, dir: string, sessionId: string): Promise<void> {
+async function purgeExpired(client: DbClient, sessionId: string, storage: { delete: (key: string) => Promise<void> }): Promise<void> {
   const { rows } = await client.query(
     `SELECT id, storage_key FROM session_recordings
       WHERE session_id = $1 AND expires_at IS NOT NULL AND expires_at <= now()`,
@@ -36,11 +32,7 @@ async function purgeExpired(client: DbClient, dir: string, sessionId: string): P
   )
   if (rows.length === 0) return
   for (const row of rows) {
-    try {
-      await unlink(path.join(dir, row.storage_key))
-    } catch {
-      /* the file may already be gone */
-    }
+    await storage.delete(row.storage_key)
   }
   await client.query('DELETE FROM session_recordings WHERE id = ANY($1::uuid[])', [rows.map((row) => row.id)])
 }
@@ -68,19 +60,7 @@ export async function recordingRoutes(app: FastifyInstance): Promise<void> {
     const part = await request.file({ limits: { fileSize: app.config.maxRecordingBytes } })
     if (!part) throw AppError.badRequest('No recording provided', 'missing_file')
 
-    const storageKey = `recordings/${ctx.tenantId}/${randomBytes(16).toString('hex')}.webm`
-    const fullPath = path.join(app.config.recordingDir, storageKey)
-    await mkdir(path.dirname(fullPath), { recursive: true })
-
-    let size = 0
-    const counting = async function* () {
-      for await (const chunk of part.file) {
-        size += chunk.length
-        if (size > app.config.maxRecordingBytes) throw AppError.badRequest('Recording exceeds the size limit', 'file_too_large')
-        yield chunk
-      }
-    }
-    await pipeline(counting(), createWriteStream(fullPath))
+    const { storageKey, sizeBytes: size } = await app.storage.uploadStream('recordings', ctx.tenantId, `${randomBytes(16).toString('hex')}.webm`, part.mimetype || 'video/webm', part.file, app.config.maxRecordingBytes)
 
     const durationSec = Math.max(0, Math.round(Number((request.query as { durationSec?: string }).durationSec ?? 0)))
     const recording = await withTenant(app.db, ctx.tenantId, async (client) => {
@@ -116,7 +96,7 @@ export async function recordingRoutes(app: FastifyInstance): Promise<void> {
     if (!canManageSessions(ctx.orgRole)) throw AppError.forbidden('Remote session access denied', 'missing_permission')
     const { id: sessionId } = request.params as { id: string }
     return withTenant(app.db, ctx.tenantId, async (client) => {
-      await purgeExpired(client, app.config.recordingDir, sessionId)
+      await purgeExpired(client, sessionId, app.storage)
       const { rows } = await client.query(
         `SELECT id, session_id, mime, size_bytes, duration_sec, created_at, expires_at
            FROM session_recordings WHERE session_id = $1 ORDER BY created_at ASC`,
@@ -143,15 +123,10 @@ export async function recordingRoutes(app: FastifyInstance): Promise<void> {
       throw AppError.notFound('Recording has expired')
     }
 
-    const fullPath = path.join(app.config.recordingDir, recording.storage_key)
-    try {
-      await stat(fullPath)
-    } catch {
-      throw AppError.notFound('Recording file missing from storage')
-    }
+    const stream = await app.storage.downloadStream(recording.storage_key)
     return reply
       .header('content-type', recording.mime || 'video/webm')
       .header('content-disposition', `attachment; filename="deskos-session-${sessionId}.webm"`)
-      .send(createReadStream(fullPath))
+      .send(stream)
   })
 }

@@ -442,6 +442,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   })
 
   app.get('/me', { preHandler: [authenticate] }, async (request) => {
+    const userRow = (await app.db.query('SELECT avatar_url FROM users WHERE id = $1', [request.user!.id])).rows[0]
     const { rows } = await app.db.query(
       `SELECT m.org_role, m.status, t.id AS tenant_id, t.slug, t.name, t.settings
          FROM memberships m JOIN tenants t ON t.id = m.tenant_id
@@ -462,7 +463,43 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         orgRole: r.org_role,
         permissions: permissionsForRole(r.org_role),
       }))
-    return { user: request.user, memberships }
+    return { user: { ...request.user, avatarUrl: userRow?.avatar_url ?? null }, memberships }
+  })
+
+  // ── Avatar upload ──────────────────────────────────────────────
+  app.post('/me/avatar', { preHandler: [authenticate] }, async (request, reply) => {
+    const part = await request.file({ limits: { fileSize: 2 * 1024 * 1024 } })
+    if (!part) throw AppError.badRequest('No file provided', 'missing_file')
+
+    const allowed = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp'])
+    if (!allowed.has(part.mimetype)) {
+      throw AppError.badRequest('Only JPG, PNG, GIF and WebP images are allowed', 'invalid_image_type')
+    }
+
+    const chunks: Buffer[] = []
+    for await (const chunk of part.file) chunks.push(chunk)
+    const buffer = Buffer.concat(chunks)
+    if (buffer.length > 2 * 1024 * 1024) {
+      throw AppError.badRequest('Image must be under 2MB', 'file_too_large')
+    }
+
+    // Use the first tenant the user belongs to (avatars are tenant-scoped)
+    const membership = (await app.db.query(
+      'SELECT tenant_id FROM memberships WHERE user_id = $1 AND status = $2 LIMIT 1',
+      [request.user!.id, 'active'],
+    )).rows[0]
+    const tenantId = membership?.tenant_id ?? 'global'
+
+    const { publicUrl } = await app.storage.uploadAvatar(
+      tenantId,
+      request.user!.id,
+      part.filename ?? 'avatar.jpg',
+      part.mimetype,
+      buffer,
+    )
+
+    await app.db.query('UPDATE users SET avatar_url = $1 WHERE id = $2', [publicUrl, request.user!.id])
+    return reply.code(200).send({ avatarUrl: publicUrl })
   })
 
   app.get('/auth/validate', async (request) => {
