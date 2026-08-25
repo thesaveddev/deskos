@@ -361,9 +361,42 @@ export default function SessionConsolePage() {
   }
 
   const selectedMonitor = selectedMonitorId === null ? null : monitors.find((monitor) => monitor.id === selectedMonitorId) ?? null
+  // If the selected display no longer exists (unplugged / renegotiated),
+  // behave as "all displays" instead of leaving the console on a dead pick.
+  const effectiveSelectedId = selectedMonitorId !== null
+    ? (monitors.some((monitor) => monitor.id === selectedMonitorId) ? selectedMonitorId : null)
+    : null
+
+  // Ask the endpoint for its display list when the console connects, and
+  // retry a few times on a slow endpoint so the switcher always appears even
+  // if the first handshake is missed.
+  useEffect(() => {
+    if (!id || consoleState !== 'connected' || !canSelectMonitor) return
+    const attempts = 3
+    let attempt = 0
+    const run = () => {
+      attempt += 1
+      sendSessionControl(id, { action: 'monitor_list' }, true)
+    }
+    run()
+    const timer = window.setInterval(() => {
+      if (attempt >= attempts) {
+        window.clearInterval(timer)
+        return
+      }
+      run()
+    }, 4000)
+    return () => window.clearInterval(timer)
+  }, [id, consoleState, canSelectMonitor])
+
+  const detectDisplays = () => {
+    if (!id || !canSelectMonitor) return
+    setMonitorStatus('Detecting displays…')
+    sendSessionControl(id, { action: 'monitor_list' }, true)
+  }
 
   const toVirtualPoint = (x: number, y: number): { x: number; y: number } => {
-    if (!selectedMonitor) return { x, y }
+    if (!selectedMonitor || effectiveSelectedId === null) return { x, y }
     const bounds = virtualBounds()
     if (!bounds) return { x, y }
     return {
@@ -371,6 +404,7 @@ export default function SessionConsolePage() {
       y: (selectedMonitor.y + y * selectedMonitor.height - bounds.top) / bounds.height,
     }
   }
+
 
   const sendInput = (payload: Record<string, unknown>) => {
     if (!id || !canControl) return
@@ -383,12 +417,14 @@ export default function SessionConsolePage() {
   const selectMonitor = (value: string) => {
     if (!id || !canSelectMonitor) return
     if (value === 'all') {
-      setMonitorStatus('Switching to all displays…')
+      setSelectedMonitorId(null)
+      setMonitorStatus('Showing all displays…')
       sendSessionControl(id, { action: 'monitor_all' }, controlArmed)
       return
     }
     const monitorId = Number(value)
     if (!Number.isInteger(monitorId)) return
+    setSelectedMonitorId(monitorId)
     setMonitorStatus('Switching display…')
     sendSessionControl(id, { action: 'monitor_select', monitorId }, controlArmed)
   }
@@ -734,10 +770,12 @@ export default function SessionConsolePage() {
             }
           }}
         >
-          {monitors.length > 0 ? <div className="session-display-switcher" role="group" aria-label="Remote displays">
+          {canSelectMonitor ? <div className="session-display-switcher" role="group" aria-label="Remote displays">
             <span className="session-display-label">Displays</span>
-            <button type="button" className={`session-display-chip ${selectedMonitorId === null ? 'active' : ''}`} onClick={() => selectMonitor('all')} disabled={!canSelectMonitor} title="Show all available displays">All</button>
-            {monitors.map((monitor) => <button type="button" className={`session-display-chip ${selectedMonitorId === monitor.id ? 'active' : ''}`} onClick={() => selectMonitor(String(monitor.id))} disabled={!canSelectMonitor} key={monitor.id} title={`${monitor.name} · ${monitor.width}×${monitor.height}`}>{monitor.id + 1}{monitor.primary ? ' · Primary' : ''}</button>)}
+            <button type="button" className={`session-display-chip ${effectiveSelectedId === null ? 'active' : ''}`} onClick={() => selectMonitor('all')} title="Show all available displays">All</button>
+            {monitors.map((monitor) => <button type="button" className={`session-display-chip ${effectiveSelectedId === monitor.id ? 'active' : ''}`} onClick={() => selectMonitor(String(monitor.id))} key={monitor.id} title={`${monitor.name} · ${monitor.width}×${monitor.height}`}>{monitor.id + 1}{monitor.primary ? ' · primary' : ''}</button>)}
+            <button type="button" className="session-display-chip session-display-detect" onClick={detectDisplays} title="Detect or refresh the display list">↻ detect</button>
+            {monitors.length === 0 ? <span className="session-display-status" role="status">No display list yet</span> : null}
             {monitorStatus ? <span className="session-display-status" role="status">{monitorStatus}</span> : null}
           </div> : null}
           {remoteStream ? <div ref={videoWrapRef} className="session-video-wrap">

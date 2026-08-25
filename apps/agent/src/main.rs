@@ -4922,19 +4922,41 @@ fn capture_desktop_rgb(
     if monitors.is_empty() {
         return Err(anyhow!("no display found"));
     }
-    let captured = monitors
-        .iter()
-        .enumerate()
-        .filter(|(index, _)| selected_monitor.is_none_or(|selected| selected == *index))
-        .map(|(_, monitor)| {
-            let offset_x = monitor.x().unwrap_or(0);
-            let offset_y = monitor.y().unwrap_or(0);
-            monitor
-                .capture_image()
-                .map(|image| (offset_x, offset_y, image))
-                .context("capture display")
-        })
-        .collect::<Result<Vec<_>>>()?;
+    // Capture every requested display independently so that a single failing
+    // output (a sleeping second monitor, a headless/off output that is still
+    // enumerated, or a display the capture API temporarily rejects) does not
+    // take down the whole stream. Frames keep flowing from the displays that
+    // did capture, and the encoder adapts to the resulting bounds.
+    let mut captured: Vec<(i32, i32, xcap::image::RgbaImage)> = Vec::new();
+    let mut first_error: Option<anyhow::Error> = None;
+    for (index, monitor) in monitors.iter().enumerate() {
+        if selected_monitor.is_some_and(|selected| selected != index) {
+            continue;
+        }
+        let offset_x = monitor.x().unwrap_or(0);
+        let offset_y = monitor.y().unwrap_or(0);
+        match monitor.capture_image() {
+            Ok(image) => captured.push((offset_x, offset_y, image)),
+            Err(error) => {
+                if first_error.is_none() {
+                    first_error = Some(anyhow!(
+                        "display {} ({}) could not be captured: {error:#}",
+                        index + 1,
+                        monitor
+                            .name()
+                            .unwrap_or_else(|_| "unnamed".to_owned()),
+                    ));
+                    eprintln!("screen capture: {}", first_error.as_ref().unwrap());
+                }
+            }
+        }
+    }
+    if captured.is_empty() {
+        match first_error {
+            Some(error) => return Err(error),
+            None => return Err(anyhow!("no display could be captured")),
+        }
+    }
     let left = captured
         .iter()
         .map(|(x, _, _)| *x)
@@ -5009,43 +5031,6 @@ fn draw_cursor(rgb: &mut [u8], width: usize, height: usize, x: i32, y: i32) {
     }
 }
 
-fn capture_dimensions(monitors: &[Monitor], selected_monitor: Option<usize>) -> Result<(usize, usize)> {
-    let selected = monitors
-        .iter()
-        .enumerate()
-        .filter(|(index, _)| selected_monitor.is_none_or(|selected| selected == *index))
-        .map(|(_, monitor)| {
-            (
-                monitor.x().unwrap_or(0),
-                monitor.y().unwrap_or(0),
-                monitor.width().unwrap_or(0) as i32,
-                monitor.height().unwrap_or(0) as i32,
-            )
-        })
-        .collect::<Vec<_>>();
-    if selected.is_empty() {
-        return Err(anyhow!("no selected display found"));
-    }
-    if selected_monitor.is_some() {
-        return Ok((selected[0].2.max(1) as usize, selected[0].3.max(1) as usize));
-    }
-    let left = selected.iter().map(|(x, _, _, _)| *x).min().unwrap_or(0);
-    let top = selected.iter().map(|(_, y, _, _)| *y).min().unwrap_or(0);
-    let right = selected.iter().map(|(x, _, width, _)| *x + *width).max().unwrap_or(left + 1);
-    let bottom = selected.iter().map(|(_, y, _, height)| *y + *height).max().unwrap_or(top + 1);
-    Ok(((right - left).max(1) as usize, (bottom - top).max(1) as usize))
-}
-
-fn capture_encoded_frame(
-    encoder: &mut Encoder,
-    monitors: &[Monitor],
-    selected_monitor: Option<usize>,
-) -> Result<Vec<u8>> {
-    let (rgb, width, height) = capture_desktop_rgb(monitors, selected_monitor)?;
-    let yuv = YUVBuffer::from_rgb_source(RgbSliceU8::new(&rgb, (width, height)));
-    Ok(encoder.encode(&yuv)?.to_vec())
-}
-
 fn start_screen_publisher(
     track: Arc<TrackLocalStaticSample>,
     client: Arc<AgentClient>,
@@ -5084,31 +5069,69 @@ fn start_screen_publisher(
             }
         };
         let mut encoder_dimensions: Option<(usize, usize)> = None;
+        let mut monitor_staleness_reported = false;
         loop {
-            let selected = selected_monitor.lock().ok().and_then(|selection| *selection);
-            match capture_dimensions(&screens, selected) {
-                Ok(dimensions) if encoder_dimensions != Some(dimensions) => {
-                    match Encoder::new() {
-                        Ok(new_encoder) => {
-                            encoder = new_encoder;
-                            encoder_dimensions = Some(dimensions);
-                        }
-                        Err(error) => {
-                            eprintln!("screen encoder reset: {error}");
-                            thread::sleep(Duration::from_millis(250));
-                            continue;
-                        }
-                    }
+            let mut selected = selected_monitor.lock().ok().and_then(|selection| *selection);
+            // If the requested display no longer exists (monitor unplugged,
+            // display configuration changed), fall back to all displays so the
+            // stream does not stall on a stale selection.
+            if selected.is_some_and(|selected| selected >= screens.len()) {
+                if let Ok(mut selection) = selected_monitor.lock() {
+                    *selection = None;
                 }
+                if !monitor_staleness_reported {
+                    eprintln!(
+                        "screen capture: selected display {} is no longer available; showing all displays",
+                        selected.unwrap_or(0) + 1
+                    );
+                    monitor_staleness_reported = true;
+                }
+                selected = None;
+            }
+            // Capture first, then size the encoder to the actual frame: when a
+            // display fails (off/sleeping second monitor) the composite shrinks,
+            // and encoding must follow the real bounds, not stale monitor metadata.
+            let captured = match capture_desktop_rgb(&screens, selected) {
+                Ok(captured) => captured,
                 Err(error) => {
-                    eprintln!("screen capture dimensions: {error:#}");
+                    eprintln!("screen capture: {error:#}");
+                    if !capture_error_reported.swap(true, Ordering::Relaxed) {
+                        let reason = error.to_string().chars().take(240).collect();
+                        let diagnostic_client = client.clone();
+                        let diagnostic_session = session_id.clone();
+                        runtime_handle.spawn(async move {
+                            let _ = diagnostic_client
+                                .diagnostic(
+                                    &diagnostic_session,
+                                    "screen.capture_error",
+                                    Some(reason),
+                                )
+                                .await;
+                        });
+                    }
                     thread::sleep(Duration::from_millis(250));
                     continue;
                 }
-                _ => {}
+            };
+            let (rgb, width, height) = captured;
+            let dimensions = (width, height);
+            if encoder_dimensions != Some(dimensions) {
+                match Encoder::new() {
+                    Ok(new_encoder) => {
+                        encoder = new_encoder;
+                        encoder_dimensions = Some(dimensions);
+                    }
+                    Err(error) => {
+                        eprintln!("screen encoder reset: {error}");
+                        thread::sleep(Duration::from_millis(250));
+                        continue;
+                    }
+                }
             }
-            match capture_encoded_frame(&mut encoder, &screens, selected) {
+            let yuv = YUVBuffer::from_rgb_source(RgbSliceU8::new(&rgb, (width, height)));
+            match encoder.encode(&yuv) {
                 Ok(frame) => {
+                    let frame = frame.to_vec();
                     if !frame_reported.swap(true, Ordering::Relaxed) {
                         let diagnostic_client = client.clone();
                         let diagnostic_session = session_id.clone();
@@ -5129,7 +5152,7 @@ fn start_screen_publisher(
                     }
                 }
                 Err(error) => {
-                    eprintln!("screen capture: {error:#}");
+                    eprintln!("screen encoder: {error:#}");
                     if !capture_error_reported.swap(true, Ordering::Relaxed) {
                         let reason = error.to_string().chars().take(240).collect();
                         let diagnostic_client = client.clone();
