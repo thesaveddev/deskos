@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { withTenant, type DbPool, type DbClient } from '../../db/pool.js'
-import type { GatewayMethod, VerifyResult } from './gateway.js'
+import type { VerifyResult } from './gateway.js'
 
 export interface Plan {
   id: number

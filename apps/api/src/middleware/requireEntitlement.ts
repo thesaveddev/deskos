@@ -1,6 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { AppError } from '../core/errors.js'
-import { withTenant } from '../db/pool.js'
 
 /**
  * Entitlement guard – enforces plan limits (technicians, devices) at the API

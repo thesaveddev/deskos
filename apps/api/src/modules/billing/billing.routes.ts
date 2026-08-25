@@ -9,12 +9,11 @@ import {
   type GatewayMap,
 } from './gateway.js'
 import {
-  listPlans, getSubscription, createSubscription, changePlan, cancelSubscription,
-  listInvoices, listPaymentMethods, addPaymentMethod, removePaymentMethod, setDefaultPaymentMethod,
-  createCheckoutInvoice, confirmGatewayCheckout, activateManualSubscription,
-  getBillingSettings, setBillingSettings, makeReference, cancelGatewaySubscription,
-} from './billing.service.js'
-import { requireEntitlement } from '../../middleware/requireEntitlement.js'
+  listPlans, getSubscription, createSubscription, changePlan,
+    listInvoices, listPaymentMethods, addPaymentMethod, removePaymentMethod, setDefaultPaymentMethod,
+    createCheckoutInvoice, confirmGatewayCheckout, activateManualSubscription,
+    getBillingSettings, setBillingSettings, makeReference, cancelGatewaySubscription,
+  } from './billing.service.js'
 import type { BillingConfig } from '../../config.js'
 
 function buildGateways(config: BillingConfig): GatewayMap {

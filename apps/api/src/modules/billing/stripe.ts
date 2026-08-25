@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import {
-  type CheckoutInput, type CheckoutResult, type GatewayMethod, type GatewayMethodInfo,
+  type CheckoutInput, type CheckoutResult, type GatewayMethodInfo,
   type PaymentGateway, type VerifyResult, type WebhookEvent,
 } from './gateway.js'
 
