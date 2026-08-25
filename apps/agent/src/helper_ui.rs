@@ -9,11 +9,43 @@ pub mod windows_ui {
     use super::super::*;
     use std::sync::atomic::{AtomicPtr, Ordering};
     use std::sync::Once;
-    use windows::Win32::Graphics::Gdi::{CreateSolidBrush, GetSysColorBrush, SetBkMode, SetTextColor, COLOR_WINDOW, TRANSPARENT};
+    use windows::Win32::Graphics::Gdi::{CreateSolidBrush, GetMonitorInfoW, GetSysColorBrush, MonitorFromPoint, SetBkMode, SetTextColor, COLOR_WINDOW, MONITORINFO, TRANSPARENT};
     use windows::Win32::Foundation::COLORREF;
     use windows::Win32::UI::Shell::{NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY, NOTIFYICONDATAW, Shell_NotifyIconW};
     use windows::Win32::UI::WindowsAndMessaging::*;
     use windows::core::PCWSTR;
+
+    // ── Window placement ────────────────────────────────────────────────
+
+    /// Work area of the monitor that currently contains the mouse pointer,
+    /// falling back to the primary monitor when the pointer cannot be read.
+    /// Returns (x, y, width, height).
+    fn focused_monitor_work_area() -> (i32, i32, i32, i32) {
+        unsafe {
+            let mut point = POINT::default();
+            GetCursorPos(&mut point).ok();
+            let monitor = MonitorFromPoint(point, windows::Win32::Graphics::Gdi::MONITOR_DEFAULTTONEAREST);
+            let mut info = MONITORINFO {
+                cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+                ..Default::default()
+            };
+            if GetMonitorInfoW(monitor, &mut info).as_bool() {
+                let area = info.rcWork;
+                return (area.left, area.top, area.right - area.left, area.bottom - area.top);
+            }
+            // Fallback: primary screen metrics.
+            let w = GetSystemMetrics(SM_CXSCREEN);
+            let h = GetSystemMetrics(SM_CYSCREEN);
+            (0, 0, w, h)
+        }
+    }
+
+    /// Center a window of the given size inside the monitor under the cursor,
+    /// so it never straddles the bezel between two monitors.
+    fn center_on_focused_monitor(w: i32, h: i32) -> (i32, i32) {
+        let (mx, my, mw, mh) = focused_monitor_work_area();
+        (mx + (mw - w) / 2, my + (mh - h) / 2)
+    }
 
     // ── Consent window ──────────────────────────────────────────────────
 
@@ -108,10 +140,7 @@ pub mod windows_ui {
 
             let w: i32 = 460;
             let h: i32 = 400;
-            let screen_w = GetSystemMetrics(SM_CXVIRTUALSCREEN);
-            let screen_h = GetSystemMetrics(SM_CYVIRTUALSCREEN);
-            let x = (screen_w - w) / 2;
-            let y = (screen_h - h) / 2;
+            let (x, y) = center_on_focused_monitor(w, h);
 
             let title = tray_wide("ReyDesk Remote Support");
             let hwnd = CreateWindowExW(
@@ -262,6 +291,7 @@ pub mod windows_ui {
     const IDC_MSG_INPUT: i32 = 4001;
     const IDC_MSG_SEND: i32 = 4002;
     const IDC_DISCONNECT: i32 = 4003;
+    const IDC_FILES: i32 = 4007;
     const IDC_CHAT_LOG: i32 = 4004;
     const IDC_STATUS: i32 = 4005;
     const IDC_BRAND: i32 = 4006;
@@ -502,6 +532,15 @@ pub mod windows_ui {
                         DestroyWindow(hwnd).ok();
                         LRESULT(0)
                     }
+                    IDC_FILES => {
+                        // Reveal the folder where technician-sent files are saved.
+                        let root = file_root();
+                        let _ = std::process::Command::new("explorer.exe")
+                            .arg(&root)
+                            .creation_flags(0x08000000) // CREATE_NO_WINDOW
+                            .spawn();
+                        LRESULT(0)
+                    }
                     _ => return DefWindowProcW(hwnd, msg, wparam, lparam),
                 }
             }
@@ -565,12 +604,9 @@ pub mod windows_ui {
                 RegisterClassW(&class);
             });
 
-            let screen_w = GetSystemMetrics(SM_CXVIRTUALSCREEN);
-            let screen_h = GetSystemMetrics(SM_CYVIRTUALSCREEN);
             let w = 420i32;
             let h = 420i32;
-            let x = (screen_w - w) / 2;
-            let y = (screen_h - h) / 2;
+            let (x, y) = center_on_focused_monitor(w, h);
 
             let title = tray_wide("ReyDesk Support Session");
             let hwnd = CreateWindowExW(
@@ -643,6 +679,16 @@ pub mod windows_ui {
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
                 308, 300, 92, 28,
                 hwnd, HMENU(IDC_MSG_SEND as isize), None, None,
+            );
+
+            // Received-files button
+            CreateWindowExW(
+                WINDOW_EX_STYLE::default(),
+                PCWSTR(button_class.as_ptr()),
+                PCWSTR(tray_wide("Files").as_ptr()),
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+                20, 350, 108, 30,
+                hwnd, HMENU(IDC_FILES as isize), None, None,
             );
 
             // Disconnect button

@@ -874,6 +874,7 @@ fn power_source() -> String {
 fn battery_health_percentage() -> Option<f32> {
     let output = std::process::Command::new("powershell.exe")
         .args(["-NoProfile", "-NonInteractive", "-Command", "$b=Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue | Select-Object -First 1; if ($b -and $b.DesignCapacity -gt 0) {[math]::Round(($b.FullChargeCapacity / $b.DesignCapacity) * 100, 2)}"])
+        .creation_flags(0x08000000) // CREATE_NO_WINDOW — runs on every heartbeat
         .output()
         .ok()?;
     String::from_utf8_lossy(&output.stdout).trim().parse::<f32>().ok().filter(|value| (0.0..=100.0).contains(value))
@@ -908,7 +909,9 @@ fn battery_health_percentage() -> Option<f32> { None }
 #[cfg(target_os = "windows")]
 fn service_states() -> HashMap<String, String> {
     let mut states = HashMap::new();
-    let output = match std::process::Command::new("sc.exe").args(["query", "state=", "all"]).output() { Ok(output) => output, Err(_) => return states };
+    let output = match std::process::Command::new("sc.exe").args(["query", "state=", "all"])
+        .creation_flags(0x08000000) // CREATE_NO_WINDOW — service probe runs on heartbeats
+        .output() { Ok(output) => output, Err(_) => return states };
     let mut name: Option<String> = None;
     for line in String::from_utf8_lossy(&output.stdout).lines() {
         let trimmed = line.trim();
@@ -2569,6 +2572,7 @@ fn open_enrollment_browser(url: &str) -> Result<()> {
     {
         ProcessCommand::new("cmd.exe")
             .args(["/C", "start", "", url])
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW — no console flash
             .spawn()
             .context("open enrollment browser")?;
         return Ok(());
@@ -2675,6 +2679,7 @@ async fn enroll_ui(api_url: String, relay_url: String, config_path: PathBuf) -> 
                 {
                     let _ = ProcessCommand::new("sc.exe")
                         .args(["start", SERVICE_NAME])
+                        .creation_flags(0x08000000) // CREATE_NO_WINDOW
                         .status();
                     if let Err(error) = launch_consent_helper(&config_path) {
                         eprintln!("consent helper: {error:#}");
@@ -4107,6 +4112,7 @@ fn terminate_process(pid: u32) -> Result<()> {
 fn list_services() -> Result<Vec<serde_json::Value>> {
     let output = ProcessCommand::new("sc.exe")
         .args(["query", "type=", "service", "state=", "all"])
+        .creation_flags(0x08000000) // CREATE_NO_WINDOW
         .output()
         .context("query Windows services")?;
     if !output.status.success() {
@@ -4163,6 +4169,7 @@ fn change_service(action: &str, name: &str) -> Result<()> {
     }
     let output = ProcessCommand::new("sc.exe")
         .args([action, name])
+        .creation_flags(0x08000000) // CREATE_NO_WINDOW
         .output()
         .with_context(|| format!("{action} Windows service"))?;
     if !output.status.success() {
@@ -4527,10 +4534,26 @@ async fn accept_webrtc_offer(
                                 "upload_complete" => {
                                     let transfer_id = value.as_ref().and_then(|value| value.get("transferId")).and_then(serde_json::Value::as_str).unwrap_or("");
                                     match file_transfers.lock().await.remove(transfer_id) {
-                                        Some(mut upload) => {
-                                            let _ = std::io::Write::flush(&mut upload.file);
-                                            match fs::rename(&upload.temporary, &upload.target) { Ok(()) => response = serde_json::json!({ "type": "files", "action": "upload_complete", "transferId": transfer_id }), Err(error) => { outcome = "rejected".to_owned(); reason = error.to_string(); response = serde_json::json!({ "type": "files", "action": "error", "reason": reason }); } }
+                                Some(mut upload) => {
+                                    let _ = std::io::Write::flush(&mut upload.file);
+                                    match fs::rename(&upload.temporary, &upload.target) {
+                                        Ok(()) => {
+                                            // Tell the end user a file just arrived: the
+                                            // session window (and browser chat UI) picks
+                                            // this up from the shared mailbox instantly.
+                                            let name = upload.target.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "file".to_owned());
+                                            let saved = upload.target.display().to_string();
+                                            let _ = write_mailbox_message(
+                                                &chat_mailbox_dir(),
+                                                &session_id,
+                                                "inbox",
+                                                &serde_json::json!({ "body": format!("ReyDesk: Technician sent a file \"{name}\" — saved to {saved}. Press Files to open the folder.") }),
+                                            );
+                                            response = serde_json::json!({ "type": "files", "action": "upload_complete", "transferId": transfer_id });
                                         }
+                                        Err(error) => { outcome = "rejected".to_owned(); reason = error.to_string(); response = serde_json::json!({ "type": "files", "action": "error", "reason": reason }); }
+                                    }
+                                }
                                         None => { outcome = "rejected".to_owned(); reason = "unknown upload transfer".to_owned(); response = serde_json::json!({ "type": "files", "action": "error", "reason": reason }); }
                                     }
                                 }
@@ -5403,6 +5426,7 @@ fn install_service(config: PathBuf) -> Result<()> {
             .arg("auto")
             .arg("DisplayName=")
             .arg("ReyDesk Endpoint Agent")
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW
             .status()
             .context("run sc.exe create")?;
         if !create.success() {
@@ -5419,6 +5443,7 @@ fn install_service(config: PathBuf) -> Result<()> {
                 "actions=",
                 "restart/5000/restart/15000/restart/60000",
             ])
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW
             .status()
             .context("configure Windows service recovery")?;
         if !failure.success() {
@@ -5426,6 +5451,7 @@ fn install_service(config: PathBuf) -> Result<()> {
         }
         let start = ProcessCommand::new("sc.exe")
             .args(["start", SERVICE_NAME])
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW
             .status()
             .context("start ReyDesk service")?;
         if !start.success() {
@@ -5451,9 +5477,11 @@ fn uninstall_service() -> Result<()> {
     {
         let _ = ProcessCommand::new("sc.exe")
             .args(["stop", SERVICE_NAME])
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW
             .status();
         let delete = ProcessCommand::new("sc.exe")
             .args(["delete", SERVICE_NAME])
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW
             .status()
             .context("run sc.exe delete")?;
         if !delete.success() {
