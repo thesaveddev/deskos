@@ -13,7 +13,8 @@ import {
   addPaymentMethod, getBillingMeta, setBillingCountry, startCheckout, checkoutStatus,
   formatCents,
   type Plan, type Subscription, type Invoice, type PaymentMethod, type EntitlementInfo,
-  type GatewayInfo,
+  type GatewayInfo, type BillingAnalytics,
+  getBillingAnalytics,
 } from '../lib/billing.js'
 
 /* ── tiny helpers ─────────────────────────────────────────────── */
@@ -55,7 +56,7 @@ function GatewayBadge({ slug }: { slug: string }) {
 
 /* ── main component ───────────────────────────────────────────── */
 
-type BillingTab = 'overview' | 'plans' | 'payment' | 'invoices'
+type BillingTab = 'overview' | 'plans' | 'payment' | 'invoices' | 'analytics'
 
 export default function BillingPage() {
   const auth = useAuth()
@@ -68,6 +69,8 @@ export default function BillingPage() {
   const [staffCount, setStaffCount] = useState(0)
   const [deviceCount, setDeviceCount] = useState(0)
   const [entitlement, setEntitlement] = useState<EntitlementInfo | null>(null)
+  const [analytics, setAnalytics] = useState<BillingAnalytics | null>(null)
+  const [analyticsLoading, setAnalyticsLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [cycle, setCycle] = useState<'monthly' | 'annual'>('monthly')
   const [tab, setTab] = useState<BillingTab>('overview')
@@ -187,15 +190,28 @@ export default function BillingPage() {
   const gatewaysForRegion = meta?.gateways ?? []
   const autoGateway = gatewaysForRegion.find((g) => g.enabled && g.slug !== 'manual') ?? gatewaysForRegion.find((g) => g.enabled)
   const activeGateway = checkoutGateway === 'auto' ? autoGateway : gatewaysForRegion.find((g) => g.slug === checkoutGateway)
+  const usageWarnings = entitlement ? [
+    { label: 'Technicians', used: entitlement.currentTechnicians, limit: entitlement.maxTechnicians },
+    { label: 'Devices', used: entitlement.currentDevices, limit: entitlement.maxDevices },
+  ].filter((item) => item.limit > 0 && item.used >= item.limit * 0.8) : []
   const activeMethods = activeGateway?.methods ?? []
   const chosenMethod = activeMethods.find((m) => m.id === checkoutMethod) ?? activeMethods[0]
 
   const tabs: Array<{ id: BillingTab; label: string; n?: number }> = [
     { id: 'overview', label: 'Overview' },
+    ...(isOwner ? [{ id: 'analytics' as BillingTab, label: 'Analytics' }] : []),
     { id: 'plans', label: 'Plans' },
     { id: 'payment', label: 'Payment', n: methods.length },
     { id: 'invoices', label: 'Invoices', n: invoices.length },
   ]
+
+  const loadAnalytics = () => {
+    if (analytics || analyticsLoading || !isOwner) return
+    setAnalyticsLoading(true)
+    void getBillingAnalytics().then(setAnalytics).catch((err: unknown) => setError(err instanceof Error ? err.message : 'Could not load billing analytics')).finally(() => setAnalyticsLoading(false))
+  }
+
+  if (tab === 'analytics' && isOwner) loadAnalytics()
 
   if (loading) return (
     <Shell>
@@ -214,6 +230,7 @@ export default function BillingPage() {
 
       {error ? <Alert kind="error">{error}</Alert> : null}
       {notice ? <Alert kind="info">{notice}</Alert> : null}
+      {usageWarnings.length > 0 ? <div className="b-usage-warnings" role="status">{usageWarnings.map((warning) => <div className="b-usage-warning" key={warning.label}><Icon name="alert" size={15} /><span><strong>{warning.label} usage is {Math.round(warning.used / warning.limit * 100)}%</strong><small>{warning.used} of {warning.limit} used. Review your plan before adding more.</small></span><button type="button" className="btn btn-ghost btn-xs" onClick={() => setTab('plans')}>Review plans</button></div>)}</div> : null}
 
       {/* ── Hero: current plan + usage ───────────────────── */}
       <div className="b-hero">
@@ -253,6 +270,7 @@ export default function BillingPage() {
 
       {/* ── Overview ─────────────────────────────────────── */}
       {tab === 'overview' && <OverviewTab currentPlan={currentPlan} sub={sub} usedFeatures={usedFeatures} meta={meta} isOwner={isOwner} setTab={setTab} />}
+      {tab === 'analytics' && isOwner ? <AnalyticsTab analytics={analytics} loading={analyticsLoading} currency={currency} /> : null}
 
       {/* ── Plans ────────────────────────────────────────── */}
       {tab === 'plans' && <PlansTab plans={plans} sub={sub} cycle={cycle} setCycle={setCycle} isOwner={isOwner} changing={changing} price={price} currency={currency} onChangePlan={handleChangePlan} onCheckout={openCheckout} />}
@@ -323,6 +341,22 @@ export default function BillingPage() {
 }
 
 /* ── Overview tab ──────────────────────────────────────────────── */
+
+function AnalyticsTab({ analytics, loading, currency }: { analytics: BillingAnalytics | null; loading: boolean; currency: string }) {
+  if (loading || !analytics) return <div className="dash-loading"><div className="loading-spinner" /><p>Loading billing analytics…</p></div>
+  const { snapshot } = analytics
+  const format = (cents: number) => formatCents(cents, currency)
+  return <div className="b-analytics">
+    <div className="b-analytics-grid">
+      {[["MRR", format(snapshot.mrr_cents)], ["ARR", format(snapshot.arr_cents)], ["Active subscriptions", snapshot.active_subscriptions.toLocaleString()], ["Conversion", `${snapshot.conversion_rate}%`]].map(([label, value]) => <div className="b-analytics-metric" key={label}><span>{label}</span><strong>{value}</strong></div>)}
+    </div>
+    <div className="b-analytics-columns">
+      <section className="b-section"><div className="b-section-head"><div><h3>MRR trend</h3><p>Net recurring revenue over the last 12 months.</p></div></div><div className="b-analytics-trend">{analytics.mrr_trend.map((item) => <div className="b-trend-row" key={item.month}><span className="mono">{item.month}</span><div className="b-trend-track"><span style={{ width: `${snapshot.mrr_cents > 0 ? Math.min(100, Math.max(2, item.mrr_cents / snapshot.mrr_cents * 100)) : 2}%` }} /></div><strong>{format(item.mrr_cents)}</strong></div>)}</div></section>
+      <section className="b-section"><div className="b-section-head"><div><h3>Plan mix</h3><p>Active and trial subscriptions by plan.</p></div></div><div className="b-analytics-list">{analytics.by_plan.map((item) => <div className="b-analytics-list-row" key={item.plan_slug}><span>{item.plan_name}</span><strong>{item.count}</strong><span className="mono muted">{format(item.monthly_revenue_cents + item.annual_revenue_cents / 12)}/mo</span></div>)}</div></section>
+    </div>
+    <section className="b-section"><div className="b-section-head"><div><h3>Billing attention</h3><p>Accounts that may need follow-up.</p></div><span className="b-attention-count">{analytics.dunning_queue.length} past due</span></div>{analytics.dunning_queue.length === 0 ? <p className="b-empty">No accounts currently require billing follow-up.</p> : <div className="b-analytics-list">{analytics.dunning_queue.map((item) => <div className="b-analytics-list-row" key={item.tenant_id}><span><strong>{item.tenant_name}</strong><small>{item.email}</small></span><span>{item.plan_name}</span><span className="b-status b-status-past-due">{item.days_past_due} days past due</span></div>)}</div>}</section>
+  </div>
+}
 
 function OverviewTab({ currentPlan, sub, usedFeatures, meta, isOwner, setTab }: {
   currentPlan: Plan | undefined; sub: Subscription | null; usedFeatures: string[];

@@ -48,6 +48,19 @@ const messageSchema = z.object({ body: z.string().trim().min(1).max(2000) })
 
 const LIVE_SESSION_STATES = new Set<string>(['requested', 'consent_pending', 'connecting', 'active', 'reconnecting'])
 
+type ClientPlatform = 'windows' | 'macos' | 'linux' | 'ios' | 'ipados' | 'android' | 'unknown'
+
+function clientPlatform(request: { headers: Record<string, string | string[] | undefined> }): ClientPlatform {
+  const userAgent = String(request.headers['user-agent'] ?? '').toLowerCase()
+  if (/iphone/.test(userAgent)) return 'ios'
+  if (/ipad/.test(userAgent)) return 'ipados'
+  if (/android/.test(userAgent)) return 'android'
+  if (/macintosh|mac os x/.test(userAgent)) return 'macos'
+  if (/windows/.test(userAgent)) return 'windows'
+  if (/linux/.test(userAgent)) return 'linux'
+  return 'unknown'
+}
+
 interface AdhocRow {
   id: string
   tenant_id: string
@@ -97,14 +110,19 @@ async function findAdhocByCode(pool: DbPool, code: string): Promise<AdhocRow | u
 function publicAdhoc(
   row: AdhocRow,
   helperAvailable: boolean,
+  macHelperAvailable: boolean,
+  platform: ClientPlatform,
   sessionState?: string,
-): { state: string; sessionState?: string; reason: string; permissions: string[]; helperAvailable: boolean; claimMode: string; sessionId?: string } {
+): { state: string; sessionState?: string; reason: string; permissions: string[]; helperAvailable: boolean; macHelperAvailable: boolean; platform: ClientPlatform; helperSupported: boolean; claimMode: string; sessionId?: string } {
   return {
     state: row.state,
     ...(sessionState ? { sessionState } : {}),
     reason: row.reason,
     permissions: row.permissions,
     helperAvailable,
+    macHelperAvailable,
+    platform,
+    helperSupported: platform === 'windows' ? helperAvailable : platform === 'macos' ? macHelperAvailable : false,
     claimMode: row.claim_mode,
     ...(row.remote_session_id ? { sessionId: row.remote_session_id } : {}),
   }
@@ -274,10 +292,16 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(404).send({ error: { code: 'not_found', message: 'This support link is invalid or expired.' } })
     }
     const helperAvailable = Boolean(app.config.helperBinaryPath && existsSync(app.config.helperBinaryPath))
+    const macHelperAvailable = Boolean(
+        app.config.macHelperBinaryPath &&
+        existsSync(app.config.macHelperBinaryPath) &&
+        process.env.REYDESK_MAC_HELPER_VERIFIED === 'true',
+      )
+    const platform = clientPlatform(request)
     const sessionState = row.remote_session_id
       ? (await withTenant(app.db, row.tenant_id, (client) => client.query('SELECT state FROM remote_sessions WHERE id = $1', [row.remote_session_id]))).rows[0]?.state as string | undefined
       : undefined
-    return reply.send(publicAdhoc(row, helperAvailable, sessionState))
+    return reply.send(publicAdhoc(row, helperAvailable, macHelperAvailable, platform, sessionState))
   })
 
   app.get(
@@ -297,14 +321,23 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
           .code(404)
           .send({ error: { code: 'not_found', message: 'This support link is invalid or expired.' } })
       }
-      const binaryPath = app.config.helperBinaryPath
+      const platform = clientPlatform(request)
+      const binaryPath = platform === 'macos' && process.env.REYDESK_MAC_HELPER_VERIFIED === 'true'
+        ? app.config.macHelperBinaryPath
+        : platform === 'windows'
+          ? app.config.helperBinaryPath
+          : ''
+      const filename = platform === 'macos' ? 'reydesk-helper.dmg' : 'reydesk-helper.exe'
       if (!binaryPath || !existsSync(binaryPath)) {
-        return reply.code(404).send({
-          error: { code: 'helper_unavailable', message: 'The portable helper is not available yet.' },
-        })
+        const message = platform === 'macos'
+          ? 'The macOS helper is not available yet. Use the browser support experience or ask your technician for a signed notarized package.'
+          : platform === 'windows'
+            ? 'The Windows helper is not available yet.'
+            : 'A native helper is not available for this device. Use the browser support experience.'
+        return reply.code(404).send({ error: { code: 'helper_unavailable', message } })
       }
-      reply.header('Content-Type', 'application/octet-stream')
-      reply.header('Content-Disposition', 'attachment; filename="reydesk-helper.exe"')
+      reply.header('Content-Type', platform === 'macos' ? 'application/octet-stream' : 'application/vnd.microsoft.portable-executable')
+      reply.header('Content-Disposition', `attachment; filename="${filename}"`)
       return reply.send(createReadStream(binaryPath))
     },
   )

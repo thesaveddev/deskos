@@ -7,6 +7,9 @@ interface ConnectInfo {
   reason: string
   permissions: string[]
   helperAvailable: boolean
+  macHelperAvailable?: boolean
+  platform?: 'windows' | 'macos' | 'linux' | 'ios' | 'ipados' | 'android' | 'unknown'
+  helperSupported?: boolean
   claimMode: 'code' | 'email_link'
   sessionState?: string
   sessionId?: string
@@ -432,7 +435,7 @@ export default function ConnectPage() {
           </section> : null}
           <div className="connect-code"><span className="etch">Support code</span><div className="support-code-digits">{code}</div><button className="btn btn-ghost btn-sm" onClick={() => void copyCode()}><span>{copied ? 'Copied' : 'Copy code'}</span></button></div>
           <section className="connect-how-to"><span className="settings-eyebrow">How this works</span><ol><li>Review the requested permissions above and approve only what you are comfortable sharing.</li><li>If your screen needs to be shared, download and open the ReyDesk helper on this device — it connects with this same code.</li><li>Keep this page open to chat with the technician and end support at any time.</li></ol></section>
-          {info.helperAvailable ? <div className="connect-download"><a className="btn btn-primary" href={`/api/connect/${encodeURIComponent(code)}/download${claimToken ? `?claimToken=${encodeURIComponent(claimToken)}` : ''}`}><span>Download the ReyDesk helper</span></a><span className="muted">The helper is portable: it runs for this support session and does not require installation.</span></div> : <div className="connect-download"><span className="muted">The helper download is temporarily unavailable. Ask your technician to provide the signed helper package.</span></div>}
+          {info.helperSupported ? <div className="connect-download"><a className="btn btn-primary" href={`/api/connect/${encodeURIComponent(code)}/download${claimToken ? `?claimToken=${encodeURIComponent(claimToken)}` : ''}`}><span>Download the {info.platform === 'macos' ? 'macOS' : 'Windows'} ReyDesk helper</span></a><span className="muted">Detected device: {info.platform === 'macos' ? 'MacBook/macOS' : 'Windows'}. The helper is portable and runs only for this support session.</span></div> : <div className="connect-download"><strong>{info.platform === 'ios' || info.platform === 'ipados' || info.platform === 'android' ? 'Use browser-based support on this device' : 'Helper download unavailable'}</strong><span className="muted">{info.platform === 'ios' || info.platform === 'ipados' || info.platform === 'android' ? 'Mobile operating systems do not permit a general unattended remote-control agent. Keep this page open to approve access, chat, and share context with your technician.' : 'A signed helper for this platform is not configured yet. Ask your technician for a supported package.'}</span></div>}
           {canChat ? <section className="connect-chat-card">
             <div className="connect-live-header"><div><strong>Support conversation</strong><span className="muted">Technician messages appear here while they work.</span></div><span className="status-pill status-active">Connected</span></div>
             <div className="chat-log connect-chat-log" ref={chatLogRef}>

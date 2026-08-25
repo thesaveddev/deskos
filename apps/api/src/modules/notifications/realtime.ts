@@ -1,4 +1,4 @@
-import type { DbPool } from '../../db/pool.js'
+import type { DbClient, DbPool } from '../../db/pool.js'
 import { publishNotification, type RealtimeNotification } from '../../core/notify.js'
 
 const CHANNEL = 'deskos_notifications'
@@ -16,7 +16,14 @@ export async function startNotificationRealtime(
   pool: DbPool,
   log: { warn: (obj: unknown, message?: string) => void; error: (obj: unknown, message?: string) => void },
 ): Promise<NotificationRealtime> {
-  const client = await pool.connect()
+  let client: DbClient | null = null
+  try {
+    client = await pool.connect()
+  } catch (error) {
+    log.warn({ err: error }, 'notification realtime listener unavailable')
+    return { stop: async () => undefined }
+  }
+  const listenerClient = client
   const onNotification = (message: { channel?: string; payload?: string }) => {
     if (message.channel !== CHANNEL || !message.payload) return
     try {
@@ -27,23 +34,23 @@ export async function startNotificationRealtime(
   }
 
   try {
-    await client.query(`LISTEN ${CHANNEL}`)
-    client.on('notification', onNotification)
+    await listenerClient.query(`LISTEN ${CHANNEL}`)
+    listenerClient.on('notification', onNotification)
   } catch (error) {
-    client.release()
+    listenerClient.release()
     log.warn({ err: error }, 'notification realtime listener unavailable')
     return { stop: async () => undefined }
   }
 
   return {
     stop: async () => {
-      client.removeListener('notification', onNotification)
+      listenerClient.removeListener('notification', onNotification)
       try {
-        await client.query(`UNLISTEN ${CHANNEL}`)
+        await listenerClient.query(`UNLISTEN ${CHANNEL}`)
       } catch {
         // The database connection may already be closed during shutdown.
       }
-      client.release()
+      listenerClient.release()
     },
   }
 }

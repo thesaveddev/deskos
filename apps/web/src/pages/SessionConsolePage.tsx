@@ -3,7 +3,7 @@ import { Link, useLocation, useParams } from 'react-router-dom'
 import { Shell } from '../components/Shell.js'
 import { Alert, useConfirm } from '../components/ui.js'
 import { api } from '../lib/api.js'
-import { clearSessionDock, downloadRecording, endSession, getSession, inviteParticipant, joinSession, listMessages, listParticipants, listRecordings, sendMessage, transferSession, uploadRecording, writeSessionDock, type RemoteSession, type SessionEvent, type SessionParticipant, type SessionRecording } from '../lib/sessions.js'
+import { clearSessionDock, downloadRecording, endSession, getSession, inviteParticipant, joinSession, listMessages, listParticipants, listRecordings, readSessionDock, sendMessage, transferSession, uploadRecording, writeSessionDock, type RemoteSession, type SessionEvent, type SessionParticipant, type SessionRecording } from '../lib/sessions.js'
 import { appendSessionChat, disposeSessionRuntime, endSessionRuntime, hasSessionRuntime, isSessionRuntimeAlive, reconnectSessionRuntime, sendSessionChat, sendSessionChatWithAttachment, sendSessionControl, sendSessionFiles, sendSessionInput, sendSessionSystem, sendSessionTerminal, sendSessionTyping, subscribeSessionRuntime, type ChatAttachment, type RemoteMonitor, type RuntimeConsoleState, type SessionChatMessage } from '../lib/sessionRuntime.js'
 
 type ConsoleState = 'loading' | RuntimeConsoleState
@@ -65,6 +65,8 @@ export default function SessionConsolePage() {
   const [monitors, setMonitors] = useState<RemoteMonitor[]>([])
   const [selectedMonitorId, setSelectedMonitorId] = useState<number | null>(null)
   const [monitorStatus, setMonitorStatus] = useState<string | null>(null)
+  const [displayPickerOpen, setDisplayPickerOpen] = useState(false)
+  const [recoveredAfterReload, setRecoveredAfterReload] = useState(false)
   const [cursorStyle, setCursorStyle] = useState<{ left: string; top: string } | null>(null)
   const [videoReady, setVideoReady] = useState(0)
   const [controlArmed, setControlArmed] = useState(false)
@@ -126,6 +128,16 @@ export default function SessionConsolePage() {
   }, [controlArmed])
 
   useEffect(() => {
+    if (!displayPickerOpen) return
+    const close = (event: globalThis.MouseEvent) => {
+      const target = event.target as HTMLElement
+      if (!target.closest('.session-display-picker-wrap')) setDisplayPickerOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [displayPickerOpen])
+
+  useEffect(() => {
     if (remoteStream && videoRef.current) {
       videoRef.current.srcObject = remoteStream
       void videoRef.current.play().catch(() => {
@@ -180,6 +192,8 @@ export default function SessionConsolePage() {
     let cancelled = false
     let unsubscribe: (() => void) | undefined
     const history = (location.state as HistoryState | null) ?? null
+    const recoveredFromDock = !history?.joinToken && Boolean(readSessionDock()?.id === id)
+    setRecoveredAfterReload(recoveredFromDock)
 
     const loadAndConnect = async () => {
       try {
@@ -434,17 +448,18 @@ export default function SessionConsolePage() {
   }
 
   const point = (event: MouseEvent<HTMLVideoElement> | PointerEvent<HTMLVideoElement>): { x: number; y: number } => {
-    const bounds = event.currentTarget.getBoundingClientRect()
-    const sourceWidth = event.currentTarget.videoWidth || bounds.width
-    const sourceHeight = event.currentTarget.videoHeight || bounds.height
+    const video = event.currentTarget
+    const bounds = video.getBoundingClientRect()
+    const sourceWidth = video.videoWidth || bounds.width
+    const sourceHeight = video.videoHeight || bounds.height
     const scale = Math.min(bounds.width / sourceWidth, bounds.height / sourceHeight)
     const renderedWidth = sourceWidth * scale
     const renderedHeight = sourceHeight * scale
     const offsetX = (bounds.width - renderedWidth) / 2
     const offsetY = (bounds.height - renderedHeight) / 2
     return {
-      x: Math.min(1, Math.max(0, (event.clientX - bounds.left - offsetX) / renderedWidth)),
-      y: Math.min(1, Math.max(0, (event.clientY - bounds.top - offsetY) / renderedHeight)),
+      x: Math.min(1, Math.max(0, (event.clientX - bounds.left - offsetX) / Math.max(1, renderedWidth))),
+      y: Math.min(1, Math.max(0, (event.clientY - bounds.top - offsetY) / Math.max(1, renderedHeight))),
     }
   }
 
@@ -637,6 +652,11 @@ export default function SessionConsolePage() {
   const uploadFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file || !id || !canFileTransfer) return
+    if (file.size > 16 * 1024 * 1024) {
+      setFileStatus('This file exceeds the 16 MB transfer limit.')
+      event.target.value = ''
+      return
+    }
     const transferId = crypto.randomUUID()
     const targetPath = filePath ? `${filePath}/${file.name}` : file.name
     setFileStatus(`Uploading ${file.name}…`)
@@ -646,6 +666,7 @@ export default function SessionConsolePage() {
       sendSessionFiles(id, { action: 'upload_chunk', transferId, data: encodeChunk(bytes.slice(offset, offset + 16 * 1024)) }, controlArmed)
     }
     sendSessionFiles(id, { action: 'upload_complete', transferId }, controlArmed)
+    setFileStatus(`${file.name} sent successfully.`)
     event.target.value = ''
   }
 
@@ -734,8 +755,10 @@ export default function SessionConsolePage() {
 
   return (
     <Shell>
-      <div className="console-breadcrumb"><Link to="/sessions">Sessions</Link><span>/</span><span>{session?.device_name ?? 'Remote session'}</span></div>
+      <div className="console-breadcrumb"><Link to="/sessions">Sessions</Link><span>/</span><span>{session?.device_name ?? 'Remote session'}</span></div>        {recoveredAfterReload ? <Alert kind="info">This console was reopened from your active-session dock. ReyDesk fetched a fresh secure connection ticket and is restoring the session.</Alert> : null}
+
       <div className="console-head">
+
         <div>
           <div className="console-kicker"><span className={`session-console-dot console-dot-${consoleState}`} />{stateLabel(consoleState)}<span className="mono muted">{session?.type ?? 'session'}</span></div>
           <h1 className="page-title">{session?.device_name ?? 'Remote session'}</h1>
@@ -774,14 +797,20 @@ export default function SessionConsolePage() {
             }
           }}
         >
-          {canSelectMonitor ? <div className="session-display-switcher" role="group" aria-label="Remote displays">
-            <span className="session-display-label">Displays</span>
-            <button type="button" className={`session-display-chip ${effectiveSelectedId === null ? 'active' : ''}`} onClick={() => selectMonitor('all')} title="Show all available displays">All</button>
-            {monitors.map((monitor) => <button type="button" className={`session-display-chip ${effectiveSelectedId === monitor.id ? 'active' : ''}`} onClick={() => selectMonitor(String(monitor.id))} key={monitor.id} title={`${monitor.name} · ${monitor.width}×${monitor.height}`}>{monitor.id + 1}{monitor.primary ? ' · primary' : ''}</button>)}
-            <button type="button" className="session-display-chip session-display-detect" onClick={detectDisplays} title="Detect or refresh the display list">↻ detect</button>
-            {monitors.length === 0 ? <span className="session-display-status" role="status">No display list yet</span> : null}
+          {canSelectMonitor ? <div className="session-display-toolbar"><div className="session-display-picker-wrap">
+            <button type="button" className={`session-display-picker-trigger${displayPickerOpen ? ' is-open' : ''}`} onClick={() => setDisplayPickerOpen((open) => !open)} aria-expanded={displayPickerOpen} aria-haspopup="menu" title="Choose which remote display to view">
+              <span className="session-display-picker-icon" aria-hidden="true">▦</span>
+              <span>{effectiveSelectedId === null ? 'All displays' : monitors.find((monitor) => monitor.id === effectiveSelectedId)?.name ?? 'Display'}</span>
+              <span className="session-display-picker-chevron" aria-hidden="true">⌄</span>
+            </button>
+            {displayPickerOpen ? <div className="session-display-picker-menu" role="menu">
+              <div className="session-display-picker-heading"><strong>Remote displays</strong><span>{monitors.length} available</span></div>
+              <button type="button" className={`session-display-picker-option${effectiveSelectedId === null ? ' active' : ''}`} onClick={() => { selectMonitor('all'); setDisplayPickerOpen(false) }} role="menuitemradio" aria-checked={effectiveSelectedId === null}><span className="session-display-option-glyph">▦</span><span><strong>All displays</strong><small>Show the full desktop</small></span>{effectiveSelectedId === null ? <span className="session-display-check">✓</span> : null}</button>
+              {monitors.map((monitor) => <button type="button" className={`session-display-picker-option${effectiveSelectedId === monitor.id ? ' active' : ''}`} onClick={() => { selectMonitor(String(monitor.id)); setDisplayPickerOpen(false) }} key={monitor.id} role="menuitemradio" aria-checked={effectiveSelectedId === monitor.id}><span className="session-display-option-glyph">{monitor.id + 1}</span><span><strong>{monitor.name}{monitor.primary ? ' · Primary' : ''}</strong><small>{monitor.width} × {monitor.height}</small></span>{effectiveSelectedId === monitor.id ? <span className="session-display-check">✓</span> : null}</button>)}
+              <button type="button" className="session-display-picker-refresh" onClick={detectDisplays}><span aria-hidden="true">↻</span> Refresh displays</button>
+            </div> : null}
             {monitorStatus ? <span className="session-display-status" role="status">{monitorStatus}</span> : null}
-          </div> : null}
+          </div></div> : null}
           {remoteStream ? <div ref={videoWrapRef} className="session-video-wrap">
             <video
               ref={videoRef}
@@ -820,7 +849,6 @@ export default function SessionConsolePage() {
                 void videoRef.current?.play().catch(() => undefined)
               }}
             />
-            {remoteCursor?.visible && !remoteCursor.embedded && cursorStyle ? <span className="remote-cursor" style={cursorStyle} aria-hidden="true" /> : null}
           </div> : (
             <div className="session-stage-empty">
               <span className="session-stage-icon">◈</span>

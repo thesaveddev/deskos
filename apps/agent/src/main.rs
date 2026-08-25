@@ -111,7 +111,7 @@ use windows_service::{
 use winreg::{enums::HKEY_LOCAL_MACHINE, RegKey};
 use xcap::Monitor;
 
-const SERVICE_NAME: &str = "DeskOSAgent";
+const SERVICE_NAME: &str = "ReyDeskAgent";
 
 /// Base64 ed25519 public key baked at build time (`REYDESK_UPDATE_PUBLIC_KEY`, with the legacy name accepted).
 /// When set, update artifacts must carry a signature over `<version>:<sha256>`.
@@ -3432,11 +3432,7 @@ fn send_wheel(value: &serde_json::Value) -> Result<()> {
         .get("deltaY")
         .and_then(serde_json::Value::as_f64)
         .ok_or_else(|| anyhow!("missing wheel deltaY"))?;
-    let ticks = if delta.abs() < 1.0 {
-        0
-    } else {
-        (-delta.signum() * 120.0) as i32
-    };
+    let ticks = (-delta.clamp(-10_000.0, 10_000.0) / 3.0).round() as i32;
     if ticks == 0 {
         return Ok(());
     }
@@ -3507,11 +3503,78 @@ fn apply_input(value: &serde_json::Value, action: &str) -> Result<()> {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "macos")]
+fn mac_input_coordinates(value: &serde_json::Value) -> Result<(f64, f64)> {
+    let x = value.get("x").and_then(serde_json::Value::as_f64).ok_or_else(|| anyhow!("missing pointer x"))?.clamp(0.0, 1.0);
+    let y = value.get("y").and_then(serde_json::Value::as_f64).ok_or_else(|| anyhow!("missing pointer y"))?.clamp(0.0, 1.0);
+    let screens = Monitor::all().context("enumerate macOS displays")?;
+    let left = screens.iter().filter_map(|screen| screen.x().ok()).min().unwrap_or(0) as f64;
+    let top = screens.iter().filter_map(|screen| screen.y().ok()).min().unwrap_or(0) as f64;
+    let right = screens.iter().filter_map(|screen| screen.x().ok().zip(screen.width().ok()).map(|(position, width)| position + width as i32)).max().unwrap_or(1) as f64;
+    let bottom = screens.iter().filter_map(|screen| screen.y().ok().zip(screen.height().ok()).map(|(position, height)| position + height as i32)).max().unwrap_or(1) as f64;
+    Ok((left + x * (right - left).max(1.0), top + y * (bottom - top).max(1.0)))
+}
+
+#[cfg(target_os = "macos")]
+fn mac_keycode(key: &str) -> Option<u16> {
+    match key {
+        "Enter" => Some(36), "Tab" => Some(48), "Space" => Some(49), "Backspace" | "Delete" => Some(51),
+        "Escape" => Some(53), "ArrowLeft" => Some(123), "ArrowRight" => Some(124), "ArrowDown" => Some(125), "ArrowUp" => Some(126),
+        "a" | "A" => Some(0), "s" | "S" => Some(1), "d" | "D" => Some(2), "f" | "F" => Some(3), "h" | "H" => Some(4), "g" | "G" => Some(5),
+        "z" | "Z" => Some(6), "x" | "X" => Some(7), "c" | "C" => Some(8), "v" | "V" => Some(9), "b" | "B" => Some(11),
+        "q" | "Q" => Some(12), "w" | "W" => Some(13), "e" | "E" => Some(14), "r" | "R" => Some(15), "y" | "Y" => Some(16), "t" | "T" => Some(17),
+        "1" => Some(18), "2" => Some(19), "3" => Some(20), "4" => Some(21), "6" => Some(22), "5" => Some(23), "=" => Some(24), "9" => Some(25), "7" => Some(26), "-" => Some(27), "8" => Some(28), "0" => Some(29),
+        "]" => Some(30), "o" | "O" => Some(31), "u" | "U" => Some(32), "[" => Some(33), "i" | "I" => Some(34), "p" | "P" => Some(35), "l" | "L" => Some(37), "j" | "J" => Some(38), "'" => Some(39), "k" | "K" => Some(40), ";" => Some(41), "\\" => Some(42), "," => Some(43), "/" => Some(44), "n" | "N" => Some(45), "m" | "M" => Some(46), "." => Some(47), "`" => Some(50),
+        _ => None,
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn run_macos_input_script(script: &str) -> Result<()> {
+    let output = std::process::Command::new("osascript").args(["-l", "JavaScript", "-e", script]).output().context("invoke macOS input service")?;
+    if !output.status.success() { return Err(anyhow!("macOS input was rejected: {}", String::from_utf8_lossy(&output.stderr).trim())); }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn apply_input(value: &serde_json::Value, action: &str) -> Result<()> {
+    use core_graphics::event::{CGEvent, CGEventSource, CGEventSourceStateID, CGEventType, CGMouseButton};
+    let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState).context("create macOS input source")?;
+    match action {
+        "pointermove" | "pointerdown" | "pointerup" | "click" => {
+            let (x, y) = mac_input_coordinates(value)?;
+            let button = match value.get("button").and_then(serde_json::Value::as_str).unwrap_or("left") { "right" => CGMouseButton::Right, "middle" => CGMouseButton::Center, _ => CGMouseButton::Left };
+            let event_type = match action { "pointerdown" => CGEventType::LeftMouseDown, "pointerup" => CGEventType::LeftMouseUp, _ => CGEventType::MouseMoved };
+            let event = CGEvent::new_mouse_event(source, event_type, core_graphics::geometry::CGPoint::new(x, y), button).context("create macOS mouse event")?;
+            event.post(core_graphics::event::CGEventTapLocation::HID);
+            if action == "click" {
+                let down = CGEvent::new_mouse_event(source.clone(), CGEventType::LeftMouseDown, core_graphics::geometry::CGPoint::new(x, y), button).context("create macOS click down")?;
+                down.post(core_graphics::event::CGEventTapLocation::HID);
+                let up = CGEvent::new_mouse_event(source, CGEventType::LeftMouseUp, core_graphics::geometry::CGPoint::new(x, y), button).context("create macOS click up")?;
+                up.post(core_graphics::event::CGEventTapLocation::HID);
+            }
+            Ok(())
+        }
+        "wheel" => {
+            let delta = value.get("deltaY").and_then(serde_json::Value::as_f64).unwrap_or(0.0).clamp(-10_000.0, 10_000.0) as i32;
+            let event = CGEvent::new_scroll_event(source, core_graphics::event::CGScrollEventUnit::PIXEL, 1, -delta).context("create macOS scroll event")?;
+            event.post(core_graphics::event::CGEventTapLocation::HID);
+            Ok(())
+        }
+        "keydown" | "keyup" => {
+            let key = value.get("key").and_then(serde_json::Value::as_str).unwrap_or("");
+            let keycode = mac_keycode(key).ok_or_else(|| anyhow!("unsupported macOS key: {key}"))?;
+            let event = CGEvent::new_keyboard_event(source, keycode, action == "keydown").context("create macOS key event")?;
+            event.post(core_graphics::event::CGEventTapLocation::HID);
+            Ok(())
+        }
+        _ => Err(anyhow!("unsupported macOS input action: {action}")),
+    }
+}
+
+#[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
 fn apply_input(_value: &serde_json::Value, _action: &str) -> Result<()> {
-    Err(anyhow!(
-        "native input is not implemented for this operating system"
-    ))
+    Err(anyhow!("native input is not implemented for this operating system"))
 }
 
 #[cfg(target_os = "windows")]
@@ -3586,19 +3649,25 @@ fn write_clipboard_text(text: &str) -> Result<()> {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "macos")]
 fn read_clipboard_text() -> Result<String> {
-    Err(anyhow!(
-        "clipboard integration is only implemented for Windows endpoints"
-    ))
+    let output = std::process::Command::new("pbpaste").output().context("read macOS clipboard")?;
+    if !output.status.success() { return Err(anyhow!("macOS clipboard read was rejected")); }
+    String::from_utf8(output.stdout).context("decode macOS clipboard")
 }
 
-#[cfg(not(target_os = "windows"))]
-fn write_clipboard_text(_text: &str) -> Result<()> {
-    Err(anyhow!(
-        "clipboard integration is only implemented for Windows endpoints"
-    ))
+#[cfg(target_os = "macos")]
+fn write_clipboard_text(text: &str) -> Result<()> {
+    let mut child = std::process::Command::new("pbcopy").stdin(std::process::Stdio::piped()).spawn().context("open macOS clipboard")?;
+    if let Some(stdin) = child.stdin.as_mut() { std::io::Write::write_all(stdin, text.as_bytes()).context("write macOS clipboard")?; }
+    child.wait().context("finish macOS clipboard write")?.success().then_some(()).ok_or_else(|| anyhow!("macOS clipboard write was rejected"))
 }
+
+#[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+fn read_clipboard_text() -> Result<String> { Err(anyhow!("clipboard integration is not implemented for this operating system")) }
+
+#[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+fn write_clipboard_text(_text: &str) -> Result<()> { Err(anyhow!("clipboard integration is not implemented for this operating system")) }
 
 fn rejected_control_audit(action: impl Into<String>, reason: &str) -> ControlAudit {
     ControlAudit {
@@ -3964,7 +4033,10 @@ fn file_root() -> PathBuf {
     }
     #[cfg(target_os = "windows")]
     {
-        PathBuf::from(r"C:\Users\Public")
+        if let Ok(profile) = std::env::var("USERPROFILE") {
+            return PathBuf::from(profile).join("Downloads").join("ReyDesk");
+        }
+        PathBuf::from(r"C:\Users\Public\Downloads\ReyDesk")
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -4524,7 +4596,8 @@ async fn accept_webrtc_offer(
                                                 Some(upload) if upload.bytes + bytes.len() <= 16 * 1024 * 1024 => {
                                                     if let Err(error) = std::io::Write::write_all(&mut upload.file, &bytes) { outcome = "rejected".to_owned(); reason = error.to_string(); response = serde_json::json!({ "type": "files", "action": "error", "reason": reason }); } else { upload.bytes += bytes.len(); response = serde_json::json!({ "type": "files", "action": "upload_ack", "phase": "chunk", "transferId": transfer_id }); }
                                                 }
-                                                _ => { outcome = "rejected".to_owned(); reason = "unknown or oversized upload".to_owned(); response = serde_json::json!({ "type": "files", "action": "error", "reason": reason }); }
+                                                None => { outcome = "rejected".to_owned(); reason = "unknown upload transfer".to_owned(); response = serde_json::json!({ "type": "files", "action": "error", "reason": reason }); }
+                                                Some(_) => { outcome = "rejected".to_owned(); reason = "upload exceeds the 16 MB transfer limit".to_owned(); response = serde_json::json!({ "type": "files", "action": "error", "reason": reason }); }
                                             }
                                         }
                                         Ok(_) => { outcome = "rejected".to_owned(); reason = "upload chunk exceeds the 24 KB limit".to_owned(); response = serde_json::json!({ "type": "files", "action": "error", "reason": reason }); }

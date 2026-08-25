@@ -41,10 +41,10 @@ jobs:
         env:
           REYDESK_API_URL: https://reydesk.com
           REYDESK_RELAY_URL: wss://reydesk.com/ws
+          REYDESK_SIGN_CERT_THUMBPRINT: ${{ secrets.REYDESK_SIGN_CERT_THUMBPRINT }}
+          REYDESK_SIGN_TIMESTAMP_URL: ${{ vars.REYDESK_SIGN_TIMESTAMP_URL }}
         run: |
-          cargo build --release --manifest-path apps/Cargo.toml -p deskos-agent
-          New-Item -ItemType Directory -Force -Path artifacts/windows | Out-Null
-          Copy-Item apps/target/release/deskos-agent.exe artifacts/windows/reydesk-helper.exe
+          ./apps/agent/build-windows.ps1
           # UPX is optional locally, but the hosted build compresses the portable
           # helper so customers on slower connections receive a smaller download.
           try {
@@ -57,9 +57,6 @@ jobs:
             & $upx.Source --best --lzma artifacts/windows/reydesk-helper.exe | Out-Host
           } else {
             Write-Warning 'UPX was not available; continuing with the stripped release binary.'
-          }
-          if (-not (Test-Path artifacts/windows/reydesk-helper.exe)) {
-            throw 'The portable ReyDesk helper was not produced.'
           }
 
       - name: Upload portable helper

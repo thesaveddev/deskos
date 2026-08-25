@@ -47,6 +47,7 @@ export interface InvitationMailContext {
 
 export interface BrandedEmailOptions {
   tenantName?: string
+  brand?: { logoUrl?: string | null; primaryColor?: string | null }
   eyebrow?: string
   title: string
   preheader?: string
@@ -83,6 +84,8 @@ function paragraphHtml(value: string): string {
  */
 export function renderBrandedEmail(options: BrandedEmailOptions): string {
   const tenantName = safeText(options.tenantName ?? 'ReyDesk') || 'ReyDesk'
+  const accent = /^#[0-9a-f]{6}$/i.test(options.brand?.primaryColor ?? '') ? options.brand!.primaryColor! : '#e8a33d'
+  const logoUrl = options.brand?.logoUrl && /^https:\/\//i.test(options.brand.logoUrl) ? options.brand.logoUrl : null
   const preheader = escapeHtml(safeText(options.preheader ?? options.title))
   const eyebrow = escapeHtml(safeText(options.eyebrow ?? 'ReyDesk'))
   const title = escapeHtml(options.title)
@@ -92,7 +95,7 @@ export function renderBrandedEmail(options: BrandedEmailOptions): string {
     ? `<table role="presentation" width="100%" style="margin:22px 0;border-collapse:collapse;background:#1a2027;border:1px solid #303a45;border-radius:6px;"><tbody>${options.metadata.map((item) => `<tr><td style="padding:10px 12px;border-bottom:1px solid #303a45;color:#8f9aa5;font-size:12px;">${escapeHtml(item.label)}</td><td style="padding:10px 12px;border-bottom:1px solid #303a45;color:#e6e9ec;font-size:13px;text-align:right;">${escapeHtml(item.value)}</td></tr>`).join('')}</tbody></table>`
     : ''
   const action = options.action
-    ? `<p style="margin:26px 0 24px;"><a href="${escapeHtml(options.action.url)}" style="display:inline-block;padding:12px 18px;background:#e8a33d;color:#17120a;text-decoration:none;font-weight:600;font-size:14px;border-radius:6px;">${escapeHtml(options.action.label)}</a></p>`
+    ? `<p style="margin:26px 0 24px;"><a href="${escapeHtml(options.action.url)}" style="display:inline-block;padding:12px 18px;background:${accent};color:#17120a;text-decoration:none;font-weight:600;font-size:14px;border-radius:6px;">${escapeHtml(options.action.label)}</a></p>`
     : ''
   const footer = escapeHtml(options.footer ?? `This message was sent by ${tenantName} through ReyDesk.`)
 
@@ -107,8 +110,8 @@ export function renderBrandedEmail(options: BrandedEmailOptions): string {
         <tr><td style="height:4px;background:#e8a33d;font-size:0;line-height:0;">&nbsp;</td></tr>
         <tr><td style="padding:24px 30px 20px;border-bottom:1px solid #242b33;">
           <table role="presentation" width="100%"><tr><td>
-            <span style="display:inline-block;width:26px;height:26px;line-height:26px;text-align:center;background:#e8a33d;color:#17120a;border-radius:5px;font-weight:700;font-size:14px;vertical-align:middle;">R</span>
-            <span style="margin-left:9px;color:#e6e9ec;font-size:17px;font-weight:700;vertical-align:middle;">ReyDesk</span>
+            <span style="display:inline-block;width:26px;height:26px;line-height:26px;text-align:center;background:${accent};color:#17120a;border-radius:5px;font-weight:700;font-size:14px;vertical-align:middle;">${logoUrl ? `<img src="${escapeHtml(logoUrl)}" alt="" width="26" height="26" style="display:block;border-radius:5px;object-fit:cover;">` : 'R'}</span>
+            <span style="margin-left:9px;color:#e6e9ec;font-size:17px;font-weight:700;vertical-align:middle;">${escapeHtml(tenantName)}</span>
           </td><td align="right" style="color:#6f7b87;font-family:monospace;font-size:11px;">${eyebrow}</td></tr></table>
         </td></tr>
         <tr><td style="padding:30px;">
@@ -370,6 +373,7 @@ export class Mailer {
     portalUrl: string
     senderName?: string
     message?: string
+    brand?: { logoUrl?: string | null; primaryColor?: string | null }
   }): EmailMessage {
     const tenantName = safeText(ctx.tenantName) || 'ReyDesk'
     const senderName = safeText(ctx.senderName ?? '') || 'your IT team'
@@ -391,6 +395,7 @@ export class Mailer {
       ].join('\n'),
       html: renderBrandedEmail({
         tenantName,
+        brand: ctx.brand,
         eyebrow: 'Support portal',
         preheader: `Your ${tenantName} support portal is ready`,
         title: 'You’ve been invited to the support portal',

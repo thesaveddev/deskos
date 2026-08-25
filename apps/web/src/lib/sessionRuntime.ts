@@ -110,9 +110,15 @@ function handleControlMessage(runtime: Runtime, event: MessageEvent): void {
     }
     if (message.type === 'monitor' && (message.action === 'list' || message.action === 'selected')) {
       const monitors = Array.isArray(message.monitors) ? message.monitors as RemoteMonitor[] : runtime.snapshot.monitors
-      const selectedMonitorId = message.monitorId === null || message.monitorId === undefined
+      const reportedSelection = message.monitorId === null || message.monitorId === undefined
         ? (typeof message.selectedMonitorId === 'number' ? message.selectedMonitorId : message.action === 'selected' ? null : runtime.snapshot.selectedMonitorId)
         : typeof message.monitorId === 'number' ? message.monitorId : runtime.snapshot.selectedMonitorId
+      // Start on the endpoint's primary display rather than spanning the
+      // virtual desktop. Explicit technician choices (including All displays)
+      // continue to win after the initial monitor catalogue arrives.
+      const selectedMonitorId = runtime.snapshot.monitors.length === 0 && message.action === 'list'
+        ? (monitors.find((monitor) => monitor.primary)?.id ?? reportedSelection)
+        : reportedSelection
       notify(runtime, { monitors, selectedMonitorId, monitorStatus: message.action === 'selected' ? 'Display selection applied.' : null })
       return
     }

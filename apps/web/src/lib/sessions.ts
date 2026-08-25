@@ -10,6 +10,12 @@ export interface SessionDockEntry {
 const SESSION_DOCK_KEY = 'deskos.activeSession'
 const SESSION_DOCK_EVENT = 'deskos:session-dock'
 
+/** Read the last live session so the shell can offer a recovery link after a reload. */
+export function activeSessionId(): string | null {
+  const entry = readSessionDock()
+  return entry && !['ended', 'denied', 'expired'].includes(entry.state) ? entry.id : null
+}
+
 export function readSessionDock(): SessionDockEntry | null {
   try {
     const raw = window.localStorage.getItem(SESSION_DOCK_KEY)

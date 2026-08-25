@@ -102,6 +102,20 @@
 .branding-preview-card-icon { display: inline-flex; align-items: center; justify-content: center; width: 25px; height: 25px; border-radius: 6px; background: var(--bg-2); }
 .branding-preview-note { display: flex; align-items: center; gap: 5px; margin: 10px 0 0; color: var(--text-3); font-size: 10px; }
 .branding-preview-note .ui-icon { color: var(--ok); }
+.portal-staff-picker { position: relative; margin-top: 8px; }
+.portal-staff-results { position: absolute; z-index: 20; top: 100%; left: 0; right: 0; margin-top: 4px; background: var(--bg-1); border: 1px solid var(--line-2); border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); overflow: hidden; }
+.portal-staff-results button { display: flex; width: 100%; flex-direction: column; gap: 2px; padding: 9px 11px; border: 0; border-bottom: 1px solid var(--line-1); background: transparent; color: var(--text-1); text-align: left; cursor: pointer; font-family: inherit; }
+.portal-staff-results button:hover { background: var(--bg-2); }
+.portal-staff-results button:last-child { border-bottom: 0; }
+.portal-staff-results small { color: var(--text-3); font-size: 11px; }
+.portal-email-preview, .portal-invite-history { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line-1); }
+.portal-email-preview-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.portal-email-preview iframe { display: block; width: 100%; height: 540px; border: 1px solid var(--line-2); border-radius: var(--radius-sm); background: #0e1114; }
+.portal-invite-history-list { display: flex; flex-direction: column; gap: 6px; }
+.portal-invite-history-list > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 10px; background: var(--bg-2); border: 1px solid var(--line-1); border-radius: var(--radius-sm); }
+.portal-invite-history-list span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.portal-invite-history-list small { color: var(--text-3); font-size: 10px; text-transform: capitalize; white-space: nowrap; }
+@media (max-width: 620px) { .portal-invite-history-list > div { align-items: flex-start; flex-direction: column; gap: 3px; } .portal-email-preview iframe { height: 480px; } }
 
 @media (max-width: 980px) {
   .branding-workspace { grid-template-columns: 1fr; }
@@ -113,6 +127,10 @@
   .settings-navigation-group { min-width: 0; }
 }
 @media (max-width: 620px) {
+  .portal-settings-panel { padding: 14px; }
+  .portal-panel-heading { gap: 10px; }
+  .portal-panel-heading p { font-size: 11px; }
+  .portal-welcome-input { width: 100%; }
   .settings-page-head, .settings-overview-hero, .settings-preference-row { flex-direction: column; }
   .settings-page-head .btn { width: 100%; justify-content: center; }
   .settings-navigation { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 3px; }
@@ -123,11 +141,36 @@
 }
 
 /* ---- Customer portal settings ---- */
+.portal-settings-panel {
+  margin-top: 18px;
+  padding: 18px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+}
+.portal-panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+  padding-bottom: 13px;
+  border-bottom: 1px solid var(--line-1);
+}
+.portal-panel-heading h3 { margin: 0; color: var(--text-1); font-size: 14px; }
+.portal-panel-heading p { max-width: 620px; margin: 4px 0 0; color: var(--text-3); font-size: 11px; line-height: 1.45; }
+.portal-panel-heading > .ui-icon { flex: 0 0 auto; color: var(--accent); }
+.portal-access-panel { background: var(--bg-2); }
 .portal-address-card,
 .portal-how-it-works,
 .portal-toggles {
-  margin-top: 8px;
+  margin-top: 0;
 }
+.portal-invite-panel .portal-slug-row { max-width: none; }
+.portal-welcome-input { width: min(100%, 680px); min-height: 76px; resize: vertical; }
+.portal-invite-panel .portal-welcome-input { width: 100%; }
+.portal-access-panel .settings-toggle-row:first-child { padding-top: 2px; }
+.portal-access-panel .settings-toggle-row:last-child { padding-bottom: 2px; }
 .portal-url-row {
   display: flex;
   align-items: center;

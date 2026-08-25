@@ -348,6 +348,35 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
     message: z.string().trim().max(2000).optional(),
   })
 
+  /** Render the exact portal invitation email without sending it. */
+  app.post(
+    '/tenant/settings/portal/invite/preview',
+    { preHandler: [authenticate, requireTenant, requirePermission('settings.manage')] },
+    async (request) => {
+      const ctx = request.tenantCtx!
+      const body = inviteSchema.parse(request.body)
+      const { rows } = await app.db.query('SELECT name, slug, settings FROM tenants WHERE id = $1', [ctx.tenantId])
+      const tenant = rows[0]
+      const settings = mergeTenantSettings((tenant?.settings ?? {}) as Record<string, unknown>) as Record<string, unknown>
+      const portal = settings.portal as Record<string, unknown>
+      const branding = (settings.branding ?? {}) as Record<string, unknown>
+      const portalSlug = String(portal.slug || tenant?.slug || ctx.slug)
+      const portalUrl = `${app.config.publicUrl.replace(/\/$/, '')}/portal/${encodeURIComponent(portalSlug)}`
+      const mail = app.mailer.buildPortalInviteMail({
+        to: body.to.split(/[,\\n;]+/)[0]?.trim() || 'preview@example.com',
+        tenantName: safeTenantName(tenant?.name as string | undefined),
+        portalUrl,
+        senderName: ctx.name,
+        message: body.message,
+        brand: {
+          logoUrl: typeof branding.logoUrl === 'string' ? branding.logoUrl : null,
+          primaryColor: typeof branding.primaryColor === 'string' ? branding.primaryColor : null,
+        },
+      })
+      return { subject: mail.subject, text: mail.text, html: mail.html }
+    },
+  )
+
   /** Send shareable portal-invitation emails to one or more addresses. */
   app.post(
     '/tenant/settings/portal/invite',
@@ -371,7 +400,8 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
       const { rows } = await app.db.query('SELECT name, slug, settings FROM tenants WHERE id = $1', [ctx.tenantId])
       const tenant = rows[0]
       const raw = (tenant?.settings ?? {}) as Record<string, unknown>
-      const settings = mergeTenantSettings(raw)
+      const settings = mergeTenantSettings(raw) as Record<string, unknown>
+      const branding = (settings.branding ?? {}) as Record<string, unknown>
       const tenantSlug = tenant?.slug as string | undefined
       const portalSlug = String(((settings.portal as Record<string, unknown> | undefined)?.slug ?? '')).trim() || tenantSlug || ctx.slug
       const portalUrl = `${app.config.publicUrl.replace(/\/$/, '')}/portal/${encodeURIComponent(portalSlug)}`
@@ -394,9 +424,18 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
           portalUrl,
           senderName,
           message: body.message,
+          brand: {
+            logoUrl: typeof branding.logoUrl === 'string' ? branding.logoUrl : null,
+            primaryColor: typeof branding.primaryColor === 'string' ? branding.primaryColor : null,
+          },
         })
         const jobId = await app.emailQueue.addAndSend(mail)
         jobIds.push(jobId)
+        await app.db.query(
+          `INSERT INTO portal_invitation_history (tenant_id, sent_by, recipient_email, portal_url, personal_message, delivery_status, job_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [ctx.tenantId, ctx.userId, email, portalUrl, body.message ?? '', app.mailer.enabled ? 'sent' : 'not_configured', jobId],
+        )
         if (app.mailer.enabled) delivered += 1
       }
       app.log.info({ tenantId: ctx.tenantId, recipients: unique.length, jobIds }, 'Portal invitation emails queued')
@@ -411,6 +450,17 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
       }
     },
   )
+
+  app.get('/tenant/settings/portal/invite/history', { preHandler: [authenticate, requireTenant, requirePermission('settings.manage')] }, async (request) => {
+    const ctx = request.tenantCtx!
+    const { rows } = await app.db.query(
+      `SELECT h.id, h.recipient_email, h.portal_url, h.personal_message, h.delivery_status, h.job_id, h.created_at, u.name AS sent_by_name
+         FROM portal_invitation_history h LEFT JOIN users u ON u.id = h.sent_by
+        WHERE h.tenant_id = $1 ORDER BY h.created_at DESC LIMIT 50`,
+      [ctx.tenantId],
+    )
+    return { invitations: rows }
+  })
 }
 
 function safeTenantName(name: string | undefined): string {

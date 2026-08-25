@@ -23,8 +23,10 @@ export interface AppConfig {
   /** Browser origins allowed to call the API. Keep this explicit in production. */
   webOrigins: string[]
   relayUrl: string
-  /** Absolute path to the signed portable helper binary served on the connect page. */
+  /** Absolute path to the signed portable Windows helper binary served on the connect page. */
   helperBinaryPath: string
+  /** Optional signed macOS helper package; omitted until the notarized agent is configured. */
+  macHelperBinaryPath: string
   deviceOfflineSec: number
   deviceLowDiskPct: number
   smtp: SmtpConfig
@@ -221,6 +223,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
         'windows',
         'reydesk-helper.exe',
       ),
+    macHelperBinaryPath: value('REYDESK_MAC_HELPER_BINARY') ?? path.join(
+      path.dirname(fileURLToPath(import.meta.url)),
+      '..',
+      '..',
+      '..',
+      'artifacts',
+      'macos',
+      'reydesk-helper.dmg',
+    ),
     deviceOfflineSec: Number(value('REYDESK_DEVICE_OFFLINE_SEC') ?? 120),
     deviceLowDiskPct: Number(value('REYDESK_DEVICE_LOW_DISK_PCT') ?? 85),
     smtp: {

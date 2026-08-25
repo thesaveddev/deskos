@@ -375,9 +375,15 @@ function PortalSettingsTab({ settings, portalInfo, update, error, message }: {
   const [domainDraft, setDomainDraft] = useState('')
   const [inviteTo, setInviteTo] = useState('')
   const [inviteMessage, setInviteMessage] = useState('')
+  const [staffQuery, setStaffQuery] = useState('')
+  const [staffMembers, setStaffMembers] = useState<Array<{ user_id: string; name: string | null; email: string; status: string }>>([])
+  const [history, setHistory] = useState<Array<{ id: string; recipient_email: string; delivery_status: string; created_at: string; sent_by_name?: string | null }>>([])
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null)
+  const [previewBusy, setPreviewBusy] = useState(false)
   const [inviteBusy, setInviteBusy] = useState(false)
   const [inviteResult, setInviteResult] = useState<string | null>(null)
   const [inviteError, setInviteError] = useState<string | null>(null)
+  const [savingPortalSetting, setSavingPortalSetting] = useState<string | null>(null)
   const portalUrl = portalInfo?.url ?? ''
   const displaySlug = portalInfo?.slug ?? ''
 
@@ -413,6 +419,43 @@ function PortalSettingsTab({ settings, portalInfo, update, error, message }: {
     void update({ portal: { ...settings.portal, registration_domains: settings.portal.registration_domains.filter((d) => d !== domain) } })
   }
 
+  const updatePortalSetting = async (key: keyof WorkspaceSettings['portal'], value: WorkspaceSettings['portal'][typeof key]) => {
+    setSavingPortalSetting(String(key))
+    try {
+      await update({ portal: { ...settings.portal, [key]: value } })
+    } finally {
+      setSavingPortalSetting(null)
+    }
+  }
+
+  useEffect(() => {
+    api<{ members: Array<{ user_id: string; name: string | null; email: string; status: string }> }>('/members?status=active')
+      .then((response) => setStaffMembers(response.members))
+      .catch(() => setStaffMembers([]))
+    api<{ invitations: Array<{ id: string; recipient_email: string; delivery_status: string; created_at: string; sent_by_name?: string | null }> }>('/tenant/settings/portal/invite/history')
+      .then((response) => setHistory(response.invitations))
+      .catch(() => setHistory([]))
+  }, [])
+
+  const selectStaff = (email: string) => {
+    const addresses = inviteTo.split(/[,\\n;]+/).map((value) => value.trim()).filter(Boolean)
+    if (!addresses.includes(email)) setInviteTo([...addresses, email].join(', '))
+    setStaffQuery('')
+  }
+
+  const previewInvite = async () => {
+    if (previewBusy) return
+    setPreviewBusy(true)
+    try {
+      const response = await api<{ html: string }>('/tenant/settings/portal/invite/preview', { method: 'POST', body: { to: inviteTo || 'preview@example.com', message: inviteMessage.trim() || undefined } })
+      setPreviewHtml(response.html)
+    } catch (err) {
+      setInviteError(err instanceof Error ? err.message : 'Could not generate preview.')
+    } finally {
+      setPreviewBusy(false)
+    }
+  }
+
   const sendInvites = async () => {
     if (!inviteTo.trim() || inviteBusy) return
     setInviteBusy(true)
@@ -430,6 +473,8 @@ function PortalSettingsTab({ settings, portalInfo, update, error, message }: {
       }
       setInviteTo('')
       setInviteMessage('')
+      const refreshed = await api<{ invitations: Array<{ id: string; recipient_email: string; delivery_status: string; created_at: string; sent_by_name?: string | null }> }>('/tenant/settings/portal/invite/history').catch(() => null)
+      if (refreshed) setHistory(refreshed.invitations)
     } catch (err) {
       setInviteError(err instanceof Error ? err.message : 'Could not send the invitation email.')
     } finally {
@@ -471,13 +516,16 @@ function PortalSettingsTab({ settings, portalInfo, update, error, message }: {
       </div>
     </div>
 
-    <div className="portal-toggles">
-      <ToggleRow label="Enable customer portal" description="Allow requesters to view and raise support requests at the portal address." checked={settings.portal.enabled} onChange={(v) => void update({ portal: { ...settings.portal, enabled: v } })} />
-      <ToggleRow label="Show public knowledge base" description="Let anyone with the portal address read articles marked Public — no sign-in required." checked={settings.portal.allow_public_kb} onChange={(v) => void update({ portal: { ...settings.portal, allow_public_kb: v } })} />
-      <ToggleRow label="Show device context" description="Include linked device details when a requester views a ticket." checked={settings.portal.show_device_context} onChange={(v) => void update({ portal: { ...settings.portal, show_device_context: v } })} />
-      <ToggleRow label="Allow requester resolution" description="Let requesters mark their own resolved tickets as complete." checked={settings.portal.allow_customer_resolution} onChange={(v) => void update({ portal: { ...settings.portal, allow_customer_resolution: v } })} />
-      <ToggleRow label="Allow self-service registration" description="Let anyone with the portal address create an end-user account — perfect for organisations that don't manage identities in IT." checked={settings.portal.allow_registration} onChange={(v) => void update({ portal: { ...settings.portal, allow_registration: v } })} />
-    </div>
+    <section className="portal-settings-panel portal-access-panel" aria-labelledby="portal-access-heading">
+      <div className="portal-panel-heading"><div><span className="settings-eyebrow">Access & requester experience</span><h3 id="portal-access-heading">Control what your staff can do</h3><p>Each change is saved immediately and applies to the customer portal for this organization.</p></div><Icon name="shield" size={18} /></div>
+      <div className="portal-toggles">
+        <ToggleRow label="Enable customer portal" description="Allow requesters to view and raise support requests at the portal address." checked={settings.portal.enabled} disabled={savingPortalSetting === 'enabled'} onChange={(v) => void updatePortalSetting('enabled', v)} />
+        <ToggleRow label="Show public knowledge base" description="Let anyone with the portal address read articles marked Public — no sign-in required." checked={settings.portal.allow_public_kb} disabled={savingPortalSetting === 'allow_public_kb'} onChange={(v) => void updatePortalSetting('allow_public_kb', v)} />
+        <ToggleRow label="Show device context" description="Include linked device details when a requester views a ticket." checked={settings.portal.show_device_context} disabled={savingPortalSetting === 'show_device_context'} onChange={(v) => void updatePortalSetting('show_device_context', v)} />
+        <ToggleRow label="Allow requester resolution" description="Let requesters mark their own resolved tickets as complete." checked={settings.portal.allow_customer_resolution} disabled={savingPortalSetting === 'allow_customer_resolution'} onChange={(v) => void updatePortalSetting('allow_customer_resolution', v)} />
+        <ToggleRow label="Allow self-service registration" description="Let anyone with the portal address create an end-user account — perfect for organisations that don't manage identities in IT." checked={settings.portal.allow_registration} disabled={savingPortalSetting === 'allow_registration'} onChange={(v) => void updatePortalSetting('allow_registration', v)} />
+      </div>
+    </section>
 
     {settings.portal.allow_registration ? <div className="portal-address-card">
       <div className="branding-section-heading"><span className="branding-section-icon"><Icon name="shield" size={15} /></span><div><h3>Allowed registration domains</h3><p>Restrict sign-up to work email addresses. Leave empty to allow any email.</p></div></div>
@@ -494,17 +542,17 @@ function PortalSettingsTab({ settings, portalInfo, update, error, message }: {
       </div>
     </div> : null}
 
-    <div className="portal-how-it-works">
-      <div className="branding-section-heading"><span className="branding-section-icon"><Icon name="user" size={15} /></span><div><h3>How your staff use it</h3><p>Three steps, then they are self-sufficient.</p></div></div>
+    <section className="portal-settings-panel portal-how-it-works">
+      <div className="portal-panel-heading"><div><span className="settings-eyebrow">Staff journey</span><h3>How your staff use it</h3><p>Three steps, then they are self-sufficient.</p></div><Icon name="user" size={18} /></div>
       <ol className="portal-steps">
         <li><strong>Share the link</strong><span>Send the portal address to your staff by email, intranet, or a sign on your reception desk.</span></li>
         <li><strong>They sign in with work email</strong><span>Staff with accounts sign in with their ReyDesk email. New requesters can register at the portal when registration is enabled, or IT can invite them — with magic links enabled (<code>Settings → Authentication</code>), they receive a one-click sign-in email.</span></li>
         <li><strong>Request, track, and read</strong><span>They raise requests, follow their tickets, and browse published knowledge-base articles — without seeing any internal console tools.</span></li>
       </ol>
-    </div>
+    </section>
 
-    <div className="portal-address-card">
-      <div className="branding-section-heading"><span className="branding-section-icon"><Icon name="mail" size={15} /></span><div><h3>Invite your staff by email</h3><p>Send a branded invitation with the portal link and sign-in instructions to your team.</p></div></div>
+    <section className="portal-settings-panel portal-invite-panel">
+      <div className="portal-panel-heading"><div><span className="settings-eyebrow">Team onboarding</span><h3>Invite your staff by email</h3><p>Send a branded invitation with the portal link and sign-in instructions to your team.</p></div><Icon name="mail" size={18} /></div>
       <div className="portal-slug-row">
         <Field label="Recipients" hint="Comma-separated work email addresses. Each gets an individual invitation.">
           <input
@@ -515,6 +563,10 @@ function PortalSettingsTab({ settings, portalInfo, update, error, message }: {
             placeholder="jane@company.com, john@company.com"
             aria-label="Recipient email addresses"
           />
+          <div className="portal-staff-picker">
+            <input className="field-input" value={staffQuery} onChange={(e) => setStaffQuery(e.target.value)} placeholder="Add from active staff…" aria-label="Find active staff" />
+            {staffQuery.trim() ? <div className="portal-staff-results">{staffMembers.filter((member) => `${member.name ?? ''} ${member.email}`.toLowerCase().includes(staffQuery.toLowerCase())).slice(0, 6).map((member) => <button type="button" key={member.user_id} onClick={() => selectStaff(member.email)}><strong>{member.name || member.email}</strong><small>{member.email}</small></button>)}</div> : null}
+          </div>
         </Field>
       </div>
       <div className="portal-slug-row">
@@ -536,11 +588,30 @@ function PortalSettingsTab({ settings, portalInfo, update, error, message }: {
         <button type="button" className="btn btn-primary" onClick={() => void sendInvites()} disabled={inviteBusy || !inviteTo.trim()}>
           <Icon name="mail" size={14} />{inviteBusy ? 'Sending…' : 'Send invitations'}
         </button>
-        <span className="settings-note">The email includes your portal link, the sign-in instructions, and your organisation name.</span>
-      </div>    </div>
-  </></SettingSection>
+        <button type="button" className="btn btn-ghost" onClick={() => void previewInvite()} disabled={previewBusy}>{previewBusy ? 'Preparing…' : 'Preview email'}</button>
+        <span className="settings-note">The email includes your portal link, sign-in instructions, organization branding, and sender context.</span>
+      </div>
+      {previewHtml ? <div className="portal-email-preview"><div className="portal-email-preview-head"><strong>Email preview</strong><button type="button" className="btn btn-ghost btn-xs" onClick={() => setPreviewHtml(null)}>Close</button></div><iframe title="Portal invitation email preview" srcDoc={previewHtml} /></div> : null}
+      {history.length > 0 ? <div className="portal-invite-history"><div className="branding-section-heading"><span className="branding-section-icon"><Icon name="clock" size={15} /></span><div><h3>Invitation history</h3><p>Recent portal invitations sent by this organization.</p></div></div><div className="portal-invite-history-list">{history.map((item) => <div key={item.id}><span>{item.recipient_email}</span><small>{item.delivery_status.replace('_', ' ')} · {new Date(item.created_at).toLocaleString()}</small></div>)}</div></div> : null}
+    </section>
+  </>
+  </SettingSection>
 }
 
+
+/* PortalSettings is retained for compatibility with older route snapshots. */
+function PortalSettings({ settings, portalInfo, update, error, message }: { settings: WorkspaceSettings; portalInfo: { slug: string; url: string } | null; update: (patch: Partial<WorkspaceSettings>) => Promise<void>; error: string | null; message: string | null }) {
+  const [slug, setSlug] = useState(settings.portal.slug)
+  const [welcome, setWelcome] = useState(settings.portal.welcome_message)
+  const [domains, setDomains] = useState(settings.portal.registration_domains.join(', '))
+  const [busy, setBusy] = useState(false)
+  const [saved, setSaved] = useState<string | null>(null)
+  const save = async (event: React.FormEvent) => {
+    event.preventDefault(); setBusy(true); setSaved(null)
+    try { await update({ portal: { ...settings.portal, slug: slug.trim().toLowerCase(), welcome_message: welcome.trim(), registration_domains: domains.split(',').map((item) => item.trim().toLowerCase().replace(/^@/, '')).filter(Boolean) } }); setSaved('Portal settings saved.') } catch { /* shared settings error is rendered by parent */ } finally { setBusy(false) }
+  }
+  return <SettingSection title="Customer portal" description="Control how people find your portal, what they see, and who can create an account."><>{error ? <Alert kind="error">{error}</Alert> : null}{message || saved ? <Alert kind="info">{message ?? saved}</Alert> : null}<form className="settings-form-grid" onSubmit={(event) => void save(event)}><ToggleRow label="Portal enabled" description="Keep the public portal available at its shareable URL." checked={settings.portal.enabled} onChange={(value) => void update({ portal: { ...settings.portal, enabled: value } })} /><ToggleRow label="Public knowledge base" description="Let visitors read published portal and public articles without signing in." checked={settings.portal.allow_public_kb} onChange={(value) => void update({ portal: { ...settings.portal, allow_public_kb: value } })} /><ToggleRow label="Self-service registration" description="Allow approved email domains to create portal accounts." checked={settings.portal.allow_registration} onChange={(value) => void update({ portal: { ...settings.portal, allow_registration: value } })} /><Field label="Portal slug" hint="Use this in links shared with staff and customers."><input className="field-input" value={slug} onChange={(event) => setSlug(event.target.value)} placeholder="support" /></Field><Field label="Welcome message"><textarea className="field-input" rows={3} value={welcome} onChange={(event) => setWelcome(event.target.value)} placeholder="How can we help?" /></Field><Field label="Allowed registration domains" hint="Comma-separated domains; leave empty to allow any email domain."><input className="field-input" value={domains} onChange={(event) => setDomains(event.target.value)} placeholder="example.com, subsidiary.example.com" /></Field><div className="settings-form-actions"><button className="btn btn-primary" type="submit" disabled={busy}><Icon name="save" size={14} />{busy ? 'Saving…' : 'Save portal settings'}</button>{portalInfo?.url ? <a className="btn btn-ghost" href={portalInfo.url} target="_blank" rel="noreferrer"><Icon name="external" size={14} />Open portal</a> : null}</div></form></></SettingSection>
+}
 
 function OperationalSettings({ tab }: { tab: 'portal' | 'remote' | 'devices' | 'monitoring' | 'data' }) {
   const { settings, portalInfo, loading, error, setError, save } = useWorkspaceSettings()
@@ -595,7 +666,7 @@ function SettingsHome() {
 export default function SettingsPage() {
   const location = useLocation()
   const path = location.pathname
-  const active: SettingsTab = path === '/settings' ? 'home' : path.includes('/preferences') ? 'preferences' : path.includes('/tickets') ? 'tickets' : path.includes('/email') ? 'email' : path.includes('/canned') ? 'canned' : path.includes('/notifications') ? 'notifications' : path.includes('/settings/ai') ? 'ai' : path.includes('/security') ? 'security' : path.includes('/active-directory') ? 'active-directory' : path.includes('/branding') ? 'branding' : path.includes('/portal') ? 'portal' : path.includes('/remote') ? 'remote' : path.includes('/devices') ? 'devices' : path.includes('/monitoring') ? 'monitoring' : path.includes('/data') ? 'data' : path.includes('/integrations') ? 'integrations' : path.includes('/settings/ad') ? 'ad' : 'api'
+  const active: SettingsTab = path === '/settings' ? 'home' : path.includes('/preferences') ? 'preferences' : path.includes('/tickets') ? 'tickets' : path.includes('/email') ? 'email' : path.includes('/canned') ? 'canned' : path.includes('/notifications') ? 'notifications' : path.includes('/settings/ai') ? 'ai' : path.includes('/security') ? 'security' : path.includes('/active-directory') ? 'active-directory' : path.includes('/settings/ad') ? 'ad' : path.includes('/branding') ? 'branding' : path.includes('/portal') ? 'portal' : path.includes('/remote') ? 'remote' : path.includes('/devices') ? 'devices' : path.includes('/monitoring') ? 'monitoring' : path.includes('/data') ? 'data' : path.includes('/integrations') ? 'integrations' : 'api'
   return <Shell><div className="settings-page"><div className="page-head settings-page-head"><div className="page-head-main"><h1 className="page-title">Settings</h1><p className="page-subtitle">Organization-wide controls, operational defaults, and personal preferences.</p></div><NavLink className="btn btn-ghost btn-sm" to="/"><Icon name="back" size={14} />Back to dashboard</NavLink></div><div className="settings-layout"><SettingsNavigation active={active} /><main className="settings-content">{active === 'home' && <SettingsHome />}{active === 'preferences' && <PreferencesSettings />}{active === 'tickets' && <TicketSettingsPage />}{active === 'email' && <EmailSettingsPage />}{active === 'canned' && <CannedResponsesPage />}{active === 'notifications' && <NotificationSettingsPage />}{active === 'ai' && <AiSettingsPanel />}{active === 'security' && <SecuritySettingsPage />}
 {active === 'active-directory' && <EntraSettingsPage />}{active === 'ad' && <AdSettingsPage />}{active === 'branding' && <BrandingSettings />}{active === 'portal' && <OperationalSettings tab="portal" />}{active === 'remote' && <OperationalSettings tab="remote" />}{active === 'devices' && <OperationalSettings tab="devices" />}{active === 'monitoring' && <OperationalSettings tab="monitoring" />}{active === 'data' && <OperationalSettings tab="data" />}{active === 'integrations' && <IntegrationsSettings />}{active === 'api' && <ApiSettings />}</main></div></div></Shell>
 }

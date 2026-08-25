@@ -111,6 +111,28 @@ export function getEntitlement(): Promise<EntitlementInfo> {
   return api('/billing/entitlement')
 }
 
+export interface BillingAnalytics {
+  snapshot: {
+    mrr_cents: number
+    arr_cents: number
+    active_subscriptions: number
+    trial_subscriptions: number
+    past_due_subscriptions: number
+    canceled_this_month: number
+    new_this_month: number
+    conversion_rate: number
+  }
+  by_gateway: Array<{ gateway: string; count: number; revenue_cents: number; last_payment_at: string | null }>
+  by_plan: Array<{ plan_name: string; plan_slug: string; count: number; monthly_revenue_cents: number; annual_revenue_cents: number }>
+  mrr_trend: Array<{ month: string; mrr_cents: number; new_mrr: number; churned_mrr: number; net_mrr: number }>
+  recent_churn: Array<{ tenant_id: string; tenant_name: string; plan_name: string; canceled_at: string; reason: string | null; was_active_days: number }>
+  dunning_queue: Array<{ tenant_id: string; tenant_name: string; email: string; plan_name: string; past_since: string; days_past_due: number; retry_count: number; next_retry_at: string | null }>
+}
+
+export function getBillingAnalytics(): Promise<BillingAnalytics> {
+  return api('/billing/analytics')
+}
+
 export function createSubscription(plan: string, billing_cycle?: string): Promise<{ subscription: Subscription }> {
   return api('/billing/subscription', { method: 'POST', body: { plan, billing_cycle } })
 }

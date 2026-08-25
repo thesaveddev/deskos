@@ -191,7 +191,10 @@ export default function PortalTicketPage() {
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') void sendReply()
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+              e.preventDefault()
+              void sendReply()
+            }
           }}
         />
 
