@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 
-$root = Split-Path -Parent $PSScriptRoot
+$root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 Push-Location $root
 try {
   cargo build --release --manifest-path apps/Cargo.toml -p deskos-agent
