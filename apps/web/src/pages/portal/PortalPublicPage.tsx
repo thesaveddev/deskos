@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { BrandRow } from '../../components/ui.js'
+import { Alert, BrandRow, Field } from '../../components/ui.js'
 import { Icon } from '../../components/Icons.js'
 import { formatWhen } from '../../lib/tickets.js'
 import { portalKbCategories, type PortalKbCategory } from '../../lib/portal.js'
@@ -11,6 +11,8 @@ interface PortalMeta {
   branding: { portalTitle?: string | null; logoUrl?: string | null; primaryColor?: string | null }
   portalEnabled: boolean
   allowPublicKb: boolean
+  welcomeMessage: string
+  allowRegistration: boolean
 }
 
 interface PublicArticle {
@@ -34,6 +36,12 @@ export default function PortalPublicPage() {
   const [article, setArticle] = useState<PublicArticle | null>(null)
   const [query, setQuery] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [registerOpen, setRegisterOpen] = useState(false)
+  const [registerName, setRegisterName] = useState('')
+  const [registerEmail, setRegisterEmail] = useState('')
+  const [registerBusy, setRegisterBusy] = useState(false)
+  const [registerDone, setRegisterDone] = useState<string | null>(null)
+  const [registerError, setRegisterError] = useState<string | null>(null)
   const debounceRef = useRef<number | undefined>(undefined)
 
   const loadArticles = useCallback(async (search: string, folderId?: string | null) => {
@@ -109,6 +117,28 @@ export default function PortalPublicPage() {
 
   const accent = meta.branding.primaryColor || undefined
   const title = meta.branding.portalTitle || meta.name || 'Support portal'
+  const welcome = meta.welcomeMessage || `Find an answer in the knowledge base or raise a request with the ${meta.name} support team.`
+
+  const submitRegister = async (event: React.FormEvent) => {
+    event.preventDefault()
+    setRegisterBusy(true)
+    setRegisterError(null)
+    try {
+      const res = await fetch(`/api/v1/public/portal/${encodeURIComponent(slug)}/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: registerName, email: registerEmail }),
+      })
+      const body = (await res.json()) as { ok?: boolean; message?: string; error?: { message?: string } }
+      if (!res.ok) throw new Error(body.error?.message ?? body.message ?? 'Registration failed')
+      setRegisterDone(body.message ?? 'Check your email for a sign-in link.')
+      setRegisterOpen(false)
+    } catch (err) {
+      setRegisterError(err instanceof Error ? err.message : 'Registration failed')
+    } finally {
+      setRegisterBusy(false)
+    }
+  }
 
   return (
     <div className="public-portal" style={accent ? ({ '--portal-accent': accent } as CSSProperties) : undefined}>
@@ -129,7 +159,7 @@ export default function PortalPublicPage() {
         <section className="public-portal-hero">
           <span className="public-portal-kicker">SUPPORT CENTRE</span>
           <h1>How can we help?</h1>
-          <p>Find an answer in the knowledge base or raise a request with the {meta.name} support team.</p>
+          <p>{welcome}</p>
           <div className="public-portal-actions">
             <Link to="/login?next=/portal/new" className="btn btn-primary btn-lg">
               <span>Submit a request</span>
@@ -138,7 +168,43 @@ export default function PortalPublicPage() {
               <span>Track my requests</span>
             </Link>
           </div>
+          {meta.allowRegistration ? (
+            <p className="public-portal-register-line">
+              New to {title}?{' '}
+              <button type="button" className="public-portal-register-link" onClick={() => { setRegisterError(null); setRegisterDone(null); setRegisterOpen(true) }}>
+                Create an account
+              </button>
+            </p>
+          ) : null}
         </section>
+
+        {registerOpen ? (
+          <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setRegisterOpen(false) }}>
+            <div className="modal portal-register-modal">
+              <h2 className="modal-title">Create a portal account</h2>
+              <p className="modal-desc">Register to raise requests and track your support conversations with {title}.</p>
+              <form onSubmit={submitRegister} className="portal-register-form">
+                <Field label="Your name">
+                  <input className="field-input" value={registerName} onChange={(e) => setRegisterName(e.target.value)} required maxLength={200} placeholder="Jane Doe" autoFocus />
+                </Field>
+                <Field label="Work email">
+                  <input className="field-input" type="email" value={registerEmail} onChange={(e) => setRegisterEmail(e.target.value)} required maxLength={320} placeholder="jane@example.com" />
+                </Field>
+                {registerError ? <Alert kind="error">{registerError}</Alert> : null}
+                <div className="modal-actions">
+                  <button type="button" className="btn btn-ghost" onClick={() => setRegisterOpen(false)}>Cancel</button>
+                  <button type="submit" className="btn btn-primary" disabled={registerBusy}>{registerBusy ? 'Creating…' : 'Create account'}</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        ) : null}
+
+        {registerDone ? (
+          <div className="empty-state" style={{ marginTop: 20 }}>
+            <p style={{ color: 'var(--ok)' }}>{registerDone}</p>
+          </div>
+        ) : null}
 
         {meta.allowPublicKb ? (
           <section id="kb" className="public-portal-kb">

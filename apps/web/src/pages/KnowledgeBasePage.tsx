@@ -5,9 +5,9 @@ import { Alert, Field, Modal, PageHeader, Panel, useConfirm } from '../component
 import { Pagination } from '../components/Pagination.js'
 import { useAuth } from '../lib/auth.js'
 import {
-  createArticle, createFolder, createRelation, deleteFolder, deleteRelation, getArticle, getKbOverview,
-  listArticles, listFolders, setArticleStatus, updateArticle, updateFolder,
-  type KbArticle, type KbFolder, type KbOverview, type KbRelation, type KbRelationType, type KbStatus, type KbVisibility,
+  compareArticleVersions, createArticle, createFolder, createRelation, deleteFolder, deleteRelation, getArticle, getKbOverview,
+  listArticles, listFolders, restoreArticleVersion, setArticleStatus, updateArticle, updateFolder,
+  type KbArticle, type KbArticleVersion, type KbFolder, type KbOverview, type KbRelation, type KbRelationType, type KbStatus, type KbVisibility,
 } from '../lib/kb.js'
 
 const STATUSES: KbStatus[] = ['draft', 'review', 'published', 'archived']
@@ -70,7 +70,9 @@ export default function KnowledgeBasePage() {
   const [sort, setSort] = useState<'updated' | 'views' | 'helpful' | 'review_due' | 'title'>('updated')
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [editing, setEditing] = useState<KbArticle | null>(null)
-  const [viewing, setViewing] = useState<{ article: KbArticle; versions: Array<{ version: number; title: string; summary: string; author_id: string; created_at: string }>; relations: KbRelation[] } | null>(null)
+  const [viewing, setViewing] = useState<{ article: KbArticle; versions: KbArticleVersion[]; relations: KbRelation[] } | null>(null)
+  const [comparing, setComparing] = useState<{ from: KbArticleVersion; to: KbArticleVersion } | null>(null)
+  const [compareBusy, setCompareBusy] = useState(false)
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -164,9 +166,38 @@ export default function KnowledgeBasePage() {
   async function openArticle(id: string) {
     setError(null)
     try {
-      setViewing((await getArticle(id)) as NonNullable<typeof viewing>)
+      setViewing((await getArticle(id)) as typeof viewing)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not open article')
+    }
+  }
+
+  async function compareVersions(from: KbArticleVersion, to: KbArticleVersion) {
+    if (!viewing) return
+    setCompareBusy(true)
+    setError(null)
+    try {
+      setComparing((await compareArticleVersions(viewing.article.id, from.version, to.version)))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not compare versions')
+    } finally {
+      setCompareBusy(false)
+    }
+  }
+
+  async function restoreVersion(version: number) {
+    if (!viewing || !canWrite) return
+    const ok = await confirm(`Restore v${version}? This rolls the article content back and creates a new version recording the rollback.`)
+    if (!ok) return
+    setBusy(true); setError(null); setNotice(null)
+    try {
+      await restoreArticleVersion(viewing.article.id, version)
+      setNotice(`Restored v${version}. A new version (v${viewing.article.version + 1}) was created.`)
+      await openArticle(viewing.article.id)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not restore version')
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -285,7 +316,20 @@ export default function KnowledgeBasePage() {
               <ArticleBody body={viewing.article.body} />
               {canWrite ? <div className="kb-detail-actions"><button className="btn btn-ghost btn-sm" onClick={() => void changeStatus(viewing.article, viewing.article.status === 'published' ? 'archived' : 'published')}><Icon name={viewing.article.status === 'published' ? 'folder' : 'check'} size={14} />{viewing.article.status === 'published' ? 'Archive' : 'Publish'}</button></div> : null}
               <div className="kb-detail-grid">
-                <section className="kb-detail-section"><h3>Version history</h3>{viewing.versions.map((version) => <div className="kb-version-row" key={version.version}><span className="mono">v{version.version}</span><span>{version.title}</span><small>{formatDate(version.created_at)}</small></div>)}</section>
+                <section className="kb-detail-section"><h3>Version history</h3>
+                  <p className="kb-version-hint">Every change is recorded. Compare any two versions or roll an article back to an earlier state — the rollback itself is saved as a new version.</p>
+                  {viewing.versions.map((version, index) => (
+                    <div className="kb-version-row" key={version.version}>
+                      <span className={`mono${version.version === viewing.article.version ? ' kb-version-current' : ''}`}>v{version.version}{version.version === viewing.article.version ? ' (current)' : ''}</span>
+                      <span className="kb-version-title">{version.title}</span>
+                      <small>{formatDate(version.created_at)}</small>
+                      <div className="kb-version-actions">
+                        {index < viewing.versions.length - 1 && viewing.versions[index + 1] ? <button className="btn btn-ghost btn-sm" onClick={() => void compareVersions(version, viewing.versions[index + 1])} disabled={compareBusy} title="Compare with the previous version"><Icon name="book" size={13} />Compare</button> : null}
+                        {canWrite && version.version !== viewing.article.version ? <button className="btn btn-ghost btn-sm" onClick={() => void restoreVersion(version.version)} disabled={busy} title={`Restore v${version.version} as the current version`}><Icon name="refresh" size={13} />Restore</button> : null}
+                      </div>
+                    </div>
+                  ))}
+                </section>
                 <section className="kb-detail-section"><h3>Related guidance</h3>{viewing.relations.map((relation) => <div className="kb-related-row" key={relation.id ?? relation.related_article_id}><button onClick={() => void openArticle(relation.related_article_id)}><strong>{relation.related_title}</strong><small>{RELATION_LABELS[relation.relation_type]}</small></button>{canWrite && relation.id ? <button className="icon-btn" onClick={() => void removeRelation(relation)} aria-label="Remove related article"><Icon name="delete" size={13} /></button> : null}</div>)}{canWrite ? <form className="kb-relation-form" onSubmit={addRelation}><select className="field-input" value={relatedId} onChange={(event) => setRelatedId(event.target.value)}><option value="">Add an article…</option>{selectableRelated.map((article) => <option key={article.id} value={article.id}>{article.title}</option>)}</select><select className="field-input" value={relatedType} onChange={(event) => setRelatedType(event.target.value as KbRelationType)}><option value="related">Related</option><option value="prerequisite">Prerequisite</option><option value="follow_up">Follow-up</option></select><button className="btn btn-ghost btn-sm" disabled={!relatedId || busy}><Icon name="add" size={14} />Add</button></form> : null}</section>
               </div>
             </Panel>
@@ -310,6 +354,19 @@ export default function KnowledgeBasePage() {
 
       <Modal open={showForm} onClose={() => { if (!busy) { setShowForm(false); setModalError(null) } }} title={editing ? 'Edit article' : 'Create knowledge article'} width={760}>
         <form onSubmit={handleSubmit} className="kb-editor-form">{modalError ? <Alert kind="error">{modalError}</Alert> : null}<div className="kb-editor-tabs"><button type="button" className={editorTab === 'write' ? 'active' : ''} onClick={() => setEditorTab('write')}>Write</button><button type="button" className={editorTab === 'preview' ? 'active' : ''} onClick={() => setEditorTab('preview')}>Preview</button></div>{editorTab === 'write' ? <><Field label="Title"><input className="field-input" value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} maxLength={300} required autoFocus /></Field><Field label="Summary" hint="Shown in search results and portal cards"><textarea className="field-input" rows={2} value={form.summary} onChange={(event) => setForm({ ...form, summary: event.target.value })} maxLength={600} placeholder="A clear one or two sentence answer…" /></Field><Field label="Body" hint="Supports headings (#), bullets (-), and plain text"><textarea className="field-input kb-editor-body" rows={16} value={form.body} onChange={(event) => setForm({ ...form, body: event.target.value })} maxLength={200000} placeholder="# Resolution\n\nDescribe the symptom, cause, and steps to fix it." /></Field><div className="form-row"><Field label="Folder"><select className="field-input" value={form.folderId} onChange={(event) => setForm({ ...form, folderId: event.target.value })}><option value="">Unfiled</option>{folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}</select></Field><Field label="Audience"><select className="field-input" value={form.visibility} onChange={(event) => setForm({ ...form, visibility: event.target.value as KbVisibility })}>{VISIBILITIES.map((visibility) => <option key={visibility} value={visibility}>{visibility}</option>)}</select></Field></div><div className="form-row"><Field label="Tags" hint="comma-separated"><input className="field-input" value={form.tags} onChange={(event) => setForm({ ...form, tags: event.target.value })} placeholder="vpn, windows, password" /></Field><Field label="Review date" hint="Optional freshness reminder"><input className="field-input" type="datetime-local" value={form.reviewDueAt} onChange={(event) => setForm({ ...form, reviewDueAt: event.target.value })} /></Field></div>{!editing ? <Field label="Initial status"><select className="field-input" value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as KbStatus })}>{STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select></Field> : null}</> : <div className="kb-editor-preview"><h2>{form.title || 'Untitled article'}</h2><p className="kb-detail-summary">{form.summary || 'No summary yet.'}</p><ArticleBody body={form.body || 'Start writing to preview this article.'} /></div>}<div className="form-actions"><button type="button" className="btn btn-ghost" onClick={() => { setShowForm(false); setModalError(null) }} disabled={busy}>Cancel</button><button className="btn btn-primary" disabled={busy}><Icon name="save" size={14} />{busy ? 'Saving…' : editing ? 'Save changes' : 'Create article'}</button></div></form>
+      </Modal>
+
+      <Modal open={comparing !== null} onClose={() => setComparing(null)} title={`Compare versions — v${comparing?.from.version} → v${comparing?.to.version}`} width={820}>
+        {comparing ? <div className="kb-version-compare">
+          <div className="kb-version-compare-cols">
+            <div className="kb-version-compare-col"><span className="kb-version-compare-label">v{comparing.from.version} · {formatDate(comparing.from.created_at)}</span><h4>{comparing.from.title}</h4>{comparing.from.summary ? <p className="kb-version-compare-summary">{comparing.from.summary}</p> : null}</div>
+            <div className="kb-version-compare-col"><span className="kb-version-compare-label">v{comparing.to.version} · {formatDate(comparing.to.created_at)}</span><h4>{comparing.to.title}</h4>{comparing.to.summary ? <p className="kb-version-compare-summary">{comparing.to.summary}</p> : null}</div>
+          </div>
+          <div className="kb-version-compare-body">
+            <div className="kb-version-compare-col"><ArticleBody body={comparing.from.body ?? ''} /></div>
+            <div className="kb-version-compare-col"><ArticleBody body={comparing.to.body ?? ''} /></div>
+          </div>
+        </div> : null}
       </Modal>
     </Shell>
   )

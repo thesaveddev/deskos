@@ -155,6 +155,14 @@ export function getArticleVersion(id: string, version: number): Promise<{ versio
   return api(`/kb/articles/${id}/versions/${version}`)
 }
 
+export function compareArticleVersions(id: string, from: number, to: number): Promise<{ from: KbArticleVersion; to: KbArticleVersion }> {
+  return api(`/kb/articles/${id}/versions/compare?from=${from}&to=${to}`)
+}
+
+export function restoreArticleVersion(id: string, version: number): Promise<{ article: KbArticle; restoredFrom: number }> {
+  return api(`/kb/articles/${id}/versions/${version}/restore`, { method: 'POST' })
+}
+
 export function createRelation(id: string, body: { relatedArticleId: string; relationType?: KbRelationType }): Promise<{ relation: KbRelation }> {
   return api(`/kb/articles/${id}/relations`, { method: 'POST', body })
 }

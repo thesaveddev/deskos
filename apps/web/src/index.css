@@ -1328,3 +1328,33 @@
   background: rgba(255,255,255,0.2);
   color: inherit;
 }
+/* KB version compare + restore */
+.kb-version-hint { margin: 0 0 8px; color: var(--text-3); font-size: 11px; line-height: 1.5; }
+.kb-version-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line-1); }
+.kb-version-row:last-child { border-bottom: none; }
+.kb-version-row .mono { font-size: 11px; white-space: nowrap; }
+.kb-version-current { color: var(--accent); }
+.kb-version-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.kb-version-actions { display: inline-flex; flex: 0 0 auto; gap: 5px; }
+.kb-version-compare-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.kb-version-compare-col { min-width: 0; }
+.kb-version-compare-label { color: var(--text-3); font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
+.kb-version-compare-col h4 { margin: 6px 0 5px; font-size: 14px; }
+.kb-version-compare-summary { margin: 0; color: var(--text-2); font-size: 12px; }
+.kb-version-compare-body { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line-1); }
+.kb-version-compare-body .kb-version-compare-col { max-height: 320px; overflow: auto; padding: 10px; border: 1px solid var(--line-1); border-radius: var(--radius-sm); background: var(--bg-0); }
+.kb-version-compare-body .kb-version-compare-col p { margin: 0 0 6px; color: var(--text-2); font-size: 12px; line-height: 1.5; }
+@media (max-width: 760px) { .kb-version-compare-cols, .kb-version-compare-body { grid-template-columns: 1fr; } }
+/* Portal registration + welcome */
+.portal-welcome-input { resize: vertical; min-height: 70px; width: 100%; }
+.portal-domain-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.portal-domain-chip { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border: 1px solid var(--line-2); border-radius: 999px; background: var(--bg-2); color: var(--text-1); font: 11px var(--font-mono); }
+.portal-domain-chip button { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text-3); cursor: pointer; }
+.portal-domain-chip button:hover { color: var(--crit); background: var(--bg-1); }
+.portal-domain-add { max-width: 420px; margin-top: 8px; }
+/* Public portal registration */
+.public-portal-register-line { margin: 14px 0 0; color: var(--text-2); font-size: 13px; }
+.public-portal-register-link { border: 0; padding: 0; background: transparent; color: var(--info); font: inherit; font-size: 13px; text-decoration: none; cursor: pointer; }
+.public-portal-register-link:hover { text-decoration: underline; }
+.portal-register-modal { max-width: 420px; }
+.portal-register-form { display: flex; flex-direction: column; gap: 12px; }

@@ -42,6 +42,9 @@ interface WorkspaceSettings {
     allow_public_kb: boolean
     show_device_context: boolean
     allow_customer_resolution: boolean
+    allow_registration: boolean
+    registration_domains: string[]
+    welcome_message: string
     slug: string
   }
   remote_support: {
@@ -78,7 +81,7 @@ const DEFAULT_SETTINGS: WorkspaceSettings = {
   require_description: true, allow_attachments: true, public_notes_visible: true,
   default_priority: 'p3', default_type: 'incident',
   ai_triage: { enabled: true, autoReply: true, autoResolve: true, maxRounds: 4, resolveConfidence: 0.92, sources: ['portal', 'email', 'phone'] },
-  portal: { enabled: true, allow_public_kb: true, show_device_context: true, allow_customer_resolution: true, slug: '' },
+  portal: { enabled: true, allow_public_kb: true, show_device_context: true, allow_customer_resolution: true, allow_registration: false, registration_domains: [], welcome_message: '', slug: '' },
   remote_support: { require_consent: true, default_expiry_minutes: 30, allow_file_transfer: true, allow_clipboard: true, allow_terminal: false, allow_system_manage: false, default_recording_mode: 'metadata', recording_retention_days: 30 },
   endpoints: { offline_after_minutes: 10, heartbeat_interval_seconds: 30, allow_self_enrollment: true, enrollment_code_expiry_minutes: 15 },
   monitoring: { create_tickets_by_default: true, offline_ticket_mode: 'alert_only', default_ticket_priority: 'p3', default_severity: 'warning' },
@@ -368,6 +371,8 @@ function PortalSettingsTab({ settings, portalInfo, update, error, message }: {
   const [slugDraft, setSlugDraft] = useState(settings.portal.slug)
   const [slugInvalid, setSlugInvalid] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [welcomeDraft, setWelcomeDraft] = useState(settings.portal.welcome_message)
+  const [domainDraft, setDomainDraft] = useState('')
   const portalUrl = portalInfo?.url ?? ''
   const displaySlug = portalInfo?.slug ?? ''
 
@@ -386,6 +391,23 @@ function PortalSettingsTab({ settings, portalInfo, update, error, message }: {
     await update({ portal: { ...settings.portal, slug: next } })
   }
 
+  const saveWelcome = () => {
+    if (welcomeDraft === settings.portal.welcome_message) return
+    void update({ portal: { ...settings.portal, welcome_message: welcomeDraft.trim() } })
+  }
+
+  const addDomain = () => {
+    const next = domainDraft.trim().toLowerCase().replace(/^@/, '')
+    if (!/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/.test(next)) return
+    if (settings.portal.registration_domains.includes(next)) { setDomainDraft(''); return }
+    void update({ portal: { ...settings.portal, registration_domains: [...settings.portal.registration_domains, next] } })
+    setDomainDraft('')
+  }
+
+  const removeDomain = (domain: string) => {
+    void update({ portal: { ...settings.portal, registration_domains: settings.portal.registration_domains.filter((d) => d !== domain) } })
+  }
+
   return <SettingSection title="Customer portal" description="Your team's self-service home for raising requests, tracking tickets, and reading the knowledge base."><>
     {error && <Alert kind="error">{error}</Alert>}
     {message && <Alert kind="info">{message}</Alert>}
@@ -398,7 +420,7 @@ function PortalSettingsTab({ settings, portalInfo, update, error, message }: {
         {portalUrl ? <a className="btn btn-ghost btn-sm" href={portalUrl} target="_blank" rel="noreferrer"><Icon name="external" size={14} />Open portal</a> : null}
       </div>
       <div className="portal-slug-row">
-        <Field label="Portal address path" hint="Lowercase letters, numbers, and hyphens. Leave blank to use your organisation slug.">
+        <Field label="Portal address slug" hint="Lowercase letters, numbers, and hyphens. Leave blank to use your organisation slug.">
           <div className="settings-inline-field">
             <input className={`field-input mono${slugInvalid ? ' field-input-invalid' : ''}`} value={slugDraft} onChange={(e) => { setSlugDraft(e.target.value.toLowerCase()); setSlugInvalid(false) }} placeholder={displaySlug} maxLength={64} aria-label="Portal URL path" />
             <button type="button" className="btn btn-primary btn-sm" onClick={() => void saveSlug()} disabled={slugDraft.trim().toLowerCase() === settings.portal.slug}><Icon name="save" size={14} />Update link</button>
@@ -408,20 +430,48 @@ function PortalSettingsTab({ settings, portalInfo, update, error, message }: {
       </div>
     </div>
 
-    <div className="portal-how-it-works">
-      <div className="branding-section-heading"><span className="branding-section-icon"><Icon name="user" size={15} /></span><div><h3>How your staff use it</h3><p>Three steps, then they are self-sufficient.</p></div></div>
-      <ol className="portal-steps">
-        <li><strong>Share the link</strong><span>Send the portal address above by email, intranet, or a sign on your reception desk.</span></li>
-        <li><strong>They sign in with work email</strong><span>Staff with accounts sign in with their ReyDesk email. When portal magic links are enabled (Settings → Authentication), they receive a one-click sign-in email with no password needed.</span></li>
-        <li><strong>Request, track, and read</strong><span>They raise requests, follow their tickets, and browse published knowledge-base articles — without seeing any internal console tools.</span></li>
-      </ol>
+    <div className="portal-address-card">
+      <div className="branding-section-heading"><span className="branding-section-icon"><Icon name="mail" size={15} /></span><div><h3>Portal welcome message</h3><p>Shown on the public portal home so requesters see a friendly, on-brand line.</p></div></div>
+      <div className="portal-slug-row">
+        <Field label="Welcome text" hint="A short greeting, at most 500 characters.">
+          <div className="settings-inline-field">
+            <textarea className="field-input portal-welcome-input" rows={2} value={welcomeDraft} onChange={(e) => setWelcomeDraft(e.target.value)} maxLength={500} placeholder="Welcome to our support centre — how can we help today?" aria-label="Portal welcome message" />
+            <button type="button" className="btn btn-primary btn-sm" onClick={saveWelcome} disabled={welcomeDraft.trim() === settings.portal.welcome_message}><Icon name="save" size={14} />Save message</button>
+          </div>
+        </Field>
+      </div>
     </div>
 
     <div className="portal-toggles">
       <ToggleRow label="Enable customer portal" description="Allow requesters to view and raise support requests at the portal address." checked={settings.portal.enabled} onChange={(v) => void update({ portal: { ...settings.portal, enabled: v } })} />
-      <ToggleRow label="Show public knowledge base" description="Let anyone with the portal link read articles marked Public — no sign-in required." checked={settings.portal.allow_public_kb} onChange={(v) => void update({ portal: { ...settings.portal, allow_public_kb: v } })} />
+      <ToggleRow label="Show public knowledge base" description="Let anyone with the portal address read articles marked Public — no sign-in required." checked={settings.portal.allow_public_kb} onChange={(v) => void update({ portal: { ...settings.portal, allow_public_kb: v } })} />
       <ToggleRow label="Show device context" description="Include linked device details when a requester views a ticket." checked={settings.portal.show_device_context} onChange={(v) => void update({ portal: { ...settings.portal, show_device_context: v } })} />
       <ToggleRow label="Allow requester resolution" description="Let requesters mark their own resolved tickets as complete." checked={settings.portal.allow_customer_resolution} onChange={(v) => void update({ portal: { ...settings.portal, allow_customer_resolution: v } })} />
+      <ToggleRow label="Allow self-service registration" description="Let anyone with the portal address create an end-user account — perfect for organisations that don't manage identities in IT." checked={settings.portal.allow_registration} onChange={(v) => void update({ portal: { ...settings.portal, allow_registration: v } })} />
+    </div>
+
+    {settings.portal.allow_registration ? <div className="portal-address-card">
+      <div className="branding-section-heading"><span className="branding-section-icon"><Icon name="shield" size={15} /></span><div><h3>Allowed registration domains</h3><p>Restrict sign-up to work email addresses. Leave empty to allow any email.</p></div></div>
+      {settings.portal.registration_domains.length > 0 ? (
+        <div className="portal-domain-chips">
+          {settings.portal.registration_domains.map((domain) => (
+            <span className="portal-domain-chip" key={domain}>@{domain}<button type="button" onClick={() => removeDomain(domain)} aria-label={`Remove ${domain}`}><Icon name="delete" size={12} /></button></span>
+          ))}
+        </div>
+      ) : <p className="settings-note">Any email domain may register while this list is empty.</p>}
+      <div className="settings-inline-field portal-domain-add">
+        <input className="field-input mono" value={domainDraft} onChange={(e) => setDomainDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addDomain() } }} placeholder="example.com" aria-label="Add allowed domain" />
+        <button type="button" className="btn btn-ghost btn-sm" onClick={addDomain}><Icon name="add" size={14} />Add domain</button>
+      </div>
+    </div> : null}
+
+    <div className="portal-how-it-works">
+      <div className="branding-section-heading"><span className="branding-section-icon"><Icon name="user" size={15} /></span><div><h3>How your staff use it</h3><p>Three steps, then they are self-sufficient.</p></div></div>
+      <ol className="portal-steps">
+        <li><strong>Share the link</strong><span>Send the portal address above by email, intranet, or a sign on your reception desk.</span></li>
+        <li><strong>They sign in with work email</strong><span>Staff with accounts sign in with their ReyDesk email. New requesters can register at the portal when registration is enabled, or IT can invite them — with magic links enabled (@Settings → Authentication), they receive a one-click sign-in email.</span></li>
+        <li><strong>Request, track, and read</strong><span>They raise requests, follow their tickets, and browse published knowledge-base articles — without seeing any internal console tools.</span></li>
+      </ol>
     </div>
   </></SettingSection>
 }

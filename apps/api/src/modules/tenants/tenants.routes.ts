@@ -165,6 +165,13 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
       allow_public_kb: true,
       show_device_context: true,
       allow_customer_resolution: true,
+      // Self-service registration: when enabled, anyone (subject to
+      // registration_domains) can create an end-user account at the portal.
+      allow_registration: false,
+      // Empty = any email domain may register when allow_registration is on.
+      registration_domains: [],
+      // Short greeting shown on the portal home page.
+      welcome_message: '',
       // Empty = use the organisation slug for the portal URL path.
       slug: '',
     },
@@ -224,6 +231,9 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
       allow_public_kb: z.boolean().optional(),
       show_device_context: z.boolean().optional(),
       allow_customer_resolution: z.boolean().optional(),
+      allow_registration: z.boolean().optional(),
+      registration_domains: z.array(z.string().trim().toLowerCase().regex(/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/).max(253)).max(25).optional(),
+      welcome_message: z.string().max(500).optional(),
       slug: z.string().trim().max(64).regex(/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/).optional(),
     }).partial().optional(),
     magic_links: z.object({

@@ -279,9 +279,68 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     const ctx = request.tenantCtx!
     const { id, version } = request.params as { id: string; version: string }
     return withTenant(app.db, ctx.tenantId, async (client) => {
-      const row = (await client.query(`SELECT version, title, summary, body, author_id, created_at FROM kb_article_versions WHERE article_id = $1 AND version = $2`, [id, Number(version)])).rows[0]
+      const row = (await client.query(
+        `SELECT v.version, v.title, v.summary, v.body, v.author_id, v.created_at, u.name AS author_name
+           FROM kb_article_versions v LEFT JOIN users u ON u.id = v.author_id
+          WHERE v.article_id = $1 AND v.version = $2`,
+        [id, Number(version)],
+      )).rows[0]
       if (!row) throw AppError.notFound('Article version not found')
       return { version: row }
+    })
+  })
+
+  // Compare any two stored versions of an article — returns both snapshots so
+  // the UI can render a side-by-side diff.
+  app.get('/kb/articles/:id/versions/compare', { preHandler: [authenticate, requireTenant, requirePermission('kb.read')] }, async (request) => {
+    const ctx = request.tenantCtx!
+    const { id } = request.params as { id: string }
+    const query = request.query as { from?: string; to?: string }
+    const from = Number(query.from)
+    const to = Number(query.to)
+    if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1 || to < 1) {
+      throw AppError.badRequest('Provide valid from and to version numbers', 'invalid_versions')
+    }
+    return withTenant(app.db, ctx.tenantId, async (client) => {
+      const { rows } = await client.query(
+        `SELECT version, title, summary, body, author_id, created_at FROM kb_article_versions
+          WHERE article_id = $1 AND version IN ($2, $3)`,
+        [id, from, to],
+      )
+      if (rows.length !== 2) throw AppError.badRequest('One or both versions could not be found', 'version_missing')
+      const pick = (version: number) => rows.find((row) => row.version === version)
+      return { from: pick(from), to: pick(to) }
+    })
+  })
+
+  // Restore an older version: the stored content becomes the current content,
+  // written as a brand-new version so the rollback itself is auditable and
+  // the full history is preserved.
+  app.post('/kb/articles/:id/versions/:version/restore', { preHandler: [authenticate, requireTenant, requirePermission('kb.write')] }, async (request) => {
+    const ctx = request.tenantCtx!
+    const { id, version } = request.params as { id: string; version: string }
+    const restoreVersion = Number(version)
+    if (!Number.isInteger(restoreVersion) || restoreVersion < 1) throw AppError.badRequest('Invalid version number', 'invalid_version')
+    return withTenant(app.db, ctx.tenantId, async (client) => {
+      const article = (await client.query('SELECT * FROM kb_articles WHERE id = $1', [id])).rows[0]
+      if (!article) throw AppError.notFound('Article not found')
+      const snapshot = (await client.query(
+        'SELECT title, summary, body FROM kb_article_versions WHERE article_id = $1 AND version = $2',
+        [id, restoreVersion],
+      )).rows[0]
+      if (!snapshot) throw AppError.notFound('Article version not found')
+      if (restoreVersion === article.version) throw AppError.badRequest('That version is already the current version', 'current_version')
+
+      const nextVersion = article.version + 1
+      const res = await client.query(
+        `UPDATE kb_articles SET title = $2, summary = $3, body = $4, version = $5, updated_at = now()
+          WHERE id = $1
+          RETURNING id, title, summary, body, folder_id, visibility, status, version, tags, review_due_at, view_count, helpful_count, not_helpful_count, published_at, last_reviewed_at, updated_at`,
+        [id, snapshot.title, snapshot.summary ?? '', snapshot.body, nextVersion],
+      )
+      await recordVersion(client, ctx.tenantId, id, nextVersion, snapshot.title, snapshot.summary ?? '', snapshot.body, request.user!.id)
+      await recordAudit(client, ctx.tenantId, { actorType: 'user', actorId: request.user!.id, action: 'kb.article.restored', objectType: 'kb_article', objectId: id, ip: request.ip, payload: { restoredFrom: restoreVersion, version: nextVersion } })
+      return { article: res.rows[0], restoredFrom: restoreVersion }
     })
   })
 
