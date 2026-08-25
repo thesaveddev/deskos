@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { PortalShell } from '../../components/PortalShell.js'
 import { Icon } from '../../components/Icons.js'
 import { Alert, Field } from '../../components/ui.js'
-import { createPortalTicket } from '../../lib/portal.js'
+import { createPortalTicket, uploadPortalAttachment } from '../../lib/portal.js'
 
 export default function PortalNewTicketPage() {
   const navigate = useNavigate()
@@ -11,6 +11,22 @@ export default function PortalNewTicketPage() {
   const [description, setDescription] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [files, setFiles] = useState<File[]>([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const addFiles = (incoming: FileList | File[]) => {
+    setFiles((prev) => [...prev, ...Array.from(incoming)])
+  }
+
+  const removeFile = (index: number) => {
+    setFiles((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  const formatSize = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -19,6 +35,14 @@ export default function PortalNewTicketPage() {
     setError(null)
     try {
       const { ticket } = await createPortalTicket({ subject: subject.trim(), description: description.trim() || undefined })
+      // Upload any attached files
+      for (const file of files) {
+        try {
+          await uploadPortalAttachment(ticket.number, file)
+        } catch {
+          // Non-fatal — the ticket was created; file upload failure is noted
+        }
+      }
       navigate(`/portal/tickets/${ticket.number}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Submission failed')
@@ -67,7 +91,46 @@ export default function PortalNewTicketPage() {
             />
           </Field>
 
-          <div className="form-actions">
+          {/* File upload */}
+          <div style={{ marginTop: 4 }}>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--text-2)', marginBottom: 6 }}>
+              Attachments
+            </label>
+            <div
+              className="portal-attach-dropzone"
+              onClick={() => fileInputRef.current?.click()}
+              onDragOver={(e) => { e.preventDefault(); e.stopPropagation() }}
+              onDrop={(e) => { e.preventDefault(); e.stopPropagation(); addFiles(e.dataTransfer.files) }}
+            >
+              <Icon name="paperclip" size={18} />
+              <span>Drop files here or <strong>browse</strong></span>
+              <span style={{ fontSize: 12, color: 'var(--text-3)' }}>Max 25 MB per file</span>
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              style={{ display: 'none' }}
+              onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = '' }}
+            />
+
+            {files.length > 0 ? (
+              <div className="portal-attach-list">
+                {files.map((f, i) => (
+                  <div key={`${f.name}-${i}`} className="portal-attach-item">
+                    <Icon name="paperclip" size={14} />
+                    <span className="portal-attach-name">{f.name}</span>
+                    <span className="portal-attach-size">{formatSize(f.size)}</span>
+                    <button type="button" className="portal-attach-remove" onClick={() => removeFile(i)} aria-label="Remove file">
+                      <Icon name="close" size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="form-actions" style={{ marginTop: 16 }}>
             <button type="submit" className="btn btn-primary" disabled={busy || subject.trim().length < 3}>
               {busy ? 'Submitting…' : 'Submit request'}
             </button>

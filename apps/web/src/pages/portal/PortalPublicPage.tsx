@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { BrandRow } from '../../components/ui.js'
 import { Icon } from '../../components/Icons.js'
 import { formatWhen } from '../../lib/tickets.js'
+import { portalKbCategories, type PortalKbCategory } from '../../lib/portal.js'
 
 interface PortalMeta {
   name: string
@@ -17,6 +18,7 @@ interface PublicArticle {
   title: string
   summary: string
   body?: string
+  folder_id?: string | null
   tags: string[] | null
   updated_at: string
 }
@@ -26,15 +28,20 @@ export default function PortalPublicPage() {
   const { slug = '' } = useParams<{ slug: string }>()
   const [meta, setMeta] = useState<PortalMeta | null>(null)
   const [notFound, setNotFound] = useState(false)
+  const [categories, setCategories] = useState<PortalKbCategory[]>([])
+  const [activeCategory, setActiveCategory] = useState<string | null>(null)
   const [articles, setArticles] = useState<PublicArticle[] | null>(null)
   const [article, setArticle] = useState<PublicArticle | null>(null)
   const [query, setQuery] = useState('')
   const [error, setError] = useState<string | null>(null)
   const debounceRef = useRef<number | undefined>(undefined)
 
-  const loadArticles = useCallback(async (search: string) => {
+  const loadArticles = useCallback(async (search: string, folderId?: string | null) => {
     try {
-      const suffix = search ? `?q=${encodeURIComponent(search)}` : ''
+      const params = new URLSearchParams()
+      if (search) params.set('q', search)
+      if (folderId) params.set('folderId', folderId)
+      const suffix = params.toString() ? `?${params}` : ''
       const res = await fetch(`/api/v1/public/portal/${encodeURIComponent(slug)}/kb${suffix}`)
       if (!res.ok) { setArticles([]); return }
       const body = (await res.json()) as { articles: PublicArticle[] }
@@ -59,12 +66,21 @@ export default function PortalPublicPage() {
     return () => { cancelled = true }
   }, [slug])
 
+  // Load categories when KB is allowed
+  useEffect(() => {
+    if (!meta?.allowPublicKb) return
+    portalKbCategories(slug).then((res) => setCategories(res.categories)).catch(() => setCategories([]))
+  }, [meta, slug])
+
   useEffect(() => {
     if (!meta?.allowPublicKb) return
     window.clearTimeout(debounceRef.current)
-    debounceRef.current = window.setTimeout(() => void loadArticles(query), query ? 300 : 0)
+    debounceRef.current = window.setTimeout(
+      () => void loadArticles(query, activeCategory),
+      query ? 300 : 0,
+    )
     return () => window.clearTimeout(debounceRef.current)
-  }, [query, meta, loadArticles])
+  }, [query, meta, loadArticles, activeCategory])
 
   const openArticle = async (id: string) => {
     setError(null)
@@ -139,11 +155,37 @@ export default function PortalPublicPage() {
                 aria-label="Search the knowledge base"
               />
             </div>
+
+            {/* Category pills */}
+            {categories.length > 0 ? (
+              <div className="portal-kb-categories">
+                <button
+                  type="button"
+                  className={`portal-kb-cat-pill ${activeCategory === null ? 'active' : ''}`}
+                  onClick={() => setActiveCategory(null)}
+                >
+                  All
+                </button>
+                {categories.map((cat) => (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    className={`portal-kb-cat-pill ${activeCategory === cat.id ? 'active' : ''}`}
+                    onClick={() => setActiveCategory(cat.id)}
+                  >
+                    <Icon name="folder" size={13} />
+                    {cat.name}
+                    <span className="portal-kb-cat-count">{cat.article_count}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
             {articles === null ? (
               <span className="etch">Loading articles…</span>
             ) : articles.length === 0 ? (
               <div className="empty-state">
-                <p>{query ? `No articles match "${query}".` : 'No public articles published yet.'}</p>
+                <p>{query ? `No articles match "${query}".` : activeCategory ? 'No articles in this category.' : 'No public articles published yet.'}</p>
               </div>
             ) : (
               <div className="public-portal-article-grid">

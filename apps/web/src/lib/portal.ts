@@ -41,3 +41,52 @@ export function replyPortalTicket(number: number, body: string): Promise<{ threa
 export function resolvePortalTicket(number: number): Promise<{ ticket: PortalTicket }> {
   return api(`/portal/tickets/${number}/resolve`, { method: 'POST' })
 }
+
+/* ── Portal attachments ── */
+
+export interface PortalAttachment {
+  id: string
+  filename: string
+  mime: string
+  size_bytes: number
+  uploader_name?: string | null
+  created_at: string
+}
+
+export async function portalAttachments(number: number): Promise<{ attachments: PortalAttachment[] }> {
+  return api(`/portal/tickets/${number}/attachments`)
+}
+
+export async function uploadPortalAttachment(number: number, file: File): Promise<{ attachment: PortalAttachment }> {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await fetch(`/api/v1/portal/tickets/${number}/attachments`, {
+    method: 'POST',
+    body: form,
+    headers: {
+      Authorization: `Bearer ${typeof window !== 'undefined' ? localStorage.getItem('rd_token') ?? '' : ''}`,
+      'X-DeskOS-Tenant': typeof window !== 'undefined' ? localStorage.getItem('rd_tenant') ?? '' : '',
+    },
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(body?.error?.message ?? `Upload failed (${res.status})`)
+  }
+  return res.json()
+}
+
+/* ── Portal KB categories ── */
+
+export interface PortalKbCategory {
+  id: string
+  name: string
+  parent_id: string | null
+  article_count: number
+  created_at: string
+}
+
+export async function portalKbCategories(slug: string): Promise<{ categories: PortalKbCategory[] }> {
+  const res = await fetch(`/api/v1/public/portal/${encodeURIComponent(slug)}/kb/categories`)
+  if (!res.ok) return { categories: [] }
+  return res.json()
+}

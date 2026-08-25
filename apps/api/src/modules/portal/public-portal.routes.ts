@@ -62,6 +62,26 @@ export async function publicPortalRoutes(app: FastifyInstance): Promise<void> {
     return reply.send(resolved.meta)
   })
 
+  // Public KB folder/category listing.
+  app.get('/public/portal/:slug/kb/categories', async (request, reply) => {
+    const { slug } = request.params as { slug: string }
+    const resolved = await resolveTenant(app, slug)
+    if (!resolved || !resolved.meta.portalEnabled) throw AppError.notFound('Portal not found')
+    if (!resolved.meta.allowPublicKb) throw AppError.notFound('Knowledge base is not public')
+
+    return withTenant(app.db, resolved.tenantId, async (client) => {
+      const { rows } = await client.query(
+        `SELECT f.id, f.name, f.parent_id, f.created_at,
+                count(a.id)::int AS article_count
+           FROM kb_folders f
+           LEFT JOIN kb_articles a ON a.folder_id = f.id AND a.status = 'published' AND a.visibility = 'public'
+          GROUP BY f.id, f.name, f.parent_id, f.created_at
+          ORDER BY lower(f.name)`,
+      )
+      return reply.send({ categories: rows })
+    })
+  })
+
   // Public list KB listing — tenant-scoped via RLS, only `public` + `published`
   // articles, and only when the org allows a public KB.
   app.get('/public/portal/:slug/kb', async (request, reply) => {
