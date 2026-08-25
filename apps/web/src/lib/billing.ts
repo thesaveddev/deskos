@@ -92,8 +92,23 @@ export function listPlans(): Promise<{ plans: Plan[] }> {
   return api('/billing/plans')
 }
 
+export interface EntitlementInfo {
+  planName: string
+  planSlug: string
+  maxTechnicians: number
+  maxDevices: number
+  currentTechnicians: number
+  currentDevices: number
+  techniciansRemaining: number
+  devicesRemaining: number
+}
+
 export function getSubscription(): Promise<{ subscription: Subscription | null }> {
   return api('/billing/subscription')
+}
+
+export function getEntitlement(): Promise<EntitlementInfo> {
+  return api('/billing/entitlement')
 }
 
 export function createSubscription(plan: string, billing_cycle?: string): Promise<{ subscription: Subscription }> {

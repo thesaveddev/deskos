@@ -35,13 +35,20 @@ export default function PortalNewTicketPage() {
     setError(null)
     try {
       const { ticket } = await createPortalTicket({ subject: subject.trim(), description: description.trim() || undefined })
-      // Upload any attached files
+      // Upload files after the ticket exists. Keep the ticket, but surface
+      // any attachment failure so the requester can retry from the detail view.
+      const failedUploads: string[] = []
       for (const file of files) {
         try {
           await uploadPortalAttachment(ticket.number, file)
         } catch {
-          // Non-fatal — the ticket was created; file upload failure is noted
+          failedUploads.push(file.name)
         }
+      }
+      if (failedUploads.length > 0) {
+        setError(`Request created, but these files could not be uploaded: ${failedUploads.join(', ')}`)
+        setBusy(false)
+        return
       }
       navigate(`/portal/tickets/${ticket.number}`)
     } catch (err) {

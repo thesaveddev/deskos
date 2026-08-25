@@ -14,11 +14,11 @@ import { AppError } from '../core/errors.js'
  *  3. Throws 403 with a clear `plan_limit_exceeded` code when the limit
  *     has been reached.
  *
- * The `free` plan gets soft caps (3 technicians, 10 devices) so new orgs
- * can trial without a card but are nudged to upgrade.
+ * Paid plans enforce their published limits. Tenants without a subscription
+ * use the no-card Free experience and are not blocked by paid-plan guards.
  */
 
-const FREE_CAPS = { technicians: 3, devices: 10 }
+const FREE_CAPS = { technicians: 3, devices: 100 }
 
 type EntitlementType = 'technicians' | 'devices'
 
@@ -28,13 +28,14 @@ export function requireEntitlement(type: EntitlementType) {
     if (!tenantId) return // requireTenant should run first
 
     const result = await resolvePlan(request.server.db, tenantId)
-    // No active subscription = free tier, skip enforcement (trial is open)
+    // No subscription is the no-card Free experience. It remains available
+    // without payment and is intentionally uncapped until a paid plan is
+    // selected; paid plans enforce their published limits below.
     if (!result.hasSubscription) return
-
     const limit = type === 'technicians' ? result.max_technicians : result.max_devices
     const current = await countUsage(request.server.db, tenantId, type)
 
-    if (current >= limit) {
+    if (limit >= 0 && current >= limit) {
       throw AppError.forbidden(
         `${type === 'technicians' ? 'Technician' : 'Device'} limit reached (${current}/${limit}) on the ${result.name} plan. Upgrade to add more.`,
         'plan_limit_exceeded',

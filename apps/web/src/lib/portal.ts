@@ -1,4 +1,4 @@
-import { api } from './api.js'
+import { api, getAccessToken, getActiveTenant } from './api.js'
 
 export interface PortalTicket {
   id: string
@@ -57,22 +57,42 @@ export async function portalAttachments(number: number): Promise<{ attachments: 
   return api(`/portal/tickets/${number}/attachments`)
 }
 
+function portalAuthHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {}
+  const token = getAccessToken()
+  const tenant = getActiveTenant()
+  if (token) headers.authorization = `Bearer ${token}`
+  if (tenant) headers['x-deskos-tenant'] = tenant
+  return headers
+}
+
 export async function uploadPortalAttachment(number: number, file: File): Promise<{ attachment: PortalAttachment }> {
   const form = new FormData()
   form.append('file', file)
   const res = await fetch(`/api/v1/portal/tickets/${number}/attachments`, {
     method: 'POST',
     body: form,
-    headers: {
-      Authorization: `Bearer ${typeof window !== 'undefined' ? localStorage.getItem('rd_token') ?? '' : ''}`,
-      'X-DeskOS-Tenant': typeof window !== 'undefined' ? localStorage.getItem('rd_tenant') ?? '' : '',
-    },
+    headers: portalAuthHeaders(),
   })
   if (!res.ok) {
     const body = await res.json().catch(() => null)
     throw new Error(body?.error?.message ?? `Upload failed (${res.status})`)
   }
   return res.json()
+}
+
+export async function downloadPortalAttachment(id: string, filename: string): Promise<void> {
+  const res = await fetch(`/api/v1/portal/attachments/${encodeURIComponent(id)}`, { headers: portalAuthHeaders() })
+  if (!res.ok) throw new Error(`Download failed (${res.status})`)
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
 }
 
 /* ── Portal KB categories ── */

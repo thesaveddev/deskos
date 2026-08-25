@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import { Alert, Field, Modal, useConfirm } from '../components/ui.js'
 import { Icon } from '../components/Icons.js'
 import { createOauthClient, deleteOauthClient, listOauthClients, type OAuthClient } from '../lib/oauth.js'
-import { getDeveloperOverview, type ApiScope, type DeveloperOverview } from '../lib/developer.js'
+import { addApiAllowlist, getApiSecurity, getApiUsage, getDeveloperOverview, removeApiAllowlist, updateApiSecurity, type ApiAllowlistEntry, type ApiScope, type ApiUsage, type DeveloperOverview } from '../lib/developer.js'
 
 type ApiTab = 'overview' | 'clients' | 'scopes' | 'docs' | 'security'
 
@@ -173,7 +173,7 @@ export default function PublicApiSettingsPage() {
       {tab === 'clients' && <ClientsTab clients={clients} busy={busy} onCreate={openCreate} onDelete={(client) => void remove(client)} />}
       {tab === 'scopes' && <ScopesTab scopes={availableScopes} clients={clients} />}
       {tab === 'docs' && <DocsTab baseUrl={baseUrl} tokenUrl={tokenUrl} authorizeUrl={authorizeUrl} specUrl={specUrl} overview={overview} />}
-      {tab === 'security' && <SecurityTab clients={clients} />}
+      {tab === 'security' && <SecurityWorkspace clients={clients} />}
 
       <Modal open={editorOpen} onClose={() => { if (!busy) setEditorOpen(false) }} title="Register OAuth client" width={650} footer={<><button type="button" className="btn btn-ghost" onClick={() => setEditorOpen(false)} disabled={busy}>Cancel</button><button type="submit" form="oauth-client-form" className="btn btn-primary" disabled={busy || !name.trim() || scopes.length === 0 || grants.length === 0}><Icon name="save" size={14} />{busy ? 'Creating…' : 'Create client'}</button></>}>
         <form id="oauth-client-form" onSubmit={(event) => void submit(event)} className="public-api-form">
@@ -207,7 +207,116 @@ function DocsTab({ baseUrl, tokenUrl, authorizeUrl, specUrl, overview }: { baseU
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN"`}</pre></div><div className="public-api-doc-links"><a className="btn btn-ghost btn-sm" href="/api-docs" target="_blank" rel="noreferrer"><Icon name="external" size={14} />Open interactive API docs</a><span>{overview?.endpoints?.length ?? 0} documented endpoint{overview?.endpoints?.length === 1 ? '' : 's'} available</span></div></div>
 }
 
-function SecurityTab({ clients }: { clients: OAuthClient[] }) {
+function SecurityWorkspace({ clients }: { clients: OAuthClient[] }) {
+  const [security, setSecurity] = useState<{ ip_allowlist_enabled: boolean; allowlist: ApiAllowlistEntry[] } | null>(null)
+  const [usage, setUsage] = useState<ApiUsage | null>(null)
+  const [cidr, setCidr] = useState('')
+  const [label, setLabel] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [securityError, setSecurityError] = useState<string | null>(null)
+
+  const loadSecurity = useCallback(async () => {
+    try {
+      const [settings, analytics] = await Promise.all([getApiSecurity(), getApiUsage(30)])
+      setSecurity(settings)
+      setUsage(analytics)
+    } catch (err) {
+      setSecurityError(err instanceof Error ? err.message : 'Could not load API security controls')
+    }
+  }, [])
+
+  useEffect(() => { void loadSecurity() }, [loadSecurity])
+
+  const toggleAllowlist = async () => {
+    if (!security || busy) return
+    setBusy(true)
+    setSecurityError(null)
+    try {
+      setSecurity(await updateApiSecurity(!security.ip_allowlist_enabled))
+    } catch (err) {
+      setSecurityError(err instanceof Error ? err.message : 'Could not update the allowlist')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const addNetwork = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!cidr.trim() || busy) return
+    setBusy(true)
+    setSecurityError(null)
+    try {
+      const result = await addApiAllowlist(cidr.trim(), label.trim())
+      setSecurity((current) => current ? { ...current, allowlist: [...current.allowlist, result.entry] } : current)
+      setCidr('')
+      setLabel('')
+    } catch (err) {
+      setSecurityError(err instanceof Error ? err.message : 'Could not add this network')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const removeNetwork = async (entry: ApiAllowlistEntry) => {
+    if (busy) return
+    setBusy(true)
+    setSecurityError(null)
+    try {
+      await removeApiAllowlist(entry.id)
+      setSecurity((current) => current ? { ...current, allowlist: current.allowlist.filter((item) => item.id !== entry.id) } : current)
+    } catch (err) {
+      setSecurityError(err instanceof Error ? err.message : 'Could not remove this network')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const errorRate = usage && usage.total > 0 ? Math.round((usage.errors / usage.total) * 100) : 0
+  const maxDay = Math.max(1, ...(usage?.byDay.map((day) => day.requests) ?? [0]))
+
+  return (
+    <div className="public-api-section public-api-security-workspace">
+      <div className="public-api-section-head">
+        <div><h3>Security operations</h3><p>Control where integrations may connect and see how the API is being used.</p></div>
+        <span className={`public-api-security-state${security?.ip_allowlist_enabled ? ' is-on' : ''}`}><Icon name="shield" size={14} />{security?.ip_allowlist_enabled ? 'Allowlist enforced' : 'Open to configured clients'}</span>
+      </div>
+      {securityError ? <Alert kind="error">{securityError}</Alert> : null}
+
+      <div className="public-api-security-controls">
+        <article className="public-api-control-card public-api-control-card-wide">
+          <div className="public-api-control-icon"><Icon name="lock" size={18} /></div>
+          <div className="public-api-control-copy"><h4>IP allowlist</h4><p>Restrict OAuth-backed API requests to approved office, VPN, or private network ranges. Add at least one range before enabling enforcement.</p></div>
+          <button type="button" className={`btn btn-sm ${security?.ip_allowlist_enabled ? 'btn-primary' : 'btn-ghost'}`} disabled={!security || busy || security.allowlist.filter((entry) => entry.enabled).length === 0} onClick={() => void toggleAllowlist()}>{security?.ip_allowlist_enabled ? 'Disable' : 'Enable'}</button>
+        </article>
+        <article className="public-api-control-card"><span className="public-api-control-label">Requests · 30 days</span><strong>{usage?.total ?? '—'}</strong><small>{usage?.errors ?? 0} errors · {errorRate}% error rate</small></article>
+        <article className="public-api-control-card"><span className="public-api-control-label">Active OAuth clients</span><strong>{clients.length}</strong><small>{clients.filter((client) => client.enabled).length} enabled</small></article>
+      </div>
+
+      <div className="public-api-security-columns">
+        <section className="public-api-security-panel">
+          <div className="public-api-panel-head"><div><h4>Approved networks</h4><p>Use an address for one host or CIDR for a range.</p></div><span className="mono">{security?.allowlist.length ?? 0} entries</span></div>
+          <form className="public-api-allowlist-form" onSubmit={(event) => void addNetwork(event)}>
+            <input className="field-input mono" value={cidr} onChange={(event) => setCidr(event.target.value)} placeholder="203.0.113.0/24" aria-label="IP address or CIDR range" />
+            <input className="field-input" value={label} onChange={(event) => setLabel(event.target.value)} placeholder="Head office VPN" aria-label="Network label" />
+            <button className="btn btn-primary btn-sm" type="submit" disabled={busy || !cidr.trim()}><Icon name="add" size={14} />Add</button>
+          </form>
+          <div className="public-api-allowlist-list">
+            {security?.allowlist.length ? security.allowlist.map((entry) => <div className="public-api-allowlist-row" key={entry.id}><span className="public-api-network-icon"><Icon name="globe" size={14} /></span><div><code>{entry.cidr}</code><small>{entry.label || 'No label'}</small></div><span className={`status-pill ${entry.enabled ? 'status-open' : 'status-closed'}`}>{entry.enabled ? 'Active' : 'Off'}</span><button type="button" className="btn btn-ghost btn-xs" disabled={busy} onClick={() => void removeNetwork(entry)} title={`Remove ${entry.cidr}`}><Icon name="delete" size={13} /></button></div>) : <div className="public-api-security-empty"><Icon name="globe" size={18} /><span>No approved networks yet.</span></div>}
+          </div>
+          <p className="public-api-security-note"><Icon name="alert" size={14} />Keep one recovery network available before enabling enforcement, or you may lock out every integration.</p>
+        </section>
+
+        <section className="public-api-security-panel">
+          <div className="public-api-panel-head"><div><h4>Request activity</h4><p>Successful and failed API requests recorded by day.</p></div><span className="mono">30 days</span></div>
+          {usage?.byDay.length ? <div className="public-api-usage-chart" aria-label="API requests by day">{usage.byDay.map((day) => <div className="public-api-usage-bar" key={day.day} title={`${day.day}: ${day.requests} requests, ${day.errors} errors`}><div style={{ height: `${Math.max(4, Math.round((day.requests / maxDay) * 100))}%` }} /><small>{day.day.slice(5)}</small></div>)}</div> : <div className="public-api-security-empty"><Icon name="activity" size={18} /><span>No API activity recorded yet.</span></div>}
+          <div className="public-api-usage-list">{usage?.byPath.slice(0, 4).map((path) => <div key={path.path}><code>{path.path}</code><span>{path.requests}</span></div>)}</div>
+        </section>
+      </div>
+    </div>
+  )
+}
+
+function LegacySecurityTab({ clients }: { clients: OAuthClient[] }) {
   const totalScopes = new Set(clients.flatMap((c) => c.scopes)).size
   const m2mCount = clients.filter((c) => c.grantTypes.includes('client_credentials')).length
   const delegatedCount = clients.filter((c) => c.grantTypes.includes('authorization_code')).length

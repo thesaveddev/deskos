@@ -4,7 +4,7 @@ import { PortalShell } from '../../components/PortalShell.js'
 import { Icon } from '../../components/Icons.js'
 import { Alert } from '../../components/ui.js'
 import { formatWhen, STATUS_LABELS } from '../../lib/tickets.js'
-import { portalTicket, replyPortalTicket, resolvePortalTicket, portalAttachments, uploadPortalAttachment, type PortalThread, type PortalTicket, type PortalAttachment } from '../../lib/portal.js'
+import { portalTicket, replyPortalTicket, resolvePortalTicket, portalAttachments, uploadPortalAttachment, downloadPortalAttachment, type PortalThread, type PortalTicket, type PortalAttachment } from '../../lib/portal.js'
 
 export default function PortalTicketPage() {
   const { number } = useParams<{ number: string }>()
@@ -14,6 +14,7 @@ export default function PortalTicketPage() {
   const [draft, setDraft] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [downloadBusy, setDownloadBusy] = useState<string | null>(null)
   const [pendingFiles, setPendingFiles] = useState<File[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -131,18 +132,23 @@ export default function PortalTicketPage() {
           <span className="portal-attachments-label">{attachments.length} file{attachments.length !== 1 ? 's' : ''}</span>
           <div className="portal-attachments-list">
             {attachments.map((att) => (
-              <a
+              <button
                 key={att.id}
-                href={`/api/v1/portal/attachments/${att.id}`}
-                target="_blank"
-                rel="noopener noreferrer"
+                type="button"
                 className="portal-attachment-chip"
                 title={`${att.filename} — ${formatSize(att.size_bytes)}`}
+                disabled={downloadBusy === att.id}
+                onClick={() => {
+                  setDownloadBusy(att.id)
+                  void downloadPortalAttachment(att.id, att.filename)
+                    .catch((err) => setError(err instanceof Error ? err.message : 'Download failed'))
+                    .finally(() => setDownloadBusy(null))
+                }}
               >
-                <Icon name="paperclip" size={12} />
+                <Icon name="download" size={12} />
                 <span>{att.filename}</span>
-                <small>{formatSize(att.size_bytes)}</small>
-              </a>
+                <small>{downloadBusy === att.id ? 'Downloading…' : formatSize(att.size_bytes)}</small>
+              </button>
             ))}
           </div>
         </div>

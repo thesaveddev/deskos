@@ -3,6 +3,15 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { FastifyInstance } from 'fastify'
 import { authHeaders, createTestApp, seedActiveMember, signupOwner } from './helpers.js'
 
+async function clientCredentialsToken(app: FastifyInstance, id: string, secret: string): Promise<string> {
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/v1/oauth/token',
+    payload: { grant_type: 'client_credentials', client_id: id, client_secret: secret },
+  })
+  return response.json().access_token as string
+}
+
 describe('OAuth2 public API', () => {
   let app: FastifyInstance
   let owner: Awaited<ReturnType<typeof signupOwner>>
@@ -132,6 +141,41 @@ describe('OAuth2 public API', () => {
     })
     expect(replay.statusCode).toBe(400)
     expect(replay.json().error.code).toBe('invalid_grant')
+  })
+
+  it('enforces the tenant IP allowlist for OAuth resources', async () => {
+    const blocked = await app.inject({
+      method: 'POST',
+      url: '/api/v1/oauth/security/allowlist',
+      headers: authHeaders(owner),
+      payload: { cidr: '203.0.113.0/24', label: 'Documentation network' },
+    })
+    expect(blocked.statusCode).toBe(201)
+
+    const enabled = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/oauth/security',
+      headers: authHeaders(owner),
+      payload: { enabled: true },
+    })
+    expect(enabled.statusCode).toBe(200)
+    expect(enabled.json().ip_allowlist_enabled).toBe(true)
+
+    const denied = await app.inject({
+      method: 'GET',
+      url: '/api/v1/public/tickets',
+      headers: { authorization: `Bearer ${await clientCredentialsToken(app, clientId, clientSecret)}` },
+    })
+    expect(denied.statusCode).toBe(403)
+    expect(denied.json().error.denied_reason).toBe('ip_not_allowlisted')
+
+    const disabled = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/oauth/security',
+      headers: authHeaders(owner),
+      payload: { enabled: false },
+    })
+    expect(disabled.statusCode).toBe(200)
   })
 
   it('isolates tokens between tenants', async () => {

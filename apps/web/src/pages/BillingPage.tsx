@@ -8,11 +8,11 @@ import { Alert, PageHeader } from '../components/ui.js'
 import { Shell } from '../components/Shell.js'
 import { useAuth } from '../lib/auth.js'
 import {
-  listPlans, getSubscription, createSubscription, changePlan, cancelSubscription,
+  listPlans, getSubscription, getEntitlement, createSubscription, changePlan, cancelSubscription,
   listInvoices, listPaymentMethods, removePaymentMethod, setDefaultPaymentMethod,
   addPaymentMethod, getBillingMeta, setBillingCountry, startCheckout, checkoutStatus,
   formatCents,
-  type Plan, type Subscription, type Invoice, type PaymentMethod,
+  type Plan, type Subscription, type Invoice, type PaymentMethod, type EntitlementInfo,
   type GatewayInfo,
 } from '../lib/billing.js'
 
@@ -67,6 +67,7 @@ export default function BillingPage() {
   const [methods, setMethods] = useState<PaymentMethod[]>([])
   const [staffCount, setStaffCount] = useState(0)
   const [deviceCount, setDeviceCount] = useState(0)
+  const [entitlement, setEntitlement] = useState<EntitlementInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [cycle, setCycle] = useState<'monthly' | 'annual'>('monthly')
   const [tab, setTab] = useState<BillingTab>('overview')
@@ -95,12 +96,13 @@ export default function BillingPage() {
 
   useEffect(() => {
     Promise.allSettled([
-      listPlans(), getSubscription(), listInvoices(), listPaymentMethods(), getBillingMeta(),
+      listPlans(), getSubscription(), getEntitlement(), listInvoices(), listPaymentMethods(), getBillingMeta(),
       fetch('/api/v1/members').then((r) => r.json() as Promise<{ members?: unknown[] }>),
       fetch('/api/v1/devices?pageSize=1').then((r) => r.json() as Promise<{ total?: number }>),
-    ]).then(([p, s, i, pm, m, mem, d]) => {
+    ]).then(([p, s, e, i, pm, m, mem, d]) => {
       if (p.status === 'fulfilled') setPlans(p.value.plans)
       if (s.status === 'fulfilled') setSub(s.value.subscription)
+      if (e.status === 'fulfilled') setEntitlement(e.value)
       if (i.status === 'fulfilled') setInvoices(i.value.invoices)
       if (pm.status === 'fulfilled') setMethods(pm.value.methods)
       if (m.status === 'fulfilled') { setMeta(m.value); setRegionDraft(m.value.country || m.value.detectedCountry || 'US') }
@@ -177,7 +179,7 @@ export default function BillingPage() {
 
   /* ── derived data ─────────────────────────────── */
 
-  const currentPlan = plans.find((p) => p.slug === sub?.plan_slug)
+  const currentPlan = plans.find((p) => p.slug === (sub?.plan_slug ?? 'free'))
   const price = (plan: Plan) => cycle === 'annual' ? plan.price_annual_cents : plan.price_monthly_cents
   const currency = meta?.currency ?? 'USD'
   const usedFeatures = useMemo(() => currentPlan?.features.slice(0, 4) ?? [], [currentPlan])
@@ -197,7 +199,7 @@ export default function BillingPage() {
 
   if (loading) return (
     <Shell>
-      <PageHeader title="Billing" subtitle="Manage your subscription, payment methods, and invoices." />
+      <PageHeader title="Billing" subtitle="Manage your plan, payment methods, and invoices." />
       <div className="dash-loading"><div className="loading-spinner" /><p>Loading billing…</p></div>
     </Shell>
   )
@@ -219,19 +221,20 @@ export default function BillingPage() {
           <span className="b-hero-eyebrow">Current plan</span>
           <div className="b-hero-title-row">
             <h2 className="b-hero-plan-name">{currentPlan?.name || 'Free'}</h2>
-            {sub ? <StatusPill status={sub.status} /> : <span className="b-status b-status-draft">No subscription</span>}
+            <StatusPill status={sub?.status ?? 'active'} />
           </div>
-          <p className="b-hero-desc">{currentPlan?.description ?? 'Choose a plan to unlock team features.'}</p>
+          <p className="b-hero-desc">{sub ? (currentPlan?.description ?? 'Your organization plan and usage.') : 'No payment is required. Your organization can use ReyDesk without a subscription; paid-plan limits apply only after you choose a paid plan.'}</p>
           <div className="b-hero-meta">
-            {currentPlan ? <span><Icon name="check" size={13} />{currentPlan.max_technicians < 0 ? 'Unlimited' : `${currentPlan.max_technicians}`} technicians</span> : null}
-            {currentPlan ? <span><Icon name="check" size={13} />{currentPlan.max_devices < 0 ? 'Unlimited' : `${currentPlan.max_devices}`} devices</span> : null}
+            {sub && entitlement ? <span><Icon name="check" size={13} />{entitlement.maxTechnicians < 0 ? 'Unlimited' : `${entitlement.maxTechnicians}`} technicians</span> : null}
+            {sub && entitlement ? <span><Icon name="check" size={13} />{entitlement.maxDevices < 0 ? 'Unlimited' : `${entitlement.maxDevices}`} devices</span> : null}
+            {!sub ? <span><Icon name="check" size={13} />No paid subscription required</span> : null}
             {sub ? <span><Icon name="clock" size={13} />Renews {new Date(sub.current_period_end).toLocaleDateString()}</span> : null}
             {sub?.trial_ends_at && sub.status === 'trialing' ? <span><Icon name="clock" size={13} />Trial ends {new Date(sub.trial_ends_at!).toLocaleDateString()}</span> : null}
           </div>
         </div>
         <div className="b-hero-usage">
-          <UsageBar label="Technicians" used={staffCount} max={currentPlan?.max_technicians ?? 1} />
-          <UsageBar label="Devices" used={deviceCount} max={currentPlan?.max_devices ?? 5} />
+          <UsageBar label="Technicians" used={staffCount} max={sub ? (entitlement?.maxTechnicians ?? currentPlan?.max_technicians ?? 3) : 0} />
+          <UsageBar label="Devices" used={deviceCount} max={sub ? (entitlement?.maxDevices ?? currentPlan?.max_devices ?? 100) : 0} />
         </div>
         <div className="b-hero-actions">
           {isOwner && <button className="btn btn-primary btn-sm" onClick={() => setTab('plans')}><Icon name="settings" size={14} />Manage plan</button>}
@@ -370,7 +373,7 @@ function PlansTab({ plans, sub, cycle, setCycle, isOwner, changing, price, curre
       )}
       <div className="b-plan-grid">
         {plans.filter((p) => p.slug !== 'enterprise').map((plan) => {
-          const isCurrent = sub?.plan_slug === plan.slug
+          const isCurrent = (sub?.plan_slug ?? 'free') === plan.slug
           const p = price(plan)
           const rec = plan.slug === 'pro'
           return (

@@ -82,6 +82,7 @@ export async function publicPortalRoutes(app: FastifyInstance): Promise<void> {
            FROM kb_folders f
            LEFT JOIN kb_articles a ON a.folder_id = f.id AND a.status = 'published' AND a.visibility = 'public'
           GROUP BY f.id, f.name, f.parent_id, f.created_at
+          HAVING count(a.id) > 0
           ORDER BY lower(f.name)`,
       )
       return reply.send({ categories: rows })

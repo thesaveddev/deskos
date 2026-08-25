@@ -196,8 +196,12 @@ export default function SessionConsolePage() {
         setEvents(detail.events)
         setConsoleState('authorizing')
 
-        const joinToken = history?.joinToken ?? (hasSessionRuntime(id) ? undefined : (await joinSession(id)).joinToken)
+        // A join ticket is short-lived. On a page reload, request a fresh one
+        // from the authenticated API; never persist relay credentials in browser storage.
+        const runtimeReusable = hasSessionRuntime(id) && isSessionRuntimeAlive(id)
+        const joinToken = history?.joinToken ?? (runtimeReusable ? undefined : (await joinSession(id)).joinToken)
         if (cancelled) return
+        writeSessionDock({ id: detail.session.id, deviceName: detail.session.device_name ?? detail.session.hostname ?? 'Remote session', state: detail.session.state })
         unsubscribe = subscribeSessionRuntime(id, joinToken, (snapshot) => {
           if (cancelled) return
           setConsoleState(snapshot.state)
