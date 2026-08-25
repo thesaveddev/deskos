@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { withTenant, type DbPool, type DbClient } from '../../db/pool.js'
-import type { VerifyResult } from './gateway.js'
+import { currencyForCountry, type VerifyResult } from './gateway.js'
 
 export interface Plan {
   id: number
@@ -181,24 +181,6 @@ export async function listPaymentMethods(db: DbPool, tenantId: string): Promise<
     [tenantId],
   )
   return result.rows
-}
-
-export async function addPaymentMethod(
-  db: DbPool,
-  tenantId: string,
-  data: { type?: string; brand?: string; last4: string; exp_month?: number; exp_year?: number },
-): Promise<PaymentMethod> {
-  // If first card, make it default
-  const existing = await db.query('SELECT id FROM payment_methods WHERE tenant_id = $1', [tenantId])
-  const isDefault = existing.rows.length === 0
-
-  const result = await db.query(
-    `INSERT INTO payment_methods (tenant_id, type, brand, last4, exp_month, exp_year, is_default)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
-     RETURNING *`,
-    [tenantId, data.type || 'card', data.brand || '', data.last4, data.exp_month || null, data.exp_year || null, isDefault],
-  )
-  return result.rows[0]
 }
 
 export async function removePaymentMethod(
@@ -411,15 +393,22 @@ export async function getBillingSettings(db: DbPool, tenantId: string): Promise<
   const { rows } = await db.query('SELECT settings FROM tenants WHERE id = $1', [tenantId])
   const settings = (rows[0]?.settings ?? {}) as Record<string, unknown>
   const billing = (settings.billing ?? {}) as Record<string, unknown>
+  const country = typeof billing.country === 'string' ? billing.country.toUpperCase().slice(0, 2) : ''
   return {
-    country: typeof billing.country === 'string' ? billing.country : '',
-    currency: typeof billing.currency === 'string' ? billing.currency : '',
+    country,
+    currency: typeof billing.currency === 'string' && billing.currency ? billing.currency : country ? currencyForCountry(country) : '',
   }
 }
 
 export async function setBillingSettings(db: DbPool, tenantId: string, patch: Partial<BillingSettings>): Promise<BillingSettings> {
   const current = await getBillingSettings(db, tenantId)
-  const next = { ...current, ...patch }
+  const normalizedCountry = (patch.country ?? current.country).toUpperCase().slice(0, 2)
+  const next = {
+    ...current,
+    ...patch,
+    country: normalizedCountry,
+    currency: patch.currency || (patch.country ? currencyForCountry(normalizedCountry) : current.currency || currencyForCountry(normalizedCountry)),
+  }
   const invoice = await db.query(
     `UPDATE tenants SET settings = settings || $2::jsonb WHERE id = $1`,
     [tenantId, JSON.stringify({ billing: { country: next.country.toUpperCase().slice(0, 2), currency: next.currency || undefined } })],

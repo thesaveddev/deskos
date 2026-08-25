@@ -153,10 +153,6 @@ export function listPaymentMethods(): Promise<{ methods: PaymentMethod[] }> {
   return api('/billing/payment-methods')
 }
 
-export function addPaymentMethod(data: { brand?: string; last4: string; exp_month?: number; exp_year?: number }): Promise<{ method: PaymentMethod }> {
-  return api('/billing/payment-methods', { method: 'POST', body: data })
-}
-
 export function removePaymentMethod(id: number): Promise<{ ok: boolean }> {
   return api(`/billing/payment-methods/${id}`, { method: 'DELETE' })
 }
@@ -184,6 +180,17 @@ export function checkoutStatus(reference: string): Promise<{ ok: boolean; paid?:
 const CURRENCY_SYMBOLS: Record<string, string> = {
   USD: '$', NGN: '₦', GHS: 'GH₵', KES: 'KSh', ZAR: 'R', EGP: 'E£',
   XOF: 'CFA', UGX: 'USh', RWF: 'FRw', TZS: 'TSh', GBP: '£',
+}
+
+export function convertUsdCentsForCountry(usdCents: number, country: string): { amountCents: number; currency: string } {
+  const rates: Record<string, { currency: string; rate: number }> = {
+    NG: { currency: 'NGN', rate: 1500 }, GH: { currency: 'GHS', rate: 15 }, KE: { currency: 'KES', rate: 130 },
+    ZA: { currency: 'ZAR', rate: 18 }, EG: { currency: 'EGP', rate: 48 }, CI: { currency: 'XOF', rate: 600 },
+    RW: { currency: 'RWF', rate: 1300 }, UG: { currency: 'UGX', rate: 3700 }, TZ: { currency: 'TZS', rate: 2600 },
+    US: { currency: 'USD', rate: 1 }, GB: { currency: 'GBP', rate: 1 },
+  }
+  const match = rates[country.toUpperCase()] ?? rates.US
+  return { amountCents: Math.max(1, Math.round(usdCents * match.rate)), currency: match.currency }
 }
 
 export function formatCents(cents: number, currency = 'USD'): string {

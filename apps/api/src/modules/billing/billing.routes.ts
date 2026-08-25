@@ -10,7 +10,7 @@ import {
 } from './gateway.js'
 import {
   listPlans, getSubscription, createSubscription, changePlan,
-    listInvoices, listPaymentMethods, addPaymentMethod, removePaymentMethod, setDefaultPaymentMethod,
+    listInvoices, listPaymentMethods, removePaymentMethod, setDefaultPaymentMethod,
     createCheckoutInvoice, confirmGatewayCheckout, activateManualSubscription,
     getBillingSettings, setBillingSettings, makeReference, cancelGatewaySubscription,
   } from './billing.service.js'
@@ -102,12 +102,13 @@ export async function billingRoutes(app: FastifyInstance) {
     return reply.send({ methods })
   })
 
-  app.post('/billing/payment-methods', { preHandler: requirePermission('billing.manage') }, async (req, reply) => {
-    const ctx = req.tenantCtx!
-    const body = (req.body ?? {}) as { brand?: string; last4: string; exp_month?: number; exp_year?: number }
-    if (!body.last4) return reply.code(400).send({ error: { code: 'last4_required', message: 'last4 is required' } })
-    const method = await addPaymentMethod(app.db, ctx.tenantId, body)
-    return reply.code(201).send({ method })
+  app.post('/billing/payment-methods', { preHandler: requirePermission('billing.manage') }, async (_req, reply) => {
+    return reply.code(410).send({
+      error: {
+        code: 'hosted_payment_method_required',
+        message: 'Payment methods must be added through a hosted Paystack or Stripe checkout.',
+      },
+    })
   })
 
   app.delete('/billing/payment-methods/:id', { preHandler: requirePermission('billing.manage') }, async (req, reply) => {

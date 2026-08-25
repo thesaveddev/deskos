@@ -61,6 +61,27 @@ describe('billing gateways', () => {
     })
     expect(res.statusCode).toBe(200)
     expect(res.json().billing.country).toBe('US')
+    expect(res.json().billing.currency).toBe('USD')
+
+    const nigeria = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/billing/meta',
+      headers: authHeaders(owner),
+      payload: { country: 'NG' },
+    })
+    expect(nigeria.statusCode).toBe(200)
+    expect(nigeria.json().billing.currency).toBe('NGN')
+  })
+
+  it('does not accept manually fabricated payment method metadata', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/billing/payment-methods',
+      headers: authHeaders(owner),
+      payload: { brand: 'visa', last4: '4242', exp_month: 12, exp_year: 2030 },
+    })
+    expect(res.statusCode).toBe(410)
+    expect(res.json().error.code).toBe('hosted_payment_method_required')
   })
 
   it('checkout falls back to manual (offline invoice) and activates immediately', async () => {

@@ -49,6 +49,13 @@
 .settings-switch.on span { background: #1b1408; transform: translateX(16px); }
 .settings-switch:disabled { cursor: not-allowed; }
 .settings-note { display: flex; align-items: flex-start; gap: 7px; margin: 0 0 15px; color: var(--text-2); font-size: 12px; line-height: 1.45; }
+.settings-subsection { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line-1); }
+.settings-subsection h3 { margin: 0 0 4px; color: var(--text-1); font-size: 13px; }
+.settings-subsection > p { margin: 0 0 8px; color: var(--text-3); font-size: 11px; line-height: 1.45; }
+.settings-subsection .settings-toggle-row:first-of-type { border-top: 1px solid var(--line-1); }
+.settings-channel-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; }
+.settings-channel-grid label { display: inline-flex; align-items: center; gap: 7px; color: var(--text-2); font-size: 11px; }
+.settings-channel-grid input { accent-color: var(--accent); }
 .settings-saved { color: var(--ok); font-size: 11px; }
 .settings-color-input { width: 58px; min-height: 34px; padding: 3px; }
 .settings-card-link { width: fit-content; text-decoration: none; }
@@ -163,11 +170,21 @@
 .portal-access-panel { background: var(--bg-2); }
 .portal-address-card,
 .portal-how-it-works,
-.portal-toggles {
-  margin-top: 0;
+.portal-invite-panel {
+  margin-top: 18px;
+  padding: 18px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+}
+.portal-how-it-works {
+  border-left: 3px solid var(--accent);
+}
+.portal-invite-panel {
+  border-left: 3px solid var(--line-2);
 }
 .portal-invite-panel .portal-slug-row { max-width: none; }
-.portal-welcome-input { width: min(100%, 680px); min-height: 76px; resize: vertical; }
+.portal-welcome-input { width: 100%; min-width: 0; min-height: 96px; resize: vertical; }
 .portal-invite-panel .portal-welcome-input { width: 100%; }
 .portal-access-panel .settings-toggle-row:first-child { padding-top: 2px; }
 .portal-access-panel .settings-toggle-row:last-child { padding-bottom: 2px; }

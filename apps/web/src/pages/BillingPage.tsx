@@ -10,8 +10,8 @@ import { useAuth } from '../lib/auth.js'
 import {
   listPlans, getSubscription, getEntitlement, createSubscription, changePlan, cancelSubscription,
   listInvoices, listPaymentMethods, removePaymentMethod, setDefaultPaymentMethod,
-  addPaymentMethod, getBillingMeta, setBillingCountry, startCheckout, checkoutStatus,
-  formatCents,
+  getBillingMeta, setBillingCountry, startCheckout, checkoutStatus,
+  formatCents, convertUsdCentsForCountry,
   type Plan, type Subscription, type Invoice, type PaymentMethod, type EntitlementInfo,
   type GatewayInfo, type BillingAnalytics,
   getBillingAnalytics,
@@ -82,13 +82,9 @@ export default function BillingPage() {
   const [regionDraft, setRegionDraft] = useState('')
   const [savingRegion, setSavingRegion] = useState(false)
   const [checkoutPlan, setCheckoutPlan] = useState<Plan | null>(null)
-  const [checkoutGateway, setCheckoutGateway] = useState('auto')
-  const [checkoutMethod, setCheckoutMethod] = useState('')
   const [startingCheckout, setStartingCheckout] = useState(false)
   const [showCancel, setShowCancel] = useState(false)
   const [changing, setChanging] = useState<string | null>(null)
-  const [showAddCard, setShowAddCard] = useState(false)
-  const [newCard, setNewCard] = useState({ brand: 'visa', last4: '', exp_month: '', exp_year: '' })
 
   const refreshBilling = useCallback(async () => {
     const [s, i, pm] = await Promise.allSettled([getSubscription(), listInvoices(), listPaymentMethods()])
@@ -142,14 +138,6 @@ export default function BillingPage() {
     catch (err) { setError(err instanceof Error ? err.message : 'Could not cancel') }
   }
 
-  const handleAddCard = async () => {
-    if (!newCard.last4 || newCard.last4.length < 4) return
-    try {
-      const { method } = await addPaymentMethod({ brand: newCard.brand, last4: newCard.last4, exp_month: newCard.exp_month ? Number(newCard.exp_month) : undefined, exp_year: newCard.exp_year ? Number(newCard.exp_year) : undefined })
-      setMethods((p) => [method, ...p]); setNewCard({ brand: 'visa', last4: '', exp_month: '', exp_year: '' }); setShowAddCard(false)
-    } catch (err) { setError(err instanceof Error ? err.message : 'Could not add card') }
-  }
-
   const handleRemoveCard = async (id: number) => {
     try { await removePaymentMethod(id); setMethods((p) => p.filter((m) => m.id !== id)) }
     catch (err) { setError(err instanceof Error ? err.message : 'Could not remove') }
@@ -168,7 +156,7 @@ export default function BillingPage() {
     setSavingRegion(false)
   }
 
-  const openCheckout = (plan: Plan) => { setCheckoutPlan(plan); setCheckoutGateway('auto'); setCheckoutMethod('') }
+  const openCheckout = (plan: Plan) => { setCheckoutPlan(plan) }
 
   const beginCheckout = async () => {
     if (!checkoutPlan) return
@@ -184,18 +172,17 @@ export default function BillingPage() {
 
   const currentPlan = plans.find((p) => p.slug === (sub?.plan_slug ?? 'free'))
   const price = (plan: Plan) => cycle === 'annual' ? plan.price_annual_cents : plan.price_monthly_cents
-  const currency = meta?.currency ?? 'USD'
+  const localizedPrice = (plan: Plan) => convertUsdCentsForCountry(price(plan), meta?.country ?? 'US')
+  const currency = meta?.currency ?? localizedPrice(plans[0] ?? { price_monthly_cents: 0, price_annual_cents: 0 } as Plan).currency
   const usedFeatures = useMemo(() => currentPlan?.features.slice(0, 4) ?? [], [currentPlan])
 
   const gatewaysForRegion = meta?.gateways ?? []
   const autoGateway = gatewaysForRegion.find((g) => g.enabled && g.slug !== 'manual') ?? gatewaysForRegion.find((g) => g.enabled)
-  const activeGateway = checkoutGateway === 'auto' ? autoGateway : gatewaysForRegion.find((g) => g.slug === checkoutGateway)
+  const activeGateway = autoGateway
   const usageWarnings = entitlement ? [
     { label: 'Technicians', used: entitlement.currentTechnicians, limit: entitlement.maxTechnicians },
     { label: 'Devices', used: entitlement.currentDevices, limit: entitlement.maxDevices },
   ].filter((item) => item.limit > 0 && item.used >= item.limit * 0.8) : []
-  const activeMethods = activeGateway?.methods ?? []
-  const chosenMethod = activeMethods.find((m) => m.id === checkoutMethod) ?? activeMethods[0]
 
   const tabs: Array<{ id: BillingTab; label: string; n?: number }> = [
     { id: 'overview', label: 'Overview' },
@@ -273,10 +260,10 @@ export default function BillingPage() {
       {tab === 'analytics' && isOwner ? <AnalyticsTab analytics={analytics} loading={analyticsLoading} currency={currency} /> : null}
 
       {/* ── Plans ────────────────────────────────────────── */}
-      {tab === 'plans' && <PlansTab plans={plans} sub={sub} cycle={cycle} setCycle={setCycle} isOwner={isOwner} changing={changing} price={price} currency={currency} onChangePlan={handleChangePlan} onCheckout={openCheckout} />}
+      {tab === 'plans' && <PlansTab plans={plans} sub={sub} cycle={cycle} setCycle={setCycle} isOwner={isOwner} changing={changing} price={price} localizedPrice={localizedPrice} currency={currency} onChangePlan={handleChangePlan} onCheckout={openCheckout} />}
 
       {/* ── Payment ──────────────────────────────────────── */}
-      {tab === 'payment' && <PaymentTab methods={methods} meta={meta} isOwner={isOwner} regionDraft={regionDraft} setRegionDraft={setRegionDraft} savingRegion={savingRegion} saveRegion={saveRegion} showAddCard={showAddCard} setShowAddCard={setShowAddCard} newCard={newCard} setNewCard={setNewCard} onAddCard={handleAddCard} onRemove={handleRemoveCard} onSetDefault={handleSetDefault} />}
+      {tab === 'payment' && <PaymentTab methods={methods} meta={meta} isOwner={isOwner} regionDraft={regionDraft} setRegionDraft={setRegionDraft} savingRegion={savingRegion} saveRegion={saveRegion} onRemove={handleRemoveCard} onSetDefault={handleSetDefault} onPlans={() => setTab('plans')} />}
 
       {/* ── Invoices ─────────────────────────────────────── */}
       {tab === 'invoices' && <InvoicesTab invoices={invoices} currency={currency} />}
@@ -301,7 +288,7 @@ export default function BillingPage() {
           <div className="modal b-checkout-modal" onClick={(e) => e.stopPropagation()}>
             <h3 className="modal-title">Checkout — {checkoutPlan.name}</h3>
             <p className="modal-desc">
-              {formatCents(price(checkoutPlan), currency)}/{cycle === 'annual' ? 'mo, billed annually' : 'month'}
+              {formatCents(localizedPrice(checkoutPlan).amountCents, localizedPrice(checkoutPlan).currency)}/{cycle === 'annual' ? 'mo, billed annually' : 'month'}
               {sub ? ' · plan upgrades on payment.' : ' · starts your subscription today.'}
             </p>
             <div className="b-checkout-region">
@@ -311,26 +298,24 @@ export default function BillingPage() {
                 <span>{meta?.countries.find((c) => c.code === meta?.country)?.name || 'Not set'}</span>
               </div>
             </div>
-            <div className="b-checkout-gateways">
-              {gatewaysForRegion.filter((g) => g.enabled).map((g) => (
-                <label key={g.slug} className={`b-gw-option${checkoutGateway === g.slug ? ' b-gw-selected' : ''}`}>
-                  <input type="radio" name="gw" value={g.slug} checked={checkoutGateway === g.slug} onChange={() => { setCheckoutGateway(g.slug); setCheckoutMethod('') }} />
-                  <span className="b-gw-option-head"><GatewayBadge slug={g.slug} /><span className="muted">{g.methods.length} methods</span></span>
-                  {checkoutGateway === g.slug && (
-                    <span className="b-gw-methods">
-                      {g.methods.map((m) => <button key={m.id} type="button" className={`b-method-pill${checkoutMethod === m.id ? ' b-method-active' : ''}`} onClick={() => setCheckoutMethod(m.id)}>{m.label}{m.note ? <small> · {m.note}</small> : null}</button>)}
-                    </span>
-                  )}
-                </label>
-              ))}
+            <div className="b-checkout-provider">
+              {activeGateway ? (
+                <div className="b-checkout-provider-card">
+                  <div className="b-gw-option-head"><span><span className="field-label">Payment route for {meta?.country || 'your region'}</span><GatewayBadge slug={activeGateway.slug} /></span><span className="b-provider-lock"><Icon name={activeGateway.slug === 'manual' ? 'file' : 'lock'} size={12} />{activeGateway.slug === 'manual' ? 'Invoice billing' : 'Hosted checkout'}</span></div>
+                  <p>{activeGateway.slug === 'manual' ? 'We will send an invoice with bank-transfer instructions. No card details are entered in ReyDesk.' : `${activeGateway.label} presents the eligible local payment methods on its secure checkout page. Card and bank details never pass through ReyDesk.`}</p>
+                  <div className="b-gw-methods" aria-label="Available payment methods">
+                    {activeGateway.methods.map((m) => <span key={m.id} className="b-method-pill b-method-pill-static">{m.label}{m.note ? <small> · {m.note}</small> : null}</span>)}
+                  </div>
+                </div>
+              ) : <p className="b-empty">No online provider is configured for this region. Choose offline invoice payment or contact an administrator.</p>}
             </div>
             <p className="b-checkout-note">
-              {checkoutGateway === 'manual' ? <><Icon name="alert" size={13} />Offline payment: we'll email an invoice; your plan activates on confirmation.</> : <><Icon name="lock" size={13} />Redirected to {activeGateway?.label ?? 'payment provider'} — payment is handled securely off-site.</>}
+              {activeGateway?.slug === 'manual' ? <><Icon name="file" size={13} />We will create an invoice for bank transfer. Your plan is activated after payment is confirmed.</> : <><Icon name="lock" size={13} />You will be redirected to {activeGateway?.label ?? 'the payment provider'} — payment details are handled securely off-site.</>}
             </p>
             <div className="modal-actions">
               <button className="btn btn-ghost" onClick={() => setCheckoutPlan(null)}>Cancel</button>
-              <button className="btn btn-primary" onClick={() => void beginCheckout()} disabled={startingCheckout}>
-                <Icon name="lock" size={14} />{startingCheckout ? 'Redirecting…' : `Pay with ${activeGateway?.label ?? 'gateway'}${chosenMethod ? ` · ${chosenMethod.label}` : ''}`}
+              <button className="btn btn-primary" onClick={() => void beginCheckout()} disabled={startingCheckout || !activeGateway}>
+                <Icon name={activeGateway?.slug === 'manual' ? 'file' : 'lock'} size={14} />{startingCheckout ? (activeGateway?.slug === 'manual' ? 'Creating invoice…' : 'Opening secure checkout…') : activeGateway?.slug === 'manual' ? 'Request invoice' : activeGateway ? `Continue with ${activeGateway.label}` : 'Provider unavailable'}
               </button>
             </div>
           </div>
@@ -392,9 +377,9 @@ function OverviewTab({ currentPlan, sub, usedFeatures, meta, isOwner, setTab }: 
 
 /* ── Plans tab ─────────────────────────────────────────────────── */
 
-function PlansTab({ plans, sub, cycle, setCycle, isOwner, changing, price, currency, onChangePlan, onCheckout }: {
+function PlansTab({ plans, sub, cycle, setCycle, isOwner, changing, price, localizedPrice, currency, onChangePlan, onCheckout }: {
   plans: Plan[]; sub: Subscription | null; cycle: 'monthly' | 'annual'; setCycle: (c: 'monthly' | 'annual') => void;
-  isOwner: boolean; changing: string | null; price: (p: Plan) => number; currency: string;
+  isOwner: boolean; changing: string | null; price: (p: Plan) => number; localizedPrice: (p: Plan) => { amountCents: number; currency: string }; currency: string;
   onChangePlan: (slug: string) => void; onCheckout: (plan: Plan) => void;
 }) {
   return (
@@ -417,7 +402,7 @@ function PlansTab({ plans, sub, cycle, setCycle, isOwner, changing, price, curre
               <h3 className="b-plan-name">{plan.name}</h3>
               <p className="b-plan-desc">{plan.description}</p>
               <div className="b-plan-price">
-                {p === 0 ? 'Free' : <><span className="b-plan-amount">{formatCents(p, currency)}</span><span className="b-plan-period">/{cycle === 'annual' ? 'mo' : 'month'}</span></>}
+                {p === 0 ? 'Free' : <><span className="b-plan-amount">{formatCents(localizedPrice(plan).amountCents, localizedPrice(plan).currency)}</span><span className="b-plan-period">/{cycle === 'annual' ? 'mo' : 'month'}</span></>}
                 {p !== 0 && cycle === 'annual' && <span className="b-plan-billed">billed annually</span>}
               </div>
               <ul className="b-plan-features">
@@ -451,8 +436,6 @@ function PlansTab({ plans, sub, cycle, setCycle, isOwner, changing, price, curre
 
 /* ── Payment tab ───────────────────────────────────────────────── */
 
-type CardDraft = { brand: string; last4: string; exp_month: string; exp_year: string }
-
 interface PaymentTabProps {
   methods: PaymentMethod[]
   meta: { country: string; detectedCountry: string; gateways: GatewayInfo[]; countries: Array<{ code: string; name: string; gateway: string }> } | null
@@ -461,16 +444,12 @@ interface PaymentTabProps {
   setRegionDraft: (v: string) => void
   savingRegion: boolean
   saveRegion: () => void
-  showAddCard: boolean
-  setShowAddCard: (v: boolean | ((p: boolean) => boolean)) => void
-  newCard: CardDraft
-  setNewCard: (fn: (p: CardDraft) => CardDraft) => void
-  onAddCard: () => void
   onRemove: (id: number) => void
   onSetDefault: (id: number) => void
+  onPlans: () => void
 }
 
-function PaymentTab({ methods, meta, isOwner, regionDraft, setRegionDraft, savingRegion, saveRegion, showAddCard, setShowAddCard, newCard, setNewCard, onAddCard, onRemove, onSetDefault }: PaymentTabProps) {
+function PaymentTab({ methods, meta, isOwner, regionDraft, setRegionDraft, savingRegion, saveRegion, onRemove, onSetDefault, onPlans }: PaymentTabProps) {
   return (
     <div className="b-payment">
       {/* Region */}
@@ -501,22 +480,15 @@ function PaymentTab({ methods, meta, isOwner, regionDraft, setRegionDraft, savin
       {/* Methods */}
       <div className="b-section b-section-spacer">
         <div className="b-section-head">
-          <div><h3>Payment methods</h3><p>Cards on file for subscription charges.</p></div>
-          {isOwner && <button className="btn btn-ghost btn-sm" onClick={() => setShowAddCard((p) => !p)}><Icon name="add" size={14} />{showAddCard ? 'Cancel' : 'Add card'}</button>}
+          <div><h3>Payment methods</h3><p>Secure provider tokens used for subscription charges.</p></div>
+          {isOwner && <button className="btn btn-primary btn-sm" onClick={onPlans}><Icon name="lock" size={14} />Open secure checkout</button>}
         </div>
-        {showAddCard && (
-          <div className="b-add-card">
-            <select className="field-input" value={newCard.brand} onChange={(e) => setNewCard((p) => ({ ...p, brand: e.target.value }))}>
-              <option value="visa">Visa</option><option value="mastercard">Mastercard</option><option value="amex">American Express</option>
-            </select>
-            <input className="field-input" placeholder="Last 4 digits" value={newCard.last4} onChange={(e) => setNewCard((p) => ({ ...p, last4: e.target.value.replace(/\D/g, '').slice(0, 4) }))} maxLength={4} />
-            <input className="field-input" placeholder="MM" value={newCard.exp_month} onChange={(e) => setNewCard((p) => ({ ...p, exp_month: e.target.value.replace(/\D/g, '').slice(0, 2) }))} maxLength={2} style={{ maxWidth: 60 }} />
-            <input className="field-input" placeholder="YY" value={newCard.exp_year} onChange={(e) => setNewCard((p) => ({ ...p, exp_year: e.target.value.replace(/\D/g, '').slice(0, 2) }))} maxLength={2} style={{ maxWidth: 60 }} />
-            <button className="btn btn-primary btn-sm" onClick={() => void onAddCard()} disabled={newCard.last4.length < 4}>Add</button>
-          </div>
-        )}
+        <div className="b-payment-method-note">
+          <Icon name="shield" size={16} />
+          <span><strong>Payment details stay with the provider.</strong><small>ReyDesk never asks for a full card number or security code. Complete a hosted checkout to add or update a payment method.</small></span>
+        </div>
         {methods.length === 0 ? (
-          <p className="b-empty">No payment methods on file. Cards are saved when you complete a checkout.</p>
+          <div className="b-payment-empty"><p>No payment methods on file yet.</p><button className="btn btn-ghost btn-sm" onClick={onPlans}>Choose a paid plan <Icon name="forward" size={14} /></button></div>
         ) : (
           <div className="b-method-list">
             {methods.map((m) => (

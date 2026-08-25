@@ -67,12 +67,12 @@ export class StripeGateway implements PaymentGateway {
     return json
   }
 
-  private priceKey(slug: string, cycle: 'monthly' | 'annual'): string {
-    return `reydesk_${slug}_${cycle}`
+  private priceKey(slug: string, cycle: 'monthly' | 'annual', currency: string): string {
+    return `reydesk_${slug}_${cycle}_${currency.toLowerCase()}`
   }
 
   private async ensurePrice(input: CheckoutInput): Promise<string> {
-    const lookupKey = this.priceKey(input.planSlug, input.billingCycle)
+    const lookupKey = this.priceKey(input.planSlug, input.billingCycle, input.currency)
     const existing = await this.request<{ data?: Array<{ id: string }> }>(
       'GET',
       `/prices?lookup_keys[]=${encodeURIComponent(lookupKey)}`,
@@ -103,7 +103,6 @@ export class StripeGateway implements PaymentGateway {
     query.set('metadata[tenant_id]', input.tenantId)
     query.set('metadata[plan_slug]', input.planSlug)
     query.set('metadata[billing_cycle]', input.billingCycle)
-    query.set('automatic_payment_methods[enabled]', 'true')
     query.set('allow_promotion_codes', 'true')
 
     const session = await this.request<StripeSession>('POST', '/checkout/sessions', query)

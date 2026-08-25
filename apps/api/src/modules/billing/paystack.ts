@@ -86,12 +86,12 @@ export class PaystackGateway implements PaymentGateway {
     return json.data as T
   }
 
-  private planCode(planSlug: string, cycle: 'monthly' | 'annual'): string {
-    return `reydesk_${planSlug}_${cycle}`
+  private planCode(planSlug: string, cycle: 'monthly' | 'annual', currency: string): string {
+    return `reydesk_${planSlug}_${cycle}_${currency.toUpperCase()}`
   }
 
   private async ensurePlan(input: CheckoutInput): Promise<string> {
-    const code = this.planCode(input.planSlug, input.billingCycle)
+    const code = this.planCode(input.planSlug, input.billingCycle, input.currency)
     try {
       const existing = await this.request<{ plan_code: string }>('GET', `/plan/${code}`)
       return existing.plan_code
