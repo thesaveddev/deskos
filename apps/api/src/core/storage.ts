@@ -1,6 +1,6 @@
 import { createHash, createHmac, randomBytes } from 'node:crypto'
 import { createReadStream, createWriteStream } from 'node:fs'
-import { mkdir, stat, unlink, readdir } from 'node:fs/promises'
+import { mkdir, stat, unlink } from 'node:fs/promises'
 import path from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { Readable } from 'node:stream'
@@ -122,9 +122,6 @@ function generateStorageKey(prefix: string, tenantId: string, filename: string):
   return `${prefix}/${tenantId}/${hex}-${safe}`
 }
 
-function generateRecordingKey(tenantId: string): string {
-  return `recordings/${tenantId}/${randomBytes(16).toString('hex')}.webm`
-}
 
 /**
  * Core storage abstraction.

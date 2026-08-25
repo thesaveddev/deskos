@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto'
 import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { AppError } from '../../core/errors.js'

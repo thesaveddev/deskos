@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto'
 import path from 'node:path'
 import { z } from 'zod'
 import type { FastifyInstance } from 'fastify'
