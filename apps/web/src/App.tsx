@@ -289,6 +289,7 @@ export default function App() {
       <Route path="/portal/new" element={<Protected><PortalNewTicketPage /></Protected>} />
       <Route path="/portal/tickets/:number" element={<Protected><PortalTicketPage /></Protected>} />
       {/* Public tenant portal — reydesk.com/portal/<organisation-slug> */}
+      <Route path="/portal/:slug/kb/:articleId" element={<PortalPublicPage />} />
       <Route path="/portal/:slug" element={<PortalPublicPage />} />
       <Route path="*" element={<NotFoundPage />} />
     </Routes>

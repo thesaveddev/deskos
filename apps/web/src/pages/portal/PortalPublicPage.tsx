@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Alert, BrandRow, Field } from '../../components/ui.js'
 import { Icon } from '../../components/Icons.js'
 import { formatWhen } from '../../lib/tickets.js'
@@ -27,7 +27,8 @@ interface PublicArticle {
 
 /** Public tenant portal page, shared as reydesk.com/portal/<slug>. */
 export default function PortalPublicPage() {
-  const { slug = '' } = useParams<{ slug: string }>()
+  const { slug = '', articleId } = useParams<{ slug: string; articleId?: string }>()
+  const navigate = useNavigate()
   const [meta, setMeta] = useState<PortalMeta | null>(null)
   const [notFound, setNotFound] = useState(false)
   const [categories, setCategories] = useState<PortalKbCategory[]>([])
@@ -42,6 +43,7 @@ export default function PortalPublicPage() {
   const [registerBusy, setRegisterBusy] = useState(false)
   const [registerDone, setRegisterDone] = useState<string | null>(null)
   const [registerError, setRegisterError] = useState<string | null>(null)
+  const [articleLinkCopied, setArticleLinkCopied] = useState(false)
   const debounceRef = useRef<number | undefined>(undefined)
 
   const loadArticles = useCallback(async (search: string, folderId?: string | null) => {
@@ -90,17 +92,29 @@ export default function PortalPublicPage() {
     return () => window.clearTimeout(debounceRef.current)
   }, [query, meta, loadArticles, activeCategory])
 
-  const openArticle = async (id: string) => {
+  const openArticle = useCallback(async (id: string) => {
     setError(null)
     try {
-      const res = await fetch(`/api/v1/public/portal/${encodeURIComponent(slug)}/kb/${id}`)
+      const res = await fetch(`/api/v1/public/portal/${encodeURIComponent(slug)}/kb/${encodeURIComponent(id)}`)
       if (!res.ok) throw new Error('not found')
       const body = (await res.json()) as { article: PublicArticle }
       setArticle(body.article)
     } catch {
+      setArticle(null)
       setError('This article could not be opened.')
     }
-  }
+  }, [slug])
+
+  // A public article URL is intentionally stable and reloadable. This also
+  // means links from invitation emails, chat, and search engines open the
+  // article directly instead of depending on in-memory component state.
+  useEffect(() => {
+    if (!articleId) {
+      setArticle(null)
+      return
+    }
+    if (meta?.allowPublicKb) void openArticle(articleId)
+  }, [articleId, meta?.allowPublicKb, openArticle])
 
   if (notFound) return (
     <div className="auth-screen">
@@ -256,7 +270,7 @@ export default function PortalPublicPage() {
             ) : (
               <div className="public-portal-article-grid">
                 {articles.map((item) => (
-                  <button key={item.id} type="button" className="public-portal-article" onClick={() => void openArticle(item.id)}>
+                  <button key={item.id} type="button" className="public-portal-article" onClick={() => navigate(`/portal/${encodeURIComponent(slug)}/kb/${encodeURIComponent(item.id)}`)}>
                     <strong>{item.title}</strong>
                     {item.summary ? <span>{item.summary}</span> : null}
                     <small>Updated {formatWhen(item.updated_at)}</small>
@@ -269,9 +283,23 @@ export default function PortalPublicPage() {
 
         {article ? (
           <section className="public-portal-article-reader">
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setArticle(null)}>
-              ← All articles
-            </button>
+            <div className="public-portal-article-reader-actions">
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => navigate(`/portal/${encodeURIComponent(slug)}#kb`)}>
+                <Icon name="back" size={14} />All articles
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => {
+                  void navigator.clipboard?.writeText(`${window.location.origin}/portal/${encodeURIComponent(slug)}/kb/${encodeURIComponent(article.id)}`)
+                  setArticleLinkCopied(true)
+                  window.setTimeout(() => setArticleLinkCopied(false), 1800)
+                }}
+                title="Copy shareable article link"
+              >
+                <Icon name="copy" size={14} />{articleLinkCopied ? 'Copied' : 'Copy link'}
+              </button>
+            </div>
             <h2>{article.title}</h2>
             {article.summary ? <p className="muted">{article.summary}</p> : null}
             <div className="public-portal-article-body" dangerouslySetInnerHTML={{ __html: article.body ?? '' }} />
