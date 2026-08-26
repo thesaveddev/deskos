@@ -116,9 +116,21 @@ function handleControlMessage(runtime: Runtime, event: MessageEvent): void {
       // Start on the endpoint's primary display rather than spanning the
       // virtual desktop. Explicit technician choices (including All displays)
       // continue to win after the initial monitor catalogue arrives.
-      const selectedMonitorId = runtime.snapshot.monitors.length === 0 && message.action === 'list'
-        ? (monitors.find((monitor) => monitor.primary)?.id ?? reportedSelection)
-        : reportedSelection
+      const autoPrimary = runtime.snapshot.monitors.length === 0 && message.action === 'list'
+        ? (monitors.find((monitor) => monitor.primary)?.id ?? null)
+        : null
+      const selectedMonitorId = autoPrimary !== null ? autoPrimary : reportedSelection
+      // Reconcile the endpoint: newer agents default to the primary display
+      // themselves, but an older agent may still be capturing every display.
+      // Asking it to select the same monitor makes frame and coordinates agree.
+      if (autoPrimary !== null && runtime.controlChannel?.readyState === 'open') {
+        try {
+          runtime.controlChannel.send(JSON.stringify({ type: 'control', action: 'monitor_select', monitorId: autoPrimary }))
+        } catch {
+          // The reliable channel may be briefly busy; the agent's own primary
+          // default and the next user selection reconcile it.
+        }
+      }
       notify(runtime, { monitors, selectedMonitorId, monitorStatus: message.action === 'selected' ? 'Display selection applied.' : null })
       return
     }

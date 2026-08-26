@@ -3680,8 +3680,8 @@ fn rejected_control_audit(action: impl Into<String>, reason: &str) -> ControlAud
 fn handle_control_message(
     message: &DataChannelMessage,
     can_control: bool,
-    monitors: &[Monitor],
-    selected_monitor: &Arc<StdMutex<Option<usize>>>,
+    _monitors: &[Monitor],
+    _selected_monitor: &Arc<StdMutex<Option<usize>>>,
 ) -> ControlAudit {
     let Ok(text) = std::str::from_utf8(&message.data) else {
         eprintln!("Rejected non-UTF-8 control message");
@@ -3743,27 +3743,15 @@ fn handle_control_message(
         eprintln!("Rejected invalid input payload");
         return rejected_control_audit(action, "invalid_payload");
     }
-    let mut input_value = value;
-    if let Some(selected) = selected_monitor.lock().ok().and_then(|selection| *selection) {
-        if let Some(monitor) = monitors.get(selected) {
-            if let (Some(x), Some(y)) = (
-                input_value.get("x").and_then(serde_json::Value::as_f64),
-                input_value.get("y").and_then(serde_json::Value::as_f64),
-            ) {
-                let virtual_left = monitors.iter().filter_map(|item| item.x().ok()).min().unwrap_or(0) as f64;
-                let virtual_top = monitors.iter().filter_map(|item| item.y().ok()).min().unwrap_or(0) as f64;
-                let virtual_right = monitors.iter().filter_map(|item| item.x().ok().zip(item.width().ok()).map(|(left, width)| left + width as i32)).max().unwrap_or(1) as f64;
-                let virtual_bottom = monitors.iter().filter_map(|item| item.y().ok().zip(item.height().ok()).map(|(top, height)| top + height as i32)).max().unwrap_or(1) as f64;
-                let left = monitor.x().unwrap_or(0) as f64;
-                let top = monitor.y().unwrap_or(0) as f64;
-                let width = monitor.width().unwrap_or(1).max(1) as f64;
-                let height = monitor.height().unwrap_or(1).max(1) as f64;
-                input_value["x"] = serde_json::json!(((left + x.clamp(0.0, 1.0) * width - virtual_left) / (virtual_right - virtual_left).max(1.0)).clamp(0.0, 1.0));
-                input_value["y"] = serde_json::json!(((top + y.clamp(0.0, 1.0) * height - virtual_top) / (virtual_bottom - virtual_top).max(1.0)).clamp(0.0, 1.0));
-            }
-        }
-    }
-    match apply_input(&input_value, &action) {
+    // The console always sends normalized coordinates for the full virtual
+    // desktop (it maps the selected display's frame into virtual bounds before
+    // sending). The Windows input backend injects with
+    // MOUSEEVENTF_ABSOLUTE|MOUSEEVENTF_VIRTUALDESK, which expects exactly that
+    // virtual-desktop fraction, so the payload passes through unchanged.
+    // Remapping here used to double-map the fraction, which offset every click
+    // when the endpoint had more than one display or the selected display was
+    // not at the virtual origin.
+    match apply_input(&value, &action) {
         Ok(()) => {
             println!("Applied validated input action: {action}");
             ControlAudit {
@@ -3779,6 +3767,30 @@ fn handle_control_message(
     }
 }
 
+/// Present monitor names the way humans expect them. Windows reports device
+/// paths such as `\\.\DISPLAY1` or `\\?\DISPLAY2`; macOS reports friendly
+/// names like "Color LCD". Strip the path and keep the readable label.
+fn friendly_monitor_name(monitor: &Monitor, index: usize) -> String {
+    let raw = monitor.name().unwrap_or_default();
+    let name = raw.trim();
+    if name.is_empty() {
+        return format!("Display {}", index + 1);
+    }
+    let stripped = name.trim_start_matches("\\\\.\\").trim_start_matches("\\\\?\\");
+    if stripped != name {
+        if let Some(digits) = stripped.strip_prefix("DISPLAY") {
+            if !digits.is_empty() && digits.chars().all(|character| character.is_ascii_digit()) {
+                return format!("Display {digits}");
+            }
+        }
+        return format!("Display {}", index + 1);
+    }
+    if name.contains('\\') || name.contains('/') || name.len() > 32 {
+        return format!("Display {}", index + 1);
+    }
+    name.to_owned()
+}
+
 fn monitor_catalog(monitors: &[Monitor]) -> Vec<serde_json::Value> {
     monitors
         .iter()
@@ -3786,7 +3798,7 @@ fn monitor_catalog(monitors: &[Monitor]) -> Vec<serde_json::Value> {
         .map(|(index, monitor)| {
             serde_json::json!({
                 "id": index,
-                "name": monitor.name().unwrap_or_else(|_| format!("Display {}", index + 1)),
+                "name": friendly_monitor_name(monitor, index),
                 "x": monitor.x().unwrap_or(0),
                 "y": monitor.y().unwrap_or(0),
                 "width": monitor.width().unwrap_or(0),
@@ -4356,7 +4368,16 @@ async fn accept_webrtc_offer(
 
     let data_client = client.clone();
     let data_session_id = session_id.clone();
-    let monitor_selection = Arc::new(StdMutex::new(None::<usize>));
+    // Start on the endpoint's primary display so the first frame the
+    // technician sees is the primary screen. "All displays" remains available
+    // through the console switcher (monitor_all clears the selection).
+    let initial_monitor_selection = Monitor::all().ok().and_then(|monitors| {
+        monitors
+            .iter()
+            .position(|monitor| monitor.is_primary().unwrap_or(false))
+            .or_else(|| (!monitors.is_empty()).then_some(0))
+    });
+    let monitor_selection = Arc::new(StdMutex::new(initial_monitor_selection));
     let terminal_state = Arc::new(Mutex::new(None::<Child>));
     let file_transfers: UploadTransfers = Arc::new(Mutex::new(HashMap::new()));
     let publisher_monitor_selection = monitor_selection.clone();
@@ -4377,6 +4398,7 @@ async fn accept_webrtc_offer(
             let is_control_channel = label == "control";
             let opened = channel.clone();
             let cursor_channel = channel.clone();
+            let monitor_selection_open = monitor_selection.clone();
             channel.on_open(Box::new(move || {
                 let opened = opened.clone();
                 let cursor_channel = cursor_channel.clone();
@@ -4385,6 +4407,26 @@ async fn accept_webrtc_offer(
                         return;
                     }
                     let _ = opened.send_text("ReyDesk agent control channel ready").await;
+                    // Publish the monitor catalogue immediately (not waiting for
+                    // a console request) so the technician console can adopt the
+                    // primary display and map coordinates before the user ever
+                    // interacts with the remote screen. Serialized before the
+                    // await because xcap Monitor is not Send across await points.
+                    let catalogue_json = {
+                        let monitors_for_open = Monitor::all().unwrap_or_default();
+                        let selected_for_open = monitor_selection_open
+                            .lock()
+                            .ok()
+                            .and_then(|selection| *selection);
+                        serde_json::json!({
+                            "type": "monitor",
+                            "action": "list",
+                            "monitors": monitor_catalog(&monitors_for_open),
+                            "selectedMonitorId": selected_for_open,
+                        })
+                        .to_string()
+                    };
+                    let _ = opened.send_text(catalogue_json).await;
                     tokio::spawn(async move {
                         loop {
                             let Some((x, y)) = cursor_position() else {

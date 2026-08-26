@@ -42,6 +42,23 @@ function firstUrl(text: string): string | null {
   return match ? match[0] : null
 }
 
+/**
+ * Human-friendly monitor name. Windows reports device paths like
+ * `\\.\DISPLAY1` or `\\?\DISPLAY2`; macOS reports names like "Color LCD".
+ * This strips the path and falls back to "Display N" for anything that is
+ * not a readable label.
+ */
+function monitorLabel(monitor: RemoteMonitor): string {
+  const raw = (monitor.name ?? '').trim()
+  const cleaned = (raw.split('\\').pop() ?? '').trim()
+  const digits = cleaned.match(/^DISPLAY(\d+)$/i)
+  if (digits) return `Display ${digits[1]}`
+  if (!raw || raw.includes('\\') || raw.includes('/') || cleaned === '' || cleaned.length > 32) {
+    return `Display ${monitor.id + 1}`
+  }
+  return cleaned
+}
+
 function linkifyText(text: string): ReactNode[] {
   const parts = text.split(URL_PATTERN)
   return parts.map((part, index) =>
@@ -797,17 +814,61 @@ export default function SessionConsolePage() {
             }
           }}
         >
-          {canSelectMonitor ? <div className="session-display-toolbar"><div className="session-display-picker-wrap">
-            <button type="button" className={`session-display-picker-trigger${displayPickerOpen ? ' is-open' : ''}`} onClick={() => setDisplayPickerOpen((open) => !open)} aria-expanded={displayPickerOpen} aria-haspopup="menu" title="Choose which remote display to view">
-              <span className="session-display-picker-icon" aria-hidden="true">▦</span>
-              <span>{effectiveSelectedId === null ? 'All displays' : monitors.find((monitor) => monitor.id === effectiveSelectedId)?.name ?? 'Display'}</span>
-              <span className="session-display-picker-chevron" aria-hidden="true">⌄</span>
+          {canSelectMonitor ? <div className="session-display-toolbar"><div className="session-screen-picker">
+            <button
+              type="button"
+              className={`session-screen-trigger${displayPickerOpen ? ' is-open' : ''}`}
+              onClick={() => setDisplayPickerOpen((open) => !open)}
+              aria-expanded={displayPickerOpen}
+              aria-haspopup="menu"
+              title="Choose which remote display to view"
+            >
+              <span className="session-screen-trigger-icon" aria-hidden="true">▦</span>
+              <span className="session-screen-trigger-label">
+                {(() => {
+                  const currentDisplay = monitors.find((monitor) => monitor.id === effectiveSelectedId) ?? monitors[0]
+                  return effectiveSelectedId === null ? 'All displays' : (currentDisplay ? monitorLabel(currentDisplay) : 'Display')
+                })()}
+              </span>
+              <span className="session-screen-trigger-chevron" aria-hidden="true">⌄</span>
             </button>
-            {displayPickerOpen ? <div className="session-display-picker-menu" role="menu">
-              <div className="session-display-picker-heading"><strong>Remote displays</strong><span>{monitors.length} available</span></div>
-              <button type="button" className={`session-display-picker-option${effectiveSelectedId === null ? ' active' : ''}`} onClick={() => { selectMonitor('all'); setDisplayPickerOpen(false) }} role="menuitemradio" aria-checked={effectiveSelectedId === null}><span className="session-display-option-glyph">▦</span><span><strong>All displays</strong><small>Show the full desktop</small></span>{effectiveSelectedId === null ? <span className="session-display-check">✓</span> : null}</button>
-              {monitors.map((monitor) => <button type="button" className={`session-display-picker-option${effectiveSelectedId === monitor.id ? ' active' : ''}`} onClick={() => { selectMonitor(String(monitor.id)); setDisplayPickerOpen(false) }} key={monitor.id} role="menuitemradio" aria-checked={effectiveSelectedId === monitor.id}><span className="session-display-option-glyph">{monitor.id + 1}</span><span><strong>{monitor.name}{monitor.primary ? ' · Primary' : ''}</strong><small>{monitor.width} × {monitor.height}</small></span>{effectiveSelectedId === monitor.id ? <span className="session-display-check">✓</span> : null}</button>)}
-              <button type="button" className="session-display-picker-refresh" onClick={detectDisplays}><span aria-hidden="true">↻</span> Refresh displays</button>
+            {displayPickerOpen ? <div className="session-screen-menu" role="menu">
+              <div className="session-screen-menu-head"><strong>Remote displays</strong><span>{monitors.length} available</span></div>
+              <button
+                type="button"
+                className={`session-screen-option${effectiveSelectedId === null ? ' active' : ''}`}
+                onClick={() => { selectMonitor('all'); setDisplayPickerOpen(false) }}
+                role="menuitemradio"
+                aria-checked={effectiveSelectedId === null}
+              >
+                <span className="session-screen-tile session-screen-tile-all" aria-hidden="true"><i /><i /></span>
+                <span className="session-screen-option-main"><strong>All displays</strong><small>Show the full desktop</small></span>
+                {effectiveSelectedId === null ? <span className="session-screen-check">✓</span> : null}
+              </button>
+              {monitors.map((monitor) => {
+                const current = effectiveSelectedId === monitor.id
+                return (
+                  <button
+                    type="button"
+                    className={`session-screen-option${current ? ' active' : ''}`}
+                    onClick={() => { selectMonitor(String(monitor.id)); setDisplayPickerOpen(false) }}
+                    key={monitor.id}
+                    role="menuitemradio"
+                    aria-checked={current}
+                  >
+                    <span className="session-screen-tile" style={{ aspectRatio: `${Number(monitor.width) || 16} / ${Number(monitor.height) || 9}` }} aria-hidden="true">
+                      <span className="session-screen-tile-num">{monitor.id + 1}</span>
+                      {monitor.primary ? <span className="session-screen-tile-primary" title="Primary display" /> : null}
+                    </span>
+                    <span className="session-screen-option-main">
+                      <strong>{monitorLabel(monitor)}{monitor.primary ? ' · Primary' : ''}</strong>
+                      <small>{monitor.width} × {monitor.height}</small>
+                    </span>
+                    {current ? <span className="session-screen-check">✓</span> : null}
+                  </button>
+                )
+              })}
+              <button type="button" className="session-screen-refresh" onClick={detectDisplays}><span aria-hidden="true">↻</span> Refresh displays</button>
             </div> : null}
             {monitorStatus ? <span className="session-display-status" role="status">{monitorStatus}</span> : null}
           </div></div> : null}
@@ -864,7 +925,7 @@ export default function SessionConsolePage() {
           <section className="detail-card">
             <div className="detail-card-head"><h2>Session state</h2><span className="mono muted">live</span></div>
             {canControl ? <button className={`btn btn-sm btn-block ${controlArmed ? 'btn-danger' : 'btn-primary'}`} onClick={() => setControlArmed((armed) => !armed)}>{controlArmed ? 'Disable input control' : 'Enable input control'}</button> : null}
-            {monitors.length > 0 ? <p className="console-help">{selectedMonitor ? `${selectedMonitor.name} is selected for control.` : 'All available displays are shown. Use the display controls above the screen to switch.'}</p> : null}
+            {monitors.length > 0 ? <p className="console-help">{selectedMonitor ? `${monitorLabel(selectedMonitor)} is selected for control.` : 'All available displays are shown. Use the display controls above the screen to switch.'}</p> : null}
             <div className="console-state-line"><span className={`status-pill session-state-${session?.state ?? 'requested'}`}>{session?.state ?? 'requested'}</span><span className="mono muted">{stateLabel(consoleState)}</span></div>
             {consoleState === 'error' ? <button className="btn btn-primary btn-sm btn-block" onClick={() => void reconnectNow()}>Reconnect</button> : null}
             <p className="console-help">The session remains connected while you navigate ReyDesk. Return using the session dock; the peer, video stream, and input channels stay owned by the browser session runtime.</p>

@@ -328,13 +328,26 @@ export function Shell({ children }: { children: ReactNode }) {
     void loadNotifications()
     const tenantId = auth.activeTenantId
     if (!tenantId || !auth.user) return
-    return openNotificationStream({
+    const closeStream = openNotificationStream({
       tenantId,
       onConnected: () => void loadNotifications(),
       onNotification: (notification) => {
         setNotifications((items) => [notification, ...items.filter((item) => item.id !== notification.id)].slice(0, 100))
       },
     })
+    // Safety nets on top of the SSE stream: a slow refresh keeps the badge
+    // honest if the stream is ever silent, and returning to the tab reloads
+    // so notifications landed while the tab was backgrounded appear.
+    const fallbackTimer = window.setInterval(() => void loadNotifications(), 5 * 60 * 1000)
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void loadNotifications()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      closeStream()
+      window.clearInterval(fallbackTimer)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
   }, [auth.activeTenantId, auth.user?.id, loadNotifications])
 
   const unreadNotifications = notifications.filter((notification) => !notification.read_at)
