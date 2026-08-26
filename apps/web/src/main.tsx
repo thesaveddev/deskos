@@ -12,13 +12,18 @@ import { ConfirmProvider } from './components/ui.js'
 import { ThemeProvider } from './lib/theme.js'
 import './index.css'
 import { registerServiceWorker } from './lib/push.js'
+import { startVersionCheck } from './lib/versionCheck'
 
 // Web Push service worker — silent, best-effort registration on boot.
 void registerServiceWorker()
 
+// Proactive stale-bundle detection — reloads when a deploy lands while
+// the user has the app open in another tab or idle in the same tab.
+startVersionCheck()
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <ErrorBoundary>
+    <ErrorBoundary autoReloadOnChunkError>
       <ThemeProvider>
         <ConfirmProvider>
           <BrowserRouter>

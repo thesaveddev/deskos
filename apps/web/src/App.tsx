@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from 'react'
 import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
+import { ErrorBoundary } from './components/ErrorBoundary.js'
 import { LockScreen } from './components/LockScreen.js'
 import { registerServiceWorker } from './lib/push.js'
 import { useIdleTimeout } from './lib/idle.js'
@@ -75,6 +76,22 @@ function PageLoader() {
       <span className="spinner" aria-hidden="true" />
       <span>Loading…</span>
     </div>
+  )
+}
+
+/**
+ * Wraps Suspense around lazy route children and catches chunk-load errors
+ * (stale bundles after a deploy). When a chunk-load error is detected the
+ * page auto-reloads so the user always gets the latest build without having
+ * to understand or manually act on the error.
+ */
+function LazyRouteBoundary({ children }: { children: ReactNode }) {
+  return (
+    <Suspense fallback={<PageLoader />}>
+      <ErrorBoundary autoReloadOnChunkError>
+        {children}
+      </ErrorBoundary>
+    </Suspense>
   )
 }
 
@@ -207,7 +224,7 @@ export default function App() {
   // their own guard until authentication is known.
   return (
     <IdleLockWrapper>
-      <Suspense fallback={<PageLoader />}>
+      <LazyRouteBoundary>
     <Routes>
       {/* Public marketing pages */}
       <Route path="/login" element={<LoginPage />} />
@@ -293,7 +310,7 @@ export default function App() {
       <Route path="/portal/:slug" element={<PortalPublicPage />} />
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
-      </Suspense>
+      </LazyRouteBoundary>
     </IdleLockWrapper>
   )
 }

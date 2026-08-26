@@ -5,6 +5,8 @@ import path from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { Readable } from 'node:stream'
 import type { AppConfig } from '../config.js'
+import type { DbPool } from '../db/pool.js'
+import { withTenant } from '../db/pool.js'
 import { AppError } from './errors.js'
 
 export interface StorageConfig {
@@ -306,6 +308,43 @@ export class ObjectStorage {
       throw new Error(`S3 upload failed: ${res.status} ${res.body?.toString()}`)
     }
     return { storageKey, sizeBytes: size }
+  }
+
+  /** Check if tenant is within storage quota. Returns true if within quota or no quota set. */
+  async checkQuota(db: DbPool, tenantId: string, additionalBytes: number): Promise<boolean> {
+    const { rows } = await db.query(
+      'SELECT storage_bytes, settings FROM tenants WHERE id = $1',
+      [tenantId],
+    )
+    const row = rows[0]
+    if (!row) return false
+    const settings = (row.settings ?? {}) as Record<string, unknown>
+    const quotaMb = Number(settings.storage_quota_mb ?? 0)
+    if (quotaMb <= 0) return true // No limit set
+    const quotaBytes = quotaMb * 1024 * 1024
+    const currentBytes = Number(row.storage_bytes)
+    return (currentBytes + additionalBytes) <= quotaBytes
+  }
+
+  /** Update tenant storage usage after an upload. */
+  async trackUsage(db: DbPool, tenantId: string, bytesUploaded: number): Promise<void> {
+    await db.query(
+      'UPDATE tenants SET storage_bytes = storage_bytes + $1 WHERE id = $2',
+      [bytesUploaded, tenantId],
+    )
+  }
+
+  /** Get tenant storage usage info. */
+  async getUsage(db: DbPool, tenantId: string): Promise<{ used: number; quotaMb: number; quotaBytes: number }> {
+    const { rows } = await db.query(
+      'SELECT storage_bytes, settings FROM tenants WHERE id = $1',
+      [tenantId],
+    )
+    const row = rows[0]
+    const used = Number(row?.storage_bytes ?? 0)
+    const settings = (row?.settings ?? {}) as Record<string, unknown>
+    const quotaMb = Number(settings.storage_quota_mb ?? 0)
+    return { used, quotaMb, quotaBytes: quotaMb > 0 ? quotaMb * 1024 * 1024 : 0 }
   }
 }
 

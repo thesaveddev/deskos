@@ -7,6 +7,7 @@ import helmet from '@fastify/helmet'
 import multipart from '@fastify/multipart'
 import rateLimit from '@fastify/rate-limit'
 import staticPlugin from '@fastify/static'
+import websocket from '@fastify/websocket'
 import { ZodError } from 'zod'
 import type { AppConfig } from './config.js'
 import { AppError, toErrorBody } from './core/errors.js'
@@ -36,6 +37,7 @@ import { createTenantAiProvider, purgeExpiredAiUsage } from './modules/ai/settin
 import { runTicketTriage, setTriageDispatcher } from './modules/ai/triage.js'
 import { aiAgentRoutes } from './modules/ai-agent/ai-agent.routes.js'
 import { chatRoutes } from './modules/chat/chat.routes.js'
+import { chatRealtimeRoutes } from './modules/chat/chat.realtime.js'
 import { adRoutes } from './modules/ad/ad.routes.js'
 import { telephonyRoutes } from './modules/telephony/telephony.routes.js'
 import { webhookRoutes } from './modules/webhooks/webhooks.routes.js'
@@ -249,6 +251,7 @@ export async function buildApp(config: AppConfig): Promise<FastifyInstance> {
 
   await app.register(helmet, { global: true, contentSecurityPolicy: false })
   await app.register(cors, { origin: config.webOrigins, credentials: true })
+  await app.register(websocket)
   await app.register(multipart, {
     limits: { fileSize: config.maxUploadBytes, files: 1 },
   })
@@ -387,6 +390,7 @@ export async function buildApp(config: AppConfig): Promise<FastifyInstance> {
     await v1.register(aiRoutes)
     await v1.register(aiAgentRoutes)
     await v1.register(chatRoutes)
+    await v1.register(chatRealtimeRoutes)
     await v1.register(telephonyRoutes)
     await v1.register(incidentRoutes)
     await v1.register(grantRoutes)

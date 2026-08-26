@@ -138,8 +138,8 @@ pub mod windows_ui {
                 RegisterClassW(&class);
             });
 
-            let w: i32 = 460;
-            let h: i32 = 400;
+            let w: i32 = 380;
+            let h: i32 = 340;
             let (x, y) = center_on_focused_monitor(w, h);
 
             let title = tray_wide("ReyDesk Remote Support");
@@ -164,7 +164,7 @@ pub mod windows_ui {
                 PCWSTR(static_class.as_ptr()),
                 PCWSTR(tray_wide("ReyDesk").as_ptr()),
                 WS_CHILD | WS_VISIBLE,
-                28, 16, 200, 22,
+                20, 14, 200, 20,
                 hwnd, HMENU(IDC_CONSENT_BRAND as isize), None, None,
             );
 
@@ -172,23 +172,23 @@ pub mod windows_ui {
             CreateWindowExW(
                 WINDOW_EX_STYLE::default(),
                 PCWSTR(static_class.as_ptr()),
-                PCWSTR(tray_wide("A technician is requesting remote access to your computer. Review the details below and decide whether to allow this session.").as_ptr()),
+                PCWSTR(tray_wide("A technician is requesting remote access to your computer.").as_ptr()),
                 WS_CHILD | WS_VISIBLE,
-                28, 44, 400, 40,
+                20, 36, 340, 18,
                 hwnd, None, None, None,
             );
 
             // Reason
             let reason_label = format!(
                 "Reason: {}",
-                if session.reason.is_empty() { "Not provided" } else { &session.reason }
+                if session.reason.is_empty() { "(none)" } else { &session.reason }
             );
             CreateWindowExW(
                 WINDOW_EX_STYLE::default(),
                 PCWSTR(static_class.as_ptr()),
                 PCWSTR(tray_wide(&reason_label).as_ptr()),
                 WS_CHILD | WS_VISIBLE,
-                28, 90, 400, 20,
+                20, 58, 340, 16,
                 hwnd, None, None, None,
             );
 
@@ -196,14 +196,14 @@ pub mod windows_ui {
             CreateWindowExW(
                 WINDOW_EX_STYLE::default(),
                 PCWSTR(static_class.as_ptr()),
-                PCWSTR(tray_wide("Requested permissions:").as_ptr()),
+                PCWSTR(tray_wide("Permissions:").as_ptr()),
                 WS_CHILD | WS_VISIBLE,
-                28, 118, 400, 20,
+                20, 80, 340, 16,
                 hwnd, None, None, None,
             );
 
             // Permission list
-            let mut y_offset = 142i32;
+            let mut y_offset = 100i32;
             let perm_names: Vec<(&str, &str)> = session.permissions.iter().map(|p| match p.as_str() {
                 "view_screen" => ("view_screen", "View screen"),
                 "control_input" => ("control_input", "Control keyboard & mouse"),
@@ -223,14 +223,14 @@ pub mod windows_ui {
                     PCWSTR(static_class.as_ptr()),
                     PCWSTR(tray_wide(&perm_text).as_ptr()),
                     WS_CHILD | WS_VISIBLE,
-                    42, y_offset, 380, 18,
+                    34, y_offset, 340, 16,
                     hwnd, None, None, None,
                 );
-                y_offset += 20;
+                y_offset += 18;
             }
 
             // Buttons
-            let btn_y = h - 80;
+            let btn_y = h - 60;
             let has_elevation = session.permissions.iter().any(|p| is_elevated_permission(p));
 
             CreateWindowExW(
@@ -238,7 +238,7 @@ pub mod windows_ui {
                 PCWSTR(button_class.as_ptr()),
                 PCWSTR(tray_wide("Allow").as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
-                28, btn_y, if has_elevation { 120 } else { 190 }, 34,
+                20, btn_y, if has_elevation { 100 } else { 160 }, 28,
                 hwnd, HMENU(IDC_ALLOW as isize), None, None,
             );
 
@@ -248,19 +248,19 @@ pub mod windows_ui {
                     PCWSTR(button_class.as_ptr()),
                     PCWSTR(tray_wide("Allow (no elevated)").as_ptr()),
                     WS_CHILD | WS_VISIBLE | WS_TABSTOP,
-                    158, btn_y, 150, 34,
+                    128, btn_y, 140, 28,
                     hwnd, HMENU(IDC_LIMITED as isize), None, None,
                 );
             }
 
-            let deny_x = if has_elevation { 318 } else { 228 };
-            let deny_w = if has_elevation { 114 } else { 190 };
+            let deny_x = if has_elevation { 276 } else { 188 };
+            let deny_w = if has_elevation { 84 } else { 160 };
             CreateWindowExW(
                 WINDOW_EX_STYLE::default(),
                 PCWSTR(button_class.as_ptr()),
                 PCWSTR(tray_wide("Deny").as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
-                deny_x, btn_y, deny_w, 34,
+                deny_x, btn_y, deny_w, 28,
                 hwnd, HMENU(IDC_DENY as isize), None, None,
             );
 
@@ -604,8 +604,8 @@ pub mod windows_ui {
                 RegisterClassW(&class);
             });
 
-            let w = 420i32;
-            let h = 420i32;
+            let w = 380i32;
+            let h = 360i32;
             let (x, y) = center_on_focused_monitor(w, h);
 
             let title = tray_wide("ReyDesk Support Session");
@@ -635,7 +635,7 @@ pub mod windows_ui {
                 PCWSTR(static_class.as_ptr()),
                 PCWSTR(tray_wide("ReyDesk  ·  Connected securely").as_ptr()),
                 WS_CHILD | WS_VISIBLE,
-                20, 12, 380, 20,
+                16, 10, 348, 18,
                 hwnd, HMENU(IDC_BRAND as isize), None, None,
             );
             CreateWindowExW(
@@ -643,7 +643,7 @@ pub mod windows_ui {
                 PCWSTR(static_class.as_ptr()),
                 PCWSTR(tray_wide("Session chat").as_ptr()),
                 WS_CHILD | WS_VISIBLE,
-                20, 30, 380, 16,
+                16, 26, 348, 14,
                 hwnd, HMENU(IDC_STATUS as isize), None, None,
             );
 
@@ -657,7 +657,7 @@ pub mod windows_ui {
                 PCWSTR(edit_class.as_ptr()),
                 PCWSTR(tray_wide("No messages yet. The technician will appear here when connected.").as_ptr()),
                 style,
-                20, 40, 380, 248,
+                16, 38, 348, 210,
                 hwnd, HMENU(IDC_CHAT_LOG as isize), None, None,
             );
 
@@ -667,7 +667,7 @@ pub mod windows_ui {
                 PCWSTR(edit_class.as_ptr()),
                 PCWSTR::null(),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
-                20, 300, 280, 28,
+                16, 258, 260, 26,
                 hwnd, HMENU(IDC_MSG_INPUT as isize), None, None,
             );
 
@@ -677,7 +677,7 @@ pub mod windows_ui {
                 PCWSTR(button_class.as_ptr()),
                 PCWSTR(tray_wide("Send").as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
-                308, 300, 92, 28,
+                284, 258, 80, 26,
                 hwnd, HMENU(IDC_MSG_SEND as isize), None, None,
             );
 
@@ -687,7 +687,7 @@ pub mod windows_ui {
                 PCWSTR(button_class.as_ptr()),
                 PCWSTR(tray_wide("Files").as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
-                20, 350, 108, 30,
+                16, 300, 80, 26,
                 hwnd, HMENU(IDC_FILES as isize), None, None,
             );
 
@@ -697,7 +697,7 @@ pub mod windows_ui {
                 PCWSTR(button_class.as_ptr()),
                 PCWSTR(tray_wide("Disconnect").as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
-                140, 350, 140, 30,
+                104, 300, 100, 26,
                 hwnd, HMENU(IDC_DISCONNECT as isize), None, None,
             );
 

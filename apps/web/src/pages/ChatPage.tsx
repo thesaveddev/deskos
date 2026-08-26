@@ -3,7 +3,7 @@ import { Shell } from '../components/Shell.js'
 import { Alert, Modal } from '../components/ui.js'
 import { Icon } from '../components/Icons.js'
 import { addChatRoomMember, createChatRoom, downloadChatAttachment, listChatMessages, listChatRoomMembers, listChatRooms, removeChatRoomMember, sendChatMessage, sendChatMessageWithFile, type ChatMessage, type ChatRoom, type ChatRoomMember, type ChatRoomMembershipInfo } from '../lib/chat.js'
-import { openNotificationStream } from '../lib/notifications.js'
+import { connectChatWebSocket, type ChatRealtimeMessage } from '../lib/chatRealtime.js'
 import { api } from '../lib/api.js'
 import { useAuth } from '../lib/auth.js'
 
@@ -84,18 +84,28 @@ export default function ChatPage() {
     void loadMessages(activeRoomId)
   }, [activeRoomId, loadMessages])
 
+  // WebSocket connection for real-time chat delivery
   useEffect(() => {
-    if (!tenantId) return
-    return openNotificationStream({
+    if (!tenantId || !activeRoomId) return
+
+    const unsub = connectChatWebSocket({
+      roomId: activeRoomId,
       tenantId,
-      onNotification: (notification) => {
-        const roomId = notification.subject_id
-        if (notification.kind === 'chat.message' && roomId && roomId === activeRoomRef.current) {
-          void loadMessages(roomId)
+      onMessage: (msg: ChatRealtimeMessage) => {
+        if (msg.type === 'chat.message' && msg.message) {
+          // Append the new message to state (avoid duplicate by id)
+          setMessages((prev) => {
+            const exists = prev.some((m) => String(m.id) === String(msg.message!.id))
+            if (exists) return prev
+            return [...prev, msg.message!]
+          })
+          // Refresh room list to update message count
+          void loadRooms()
         }
       },
     })
-  }, [tenantId, loadMessages])
+    return unsub
+  }, [tenantId, activeRoomId, loadRooms])
 
   useEffect(() => {
     threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: 'smooth' })
@@ -171,8 +181,7 @@ export default function ChatPage() {
       setDraft('')
       setSelectedFile(null)
       if (fileInputRef.current) fileInputRef.current.value = ''
-      await loadMessages(activeRoomId)
-      await loadRooms()
+      // WebSocket will deliver the message instantly; no need to reload
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Send failed')
     } finally {

@@ -244,6 +244,7 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
       legal_hold_enabled: false,
       purge_schedule: 'daily',
     },
+    storage_quota_mb: 0, // 0 = no limit
   }
 
   const tenantSettingsPatchSchema = z.object({
@@ -335,6 +336,7 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
       legal_hold_enabled: z.boolean().optional(),
       purge_schedule: z.enum(['manual', 'daily', 'weekly']).optional(),
     }).partial().optional(),
+    storage_quota_mb: z.number().int().min(0).max(1024000).optional(),
   }).strict()
 
   function mergeTenantSettings(raw: Record<string, unknown>) {
@@ -533,6 +535,31 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
       return { invitations: [] }
     }
   })
+
+  // ── Storage usage ──────────────────────────────────────────────────────
+  app.get(
+    '/tenant/storage',
+    { preHandler: [authenticate, requireTenant, requirePermission('tenant.read')] },
+    async (request) => {
+      const ctx = request.tenantCtx!
+      const { rows } = await app.db.query(
+        'SELECT storage_bytes, settings FROM tenants WHERE id = $1',
+        [ctx.tenantId],
+      )
+      const row = rows[0]
+      const storageBytes = Number(row?.storage_bytes ?? 0)
+      const settings = (row?.settings ?? {}) as Record<string, unknown>
+      const quotaMb = Number(settings.storage_quota_mb ?? 0)
+      const quotaBytes = quotaMb > 0 ? quotaMb * 1024 * 1024 : 0
+      return {
+        storageBytes,
+        quotaMb,
+        quotaBytes,
+        usagePercent: quotaBytes > 0 ? Math.round((storageBytes / quotaBytes) * 10000) / 100 : 0,
+        withinQuota: quotaBytes === 0 || storageBytes < quotaBytes,
+      }
+    },
+  )
 }
 
 function safeTenantName(name: string | undefined): string {
