@@ -6,7 +6,6 @@ import { pipeline } from 'node:stream/promises'
 import { Readable } from 'node:stream'
 import type { AppConfig } from '../config.js'
 import type { DbPool } from '../db/pool.js'
-import { withTenant } from '../db/pool.js'
 import { AppError } from './errors.js'
 
 export interface StorageConfig {
