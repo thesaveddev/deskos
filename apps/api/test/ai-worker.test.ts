@@ -110,7 +110,7 @@ describe('AI workers', () => {
     expect(ticketDetail.json().threads.some((thread: { kind: string; body: string }) => thread.kind === 'ai_worker' && thread.body.includes('resolved'))).toBe(true)
   })
 
-  it('rejects starting a worker on a resolved ticket and isolates tenants', async () => {
+  it('rejects starting a worker on a resolved ticket, dedupes active runs, and isolates tenants', async () => {
     const created = await app.inject({
       method: 'POST',
       url: '/api/v1/portal/tickets',
@@ -118,19 +118,16 @@ describe('AI workers', () => {
       payload: { subject: 'Another issue', description: 'Something else broke.' },
     })
     const ticketId = created.json().ticket.id as string
-    const started = await app.inject({
-      method: 'POST',
-      url: '/api/v1/ai-worker/runs',
-      headers: authHeaders(owner),
-      payload: { ticketId },
-    })
-    expect(started.statusCode).toBe(201)
-    await waitFor(async () => {
-      const detail = await app.inject({ method: 'GET', url: `/api/v1/ai-worker/runs/${started.json().run.id}`, headers: authHeaders(owner) })
-      return ['resolved', 'handoff', 'failed'].includes(detail.json().run.status)
-    })
 
-    // A second worker on the same (now resolved) ticket is rejected.
+    // Resolve the ticket directly so the assertion is deterministic.
+    const resolved = await app.inject({
+      method: 'POST',
+      url: `/api/v1/portal/tickets/${created.json().ticket.number}/resolve`,
+      headers: authHeaders(owner),
+    })
+    expect([200, 204].includes(resolved.statusCode)).toBe(true)
+
+    // A worker cannot start on a resolved ticket.
     const again = await app.inject({
       method: 'POST',
       url: '/api/v1/ai-worker/runs',
@@ -138,6 +135,31 @@ describe('AI workers', () => {
       payload: { ticketId },
     })
     expect(again.statusCode).toBe(400)
+
+    // A second worker on the same open ticket is rejected while one is active.
+    const open = await app.inject({
+      method: 'POST',
+      url: '/api/v1/portal/tickets',
+      headers: authHeaders(owner),
+      payload: { subject: 'Third issue', description: 'Open for dedupe check.' },
+    })
+    const openTicketId = open.json().ticket.id as string
+    const first = await app.inject({
+      method: 'POST',
+      url: '/api/v1/ai-worker/runs',
+      headers: authHeaders(owner),
+      payload: { ticketId: openTicketId },
+    })
+    expect(first.statusCode).toBe(201)
+    const second = await app.inject({
+      method: 'POST',
+      url: '/api/v1/ai-worker/runs',
+      headers: authHeaders(owner),
+      payload: { ticketId: openTicketId },
+    })
+    // Either the first run is still active (409) or it already resolved the
+    // ticket (400) — both prove a second worker is rejected either way.
+    expect([400, 409].includes(second.statusCode)).toBe(true)
 
     // The foreign tenant sees none of these runs.
     const foreignList = await app.inject({ method: 'GET', url: '/api/v1/ai-worker/runs', headers: authHeaders(foreign) })
