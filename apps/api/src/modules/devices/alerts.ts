@@ -163,7 +163,7 @@ export async function checkDeviceAlertsForTenant(
   pool: DbPool,
   tenantId: string,
   opts: DeviceAlertOpts,
-  workerDeps?: { pool?: DbPool; config: import('../../config.js').AppConfig; fallbackProvider?: import('../ai/gateway.js').AiProvider },
+  _workerDeps?: { pool?: DbPool; config: import('../../config.js').AppConfig; fallbackProvider?: import('../ai/gateway.js').AiProvider },
 ): Promise<AlertCheckResult> {
   return withTenant(pool, tenantId, async (client) => {
     const result: AlertCheckResult = { offline: 0, lowDisk: 0, tickets: 0, resolved: 0 }
@@ -213,7 +213,7 @@ export async function checkDeviceAlertsForTenant(
 }
 
 /** Sweep every tenant (tenant discovery uses the global tenants table, no RLS). */
-export async function checkAllDeviceAlerts(pool: DbPool, opts: DeviceAlertOpts, workerDeps?: { config: import('../../config.js').AppConfig; fallbackProvider?: import('../ai/gateway.js').AiProvider }): Promise<AlertCheckResult> {
+export async function checkAllDeviceAlerts(pool: DbPool, opts: DeviceAlertOpts, _workerDeps?: { config: import('../../config.js').AppConfig; fallbackProvider?: import('../ai/gateway.js').AiProvider }): Promise<AlertCheckResult> {
   const { rows } = await pool.query('SELECT id, settings FROM tenants')
   const total: AlertCheckResult = { offline: 0, lowDisk: 0, tickets: 0, resolved: 0 }
   for (const tenant of rows) {
