@@ -155,14 +155,26 @@ export default function SessionConsolePage() {
     return () => document.removeEventListener('mousedown', close)
   }, [displayPickerOpen])
 
+  const attachRemoteVideo = () => {
+    const video = videoRef.current
+    if (!video || !remoteStream) return
+    if (video.srcObject !== remoteStream) video.srcObject = remoteStream
+    void video.play().catch((reason: unknown) => {
+      // Autoplay policy can reject the first attempt even though the media
+      // arrived. Keep the session usable and retry from the user gesture.
+      if (reason instanceof DOMException && reason.name === 'NotAllowedError') {
+        setError('The remote screen is ready. Click the video area to start playback.')
+        return
+      }
+      setError('The browser received the remote screen but could not start video playback.')
+    })
+  }
+
   useEffect(() => {
-    if (remoteStream && videoRef.current) {
-      videoRef.current.srcObject = remoteStream
-      void videoRef.current.play().catch(() => {
-        setError('The browser received the remote screen but could not start video playback.')
-      })
-    }
-  }, [remoteStream])
+    attachRemoteVideo()
+    // The video element is recreated when the stream arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remoteStream, videoReady])
 
   useEffect(() => {
     const updateCursorStyle = () => {
@@ -380,7 +392,7 @@ export default function SessionConsolePage() {
   const canTerminal = session?.permissions.includes('terminal') && session.permissions.includes('elevation')
   const canFileTransfer = session?.permissions.includes('file_transfer') ?? false
   const canSystemManage = session?.permissions.includes('system_manage') && session.permissions.includes('elevation')
-  const canSelectMonitor = session?.permissions.includes('view_screen') === true && consoleState === 'connected'
+  const canSelectMonitor = session?.permissions.includes('view_screen') === true && (consoleState === 'connected' || consoleState === 'negotiating')
 
   useEffect(() => {
     if (id && canFileTransfer && fileChannelReady && controlArmed) {
@@ -911,8 +923,10 @@ export default function SessionConsolePage() {
               }}
               onLoadedMetadata={() => {
                 setVideoReady((ready) => ready + 1)
-                void videoRef.current?.play().catch(() => undefined)
+                attachRemoteVideo()
               }}
+              onCanPlay={() => attachRemoteVideo()}
+              onClick={() => attachRemoteVideo()}
             />
           </div> : (
             <div className="session-stage-empty">

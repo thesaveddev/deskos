@@ -392,6 +392,7 @@ function makePeer(runtime: Runtime): RTCPeerConnection {
     send(runtime, { type: 'ice', candidate: candidate.toJSON() })
   }
   peer.ontrack = (event) => {
+    if (event.track.kind !== 'video') return
     const stream = event.streams[0] ?? new MediaStream([event.track])
     const current = runtime.snapshot.remoteStream
     if (current && current !== stream) {
@@ -420,7 +421,7 @@ function makePeer(runtime: Runtime): RTCPeerConnection {
     if (peer.connectionState === 'connected') {
       // A working connection resets the recovery budget for future drops.
       runtime.iceRetryAttempts = 0
-      notify(runtime, { state: 'connected' })
+      notify(runtime, { state: runtime.snapshot.remoteStream ? 'connected' : 'negotiating' })
     }
     if (peer.connectionState === 'failed') void handleMediaPathFailure(runtime)
     if (peer.connectionState === 'disconnected') notify(runtime, { state: 'waiting' })
