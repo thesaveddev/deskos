@@ -226,7 +226,7 @@ export async function checkAllDeviceAlerts(pool: DbPool, opts: DeviceAlertOpts, 
         createTickets: settings.monitoring?.create_tickets_by_default !== false,
         offlineCreateTickets: settings.monitoring?.offline_ticket_mode === 'ticket' && settings.monitoring?.create_tickets_by_default !== false,
       }
-      const r = await checkDeviceAlertsForTenant(pool, tenant.id, tenantOpts, workerDeps)
+      const r = await checkDeviceAlertsForTenant(pool, tenant.id, tenantOpts, _workerDeps)
       total.offline += r.offline
       total.lowDisk += r.lowDisk
       total.tickets += r.tickets
