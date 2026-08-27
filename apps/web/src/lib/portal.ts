@@ -42,6 +42,21 @@ export function resolvePortalTicket(number: number): Promise<{ ticket: PortalTic
   return api(`/portal/tickets/${number}/resolve`, { method: 'POST' })
 }
 
+export interface TicketRating {
+  id: string
+  rating: number
+  comment: string
+  created_at: string
+}
+
+export function portalTicketRating(number: number): Promise<{ rating: TicketRating | null }> {
+  return api(`/portal/tickets/${number}/rating`)
+}
+
+export function submitPortalRating(number: number, body: { rating: number; comment?: string }): Promise<{ rating: TicketRating }> {
+  return api(`/portal/tickets/${number}/rating`, { method: 'POST', body })
+}
+
 /* ── Portal attachments ── */
 
 export interface PortalAttachment {

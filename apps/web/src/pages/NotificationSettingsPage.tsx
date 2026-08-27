@@ -10,6 +10,7 @@ const KIND_LABELS: Record<string, string> = {
   'ticket.replied': 'Ticket replied',
   'ticket.requester_replied': 'Requester replied',
   'ticket.resolved': 'Ticket resolved',
+  'ticket.rated': 'Ticket rated',
   'sla.breached': 'SLA breach',
   'device.alert': 'Device alert',
   'offline': 'Device offline',
@@ -17,6 +18,7 @@ const KIND_LABELS: Record<string, string> = {
   'session_invite': 'Session invite',
   'session.adhoc.claimed': 'Support code claimed',
   'automation': 'Automation actions',
+  'ai_worker.approval': 'AI worker approval',
   'membership.invited': 'Membership invited',
   'telephony.call_received': 'Inbound call',
 }

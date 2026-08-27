@@ -187,6 +187,14 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
       resolveConfidence: 0.92,
       sources: ['portal', 'email', 'phone'],
     },
+    ai_workers: {
+      enabled: true,
+      autoApproveLowRisk: true,
+      autoApproveRestart: false,
+      requireApprovalForResolve: false,
+      maxSteps: 8,
+      notifyApprovers: true,
+    },
     remote_support: {
       require_consent: true,
       default_expiry_minutes: 30,
@@ -279,6 +287,14 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
       resolveConfidence: z.number().min(0.5).max(0.99).optional(),
       sources: z.array(z.enum(['portal', 'email', 'phone'])).min(1).optional(),
     }).partial().optional(),
+    ai_workers: z.object({
+      enabled: z.boolean().optional(),
+      autoApproveLowRisk: z.boolean().optional(),
+      autoApproveRestart: z.boolean().optional(),
+      requireApprovalForResolve: z.boolean().optional(),
+      maxSteps: z.number().int().min(2).max(12).optional(),
+      notifyApprovers: z.boolean().optional(),
+    }).partial().optional(),
     remote_support: z.object({
       require_consent: z.boolean().optional(),
       default_expiry_minutes: z.number().int().min(5).max(1440).optional(),
@@ -347,6 +363,7 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
       portal: { ...DEFAULT_SETTINGS.portal, ...section('portal') },
       magic_links: { ...DEFAULT_SETTINGS.magic_links, ...section('magic_links') },
       ai_triage: { ...DEFAULT_SETTINGS.ai_triage, ...section('ai_triage') },
+      ai_workers: { ...DEFAULT_SETTINGS.ai_workers, ...section('ai_workers') },
       remote_support: { ...DEFAULT_SETTINGS.remote_support, ...section('remote_support') },
       endpoints: { ...DEFAULT_SETTINGS.endpoints, ...section('endpoints') },
       monitoring: { ...DEFAULT_SETTINGS.monitoring, ...section('monitoring') },

@@ -454,6 +454,31 @@ struct SessionResponse {
 }
 
 #[derive(Debug, Deserialize)]
+struct PendingActionsResponse {
+    actions: Vec<PendingAction>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct PendingAction {
+    id: String,
+    action: String,
+    #[serde(default)]
+    payload: serde_json::Value,
+}
+
+#[derive(Debug, Deserialize)]
+struct AgentScriptResponse {
+    script: AgentScript,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct AgentScript {
+    id: String,
+    name: String,
+    body: String,
+}
+
+#[derive(Debug, Deserialize)]
 struct IceConfigResponse {
     #[serde(rename = "iceServers", default)]
     ice_servers: Vec<IceServerEntry>,
@@ -611,6 +636,30 @@ impl AgentClient {
             .get_json::<SessionListResponse>("/api/v1/agent/sessions")
             .await?
             .sessions)
+    }
+
+    async fn pending_actions(&self) -> Result<Vec<PendingAction>> {
+        Ok(self
+            .get_json::<PendingActionsResponse>("/api/v1/agent/actions/pending")
+            .await?
+            .actions)
+    }
+
+    async fn get_script(&self, script_id: &str) -> Result<AgentScript> {
+        Ok(self
+            .get_json::<AgentScriptResponse>(&format!("/api/v1/agent/scripts/{script_id}"))
+            .await?
+            .script)
+    }
+
+    async fn report_action_result(&self, action_id: &str, status: &str, result: serde_json::Value) -> Result<()> {
+        let _: serde_json::Value = self
+            .post_json(
+                &format!("/api/v1/agent/actions/{action_id}/result"),
+                serde_json::json!({ "status": status, "result": result }),
+            )
+            .await?;
+        Ok(())
     }
 
     async fn ice_config(&self, session_id: &str) -> Result<Vec<RTCIceServer>> {
@@ -3050,6 +3099,130 @@ fn launch_consent_helper(config_path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Executes a queued device action (dispatched by a technician or an AI
+/// worker). Runs in its own task so a slow script never blocks heartbeats.
+async fn run_device_action(client: AgentClient, config: AgentConfig, action: PendingAction) {
+    let action_id = action.id.clone();
+    let action_kind = action.action.clone();
+    let result = match action.action.as_str() {
+        "run_script" => run_script_action(&client, &action).await,
+        "restart" => restart_action().await,
+        "collect_inventory" => collect_inventory_action(&client, &config).await,
+        other => Err(anyhow!("unknown device action: {other}")),
+    };
+    match result {
+        Ok(payload) => {
+            if let Err(error) = client
+                .report_action_result(&action_id, "succeeded", payload)
+                .await
+            {
+                eprintln!("[action] report {action_kind}: {error:#}");
+            }
+        }
+        Err(error) => {
+            eprintln!("[action] {action_kind} failed: {error:#}");
+            if let Err(report_error) = client
+                .report_action_result(
+                    &action_id,
+                    "failed",
+                    serde_json::json!({ "error": format!("{error:#}") }),
+                )
+                .await
+            {
+                eprintln!("[action] report {action_kind}: {report_error:#}");
+            }
+        }
+    }
+}
+
+async fn run_script_action(client: &AgentClient, action: &PendingAction) -> Result<serde_json::Value> {
+    let script_id = action
+        .payload
+        .get("scriptId")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| anyhow!("run_script action missing scriptId"))?;
+    let script = client.get_script(script_id).await?;
+    let mut command = {
+        #[cfg(target_os = "windows")]
+        {
+            let mut command = TokioCommand::new("powershell.exe");
+            command.args(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "-"]);
+            #[cfg(target_os = "windows")]
+            command.creation_flags(0x08000000);
+            command
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let mut command = TokioCommand::new("sh");
+            command.arg("-s");
+            command
+        }
+    };
+    command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = command.spawn().context("spawn script process")?;
+    if let Some(stdin) = child.stdin.as_mut() {
+        stdin
+            .write_all(script.body.as_bytes())
+            .await
+            .context("write script to stdin")?;
+    }
+    let output = child.wait_with_output().await.context("wait for script")?;
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    if !output.status.success() {
+        return Err(anyhow!(
+            "script {} exited with {}: {}",
+            script.name,
+            output.status,
+            stderr.trim().chars().take(1500).collect::<String>()
+        ));
+    }
+    Ok(serde_json::json!({
+        "scriptId": script_id,
+        "scriptName": script.name,
+        "exitCode": output.status.code(),
+        "stdout": stdout.chars().take(20000).collect::<String>(),
+        "stderr": stderr.chars().take(20000).collect::<String>(),
+    }))
+}
+
+async fn restart_action() -> Result<serde_json::Value> {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = std::process::Command::new("shutdown.exe")
+            .args(["/r", "/t", "1"])
+            .spawn();
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("osascript")
+            .args(["-e", "tell app \"System Events\" to restart"])
+            .spawn();
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let _ = std::process::Command::new("systemctl").arg("reboot").spawn();
+    }
+    Ok(serde_json::json!({ "rebootTriggered": true }))
+}
+
+async fn collect_inventory_action(client: &AgentClient, config: &AgentConfig) -> Result<serde_json::Value> {
+    let mut system = System::new_all();
+    let mut disks = Disks::new_with_refreshed_list();
+    client.inventory(&inventory(config)).await?;
+    let metrics_body = metrics(&mut system, &mut disks, None);
+    client.metrics(&metrics_body).await?;
+    Ok(serde_json::json!({
+        "collected": true,
+        "cpuPct": metrics_body.cpu_pct,
+        "memPct": metrics_body.mem_pct,
+        "diskPct": metrics_body.disk_pct,
+    }))
+}
+
 async fn run_agent(
     config_path: PathBuf,
     interval_override: Option<u64>,
@@ -3244,6 +3417,21 @@ async fn run_agent(
                 }
             }
             Err(error) => eprintln!("sessions: {error:#}"),
+        }
+        // Poll for queued device actions (technician or AI-worker dispatched)
+        // and run them off the heartbeat task so long scripts never make the
+        // device look offline.
+        match client.pending_actions().await {
+            Ok(actions) => {
+                for action in actions {
+                    let client = client.clone();
+                    let config = config.clone();
+                    tokio::spawn(async move {
+                        run_device_action(client, config, action).await;
+                    });
+                }
+            }
+            Err(error) => eprintln!("actions: {error:#}"),
         }
         tokio::select! {
             _ = ticker.tick() => {},

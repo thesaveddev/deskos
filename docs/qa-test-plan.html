@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>ReyDesk — Launch QA Test Plan</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 10.5pt; line-height: 1.45; color: #17202a; background: #fff;
+    padding: 36px 40px;
+  }
+  h1 { font-size: 20pt; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h2 {
+    font-size: 12.5pt; margin: 22px 0 8px; padding-bottom: 4px;
+    border-bottom: 2px solid #e8a33d; color: #1b1408;
+    page-break-after: avoid;
+  }
+  h3 { font-size: 11pt; margin: 14px 0 6px; page-break-after: avoid; }
+  p { margin: 4px 0; }
+  .sub { color: #5b6472; font-size: 10pt; }
+  .meta { display: flex; gap: 24px; flex-wrap: wrap; margin: 12px 0; }
+  .meta div { background: #f6f7f9; border: 1px solid #dfe3e8; border-radius: 8px; padding: 8px 14px; }
+  .meta .k { font-size: 8.5pt; text-transform: uppercase; letter-spacing: 0.06em; color: #6b7280; }
+  table { width: 100%; border-collapse: collapse; margin: 8px 0 14px; page-break-inside: auto; }
+  th, td { border: 1px solid #d4d9df; padding: 5px 8px; vertical-align: top; text-align: left; }
+  th { background: #f0f2f5; font-size: 9pt; text-transform: uppercase; letter-spacing: 0.04em; color: #3c4450; }
+  td.id { font-family: "Consolas", "SF Mono", monospace; font-size: 8.5pt; color: #6b7280; white-space: nowrap; }
+  tr { page-break-inside: avoid; }
+  .p0 { background: #fdeeee; } .p1 { background: #fdf6e7; } .p2 { background: #f4f7f4; }
+  .tag { display: inline-block; font-size: 8pt; font-weight: 700; border-radius: 3px; padding: 1px 5px; color: #fff; }
+  .tag.p0 { background: #c0392b; } .tag.p1 { background: #d9820b; } .tag.p2 { background: #2c7a4b; }
+  .step { color: #3c4450; }
+  ul { margin: 3px 0 3px 18px; padding: 0; }
+  code { font-family: "Consolas", "SF Mono", monospace; font-size: 9pt; background: #f2f4f7; padding: 0 3px; border-radius: 3px; }
+  .note { background: #fdf6e7; border: 1px solid #e8d9a3; border-radius: 6px; padding: 8px 12px; margin: 10px 0; }
+  .checklist li { margin: 2px 0; }
+  footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid #d4d9df; color: #6b7280; font-size: 8.5pt; }
+  @media print { body { padding: 12px 16px; } }
+</style>
+</head>
+<body>
+
+<h1>ReyDesk — Launch QA Test Plan</h1>
+<p class="sub">Manual + automated regression guide for go-live sign-off · Remote support, helpdesk, portal &amp; storage</p>
+
+<div class="meta">
+  <div><span class="k">Build</span><br /><b>master @ latest deployed SHA</b></div>
+  <div><span class="k">Scope</span><br />Full product — end to end</div>
+  <div><span class="k">Automated</span><br /><code>npm test</code> (API · 468 tests) + <code>npx playwright test</code> (E2E · 68 tests)</div>
+  <div><span class="k">Priority key</span><br /><span class="tag p0">P0</span> launch blocker · <span class="tag p1">P1</span> must pass · <span class="tag p2">P2</span> should pass</div>
+</div>
+
+<div class="note"><b>Before you start:</b> open the app in an incognito window, have 2 devices (one Windows with the helper, one mac/tablet for portal), and 2 people available: a <b>technician</b> and a <b>requester</b>. Every test below names the actor. Record failures with console (F12), the build hash, and the time.</div>
+
+<h2>1 · Sign-up, sign-in &amp; session reliability</h2>
+<table>
+<tr><th>ID</th><th>Test</th><th>Steps</th><th>Expected</th><th>Pri</th></tr>
+<tr class="p0"><td class="id">A1</td><td>First-run tenant setup</td><td class="step">Open / — create an org — invite the owner</td><td>Tenant dashboard loads; welcome state guides setup</td><td><span class="tag p0">P0</span></td></tr>
+<tr class="p0"><td class="id">A2</td><td>Sign-in + MFA</td><td class="step">Sign in with email/password — enter a TOTP code</td><td>Session persists across reload; wrong TOTP is rejected</td><td><span class="tag p0">P0</span></td></tr>
+<tr class="p0"><td class="id">A3</td><td>Idle-resume reload</td><td class="step">Stay idle 10+ min, resume, sign in, click into any page</td><td>No "dynamic import" crash — app updates and reloads cleanly</td><td><span class="tag p0">P0</span></td></tr>
+<tr class="p0"><td class="id">A4</td><td>Password reset</td><td class="step">Request reset → follow emailed link → set new password</td><td>Old password rejected, new one works</td><td><span class="tag p0">P0</span></td></tr>
+<tr class="p1"><td class="id">A5</td><td>Lock screen</td><td class="step">Configurable idle lock — set 10 min — wait</td><td>Locks at ~10 min (not earlier); fresh tab honours lock</td><td><span class="tag p1">P1</span></td></tr>
+<tr class="p1"><td class="id">A6</td><td>Role gates</td><td class="step">Log in as end-user vs technician vs admin</td><td>Each sees only their permitted nav items</td><td><span class="tag p1">P1</span></td></tr>
+</table>
+
+<h2>2 · Remote support (helper → session)</h2>
+<table>
+<tr><th>ID</th><th>Test</th><th>Steps</th><th>Expected</th><th>Pri</th></tr>
+<tr class="p0"><td class="id">R1</td><td>Code claim notification</td><td class="step">Technician opens support page — helper enters the code on the client PC</td><td>Bell badge updates <b>immediately</b> (no need to click the bell)</td><td><span class="tag p0">P0</span></td></tr>
+<tr class="p0"><td class="id">R2</td><td>Consent &amp; session start</td><td class="step">Client accepts consent dialog — technician approves in console</td><td>Session starts; both sides see connected state</td><td><span class="tag p0">P0</span></td></tr>
+<tr class="p0"><td class="id">R3</td><td>Primary display default</td><td class="step">Connect to a multi-screen PC</td><td>Primary display loads immediately — no "switch to 2 then back" dance</td><td><span class="tag p0">P0</span></td></tr>
+<tr class="p0"><td class="id">R4</td><td>Mouse precision (multi-monitor)</td><td class="step">Click icons/edges across both screens, incl. different resolutions</td><td>Click lands exactly where pointed on every display</td><td><span class="tag p0">P0</span></td></tr>
+<tr class="p0"><td class="id">R5</td><td>Single pointer</td><td class="step">Move technician mouse, then client mouse, then click</td><td>One pointer controls both; no ghost/second pointer</td><td><span class="tag p0">P0</span></td></tr>
+<tr class="p1"><td class="id">R6</td><td>Screen switcher</td><td class="step">Open switcher — names, tiles, primary marker</td><td>Shows "Display 1/2" (no <code>//./</code> prefixes); switch is seamless</td><td><span class="tag p1">P1</span></td></tr>
+<tr class="p1"><td class="id">R7</td><td>Keyboard &amp; scroll</td><td class="step">Type in a remote app; scroll a long page / wheel</td><td>Input lands in the focused remote window; scroll gestures transfer</td><td><span class="tag p1">P1</span></td></tr>
+<tr class="p1"><td class="id">R8</td><td>File transfer</td><td class="step">Drag a file into the session</td><td>Transfers to <code>Downloads\ReyDesk</code>; no false "unknown/oversized" error</td><td><span class="tag p1">P1</span></td></tr>
+<tr class="p1"><td class="id">R9</td><td>Session recording</td><td class="step">Record 1 min of a session → stop → open listing</td><td>Recording available, playable, downloadable</td><td><span class="tag p1">P1</span></td></tr>
+<tr class="p1"><td class="id">R10</td><td>Reconnect after refresh</td><td class="step">Technician refreshes the browser tab mid-session</td><td>Returns to the live session (no orphan session)</td><td><span class="tag p1">P1</span></td></tr>
+<tr class="p2"><td class="id">R11</td><td>Unattended access</td><td class="step">Connect to a device while nobody is at it (policy permitting)</td><td>Policy applies; session secure</td><td><span class="tag p2">P2</span></td></tr>
+</table>
+
+<h2>3 · Tickets &amp; CSAT</h2>
+<table>
+<tr><th>ID</th><th>Test</th><th>Steps</th><th>Expected</th><th>Pri</th></tr>
+<tr class="p0"><td class="id">T1</td><td>Raise a ticket</td><td class="step">Portal user submits a request (subject + body + attachment)</td><td>Ticket appears in the staff queue with attachment</td><td><span class="tag p0">P0</span></td></tr>
+<tr class="p0"><td class="id">T2</td><td>Assign &amp; reply</td><td class="step">Technician assigns self, replies; requester replies back</td><td>Thread visible to both; requester gets notification</td><td><span class="tag p0">P0</span></td></tr>
+<tr class="p0"><td class="id">T3</td><td>Resolve → CSAT prompt</td><td class="step">Mark resolved → open portal ticket as requester</td><td>1–5 star survey appears; submit works once; repeat blocked</td><td><span class="tag p0">P0</span></td></tr>
+<tr class="p1"><td class="id">T4</td><td>CSAT visible to staff</td><td class="step">After rating, open the ticket as technician → Reports → Satisfaction</td><td>Rating badge on ticket; reports show avg, distribution, per-technician</td><td><span class="tag p1">P1</span></td></tr>
+<tr class="p1"><td class="id">T5</td><td>SLA timers</td><td class="step">Create ticket with 4h SLA; wait past deadline (or adjust setting)</td><td>Queue shows SLA breach state; escalation fires</td><td><span class="tag p1">P1</span></td></tr>
+<tr class="p1"><td class="id">T6</td><td>Attachments round-trip</td><td class="step">Upload image + zip; download from both sides; delete one</td><td>Files stored (S3/local) and retrievable; deletion reflected</td><td><span class="tag p1">P1</span></td></tr>
+</table>
+
+<h2>4 · Customer portal &amp; knowledge base</h2>
+<table>
+<tr><th>ID</th><th>Test</th><th>Steps</th><th>Expected</th><th>Pri</th></tr>
+<tr class="p0"><td class="id">P1</td><td>Portal address &amp; branding</td><td class="step">Open portal URL; change portal id/branding in settings</td><td>Old id no longer serves; new branding applied</td><td><span class="tag p0">P0</span></td></tr>
+<tr class="p0"><td class="id">P2</td><td>Registration &amp; invite</td><td class="step">Self-register with a work email; also send a staff invite via email (magic link)</td><td>Both sign-in paths work; invitation history records the send</td><td><span class="tag p0">P0</span></td></tr>
+<tr class="p1"><td class="id">P3</td><td>KB visibility</td><td class="step">Publish one "Public" and one "Internal" article</td><td>Public article readable without sign-in; internal hidden</td><td><span class="tag p1">P1</span></td></tr>
+<tr class="p1"><td class="id">P4</td><td>Portal toggles</td><td class="step">Toggle each portal setting in Settings → Customer portal (lock, device context, self-resolution)</td><td>Each toggle changes portal behaviour immediately</td><td><span class="tag p1">P1</span></td></tr>
+</table>
+
+<h2>5 · Team chat (real-time)</h2>
+<table>
+<tr><th>ID</th><th>Test</th><th>Steps</th><th>Expected</th><th>Pri</th></tr>
+<tr class="p1"><td class="id">C1</td><td>Instant delivery</td><td class="step">Two technicians; one sends a message + file</td><td>Arrives without refresh (WebSocket); file downloads</td><td><span class="tag p1">P1</span></td></tr>
+<tr class="p2"><td class="id">C2</td><td>Reconnect</td><td class="step">Kill network 5 s, reconnect</td><td>Chat reconnects automatically, missed messages delivered</td><td><span class="tag p2">P2</span></td></tr>
+</table>
+
+<h2>6 · Devices, monitoring &amp; agents</h2>
+<table>
+<tr><th>ID</th><th>Test</th><th>Steps</th><th>Expected</th><th>Pri</th></tr>
+<tr class="p1"><td class="id">D1</td><td>Agent enrollment</td><td class="step">Install the helper on a PC; enrol with a device token</td><td>Device appears with heartbeat; offline detection trips within configured window</td><td><span class="tag p1">P1</span></td></tr>
+<tr class="p1"><td class="id">D2</td><td>Monitoring alert → ticket</td><td class="step">Trigger a threshold (CPU/disk) in Monitoring settings</td><td>Alert fires; ticket auto-created if configured; notification sent</td><td><span class="tag p1">P1</span></td></tr>
+<tr class="p2"><td class="id">D3</td><td>Storage quota</td><td class="step">Set a small quota in tenant settings; upload past it</td><td>Upload blocked with clear message; usage endpoint reflects usage</td><td><span class="tag p2">P2</span></td></tr>
+</table>
+
+<h2>7 · Billing &amp; operations settings</h2>
+<table>
+<tr><th>ID</th><th>Test</th><th>Steps</th><th>Expected</th><th>Pri</th></tr>
+<tr class="p0"><td class="id">B1</td><td>Stripe checkout</td><td class="step">Billing → choose card → complete test checkout (Stripe test card)</td><td>Redirects to hosted Stripe; payment succeeds; invoice/status updates</td><td><span class="tag p0">P0</span></td></tr>
+<tr class="p0"><td class="id">B2</td><td>Region ↔ currency sync</td><td class="step">Change billing region in Settings → Overview</td><td>Billing region &amp; currency follow the overview default</td><td><span class="tag p0">P0</span></td></tr>
+<tr class="p1"><td class="id">B3</td><td>Operational settings</td><td class="step">Edit each group: Remote support, Devices, Monitoring, Integrations, Data retention</td><td>Settings save, persist, and re-open with saved values</td><td><span class="tag p1">P1</span></td></tr>
+</table>
+
+<h2>8 · Storage (S3) &amp; profile</h2>
+<table>
+<tr><th>ID</th><th>Test</th><th>Steps</th><th>Expected</th><th>Pri</th></tr>
+<tr class="p1"><td class="id">S1</td><td>Profile avatar</td><td class="step">Profile → upload a photo (JPG/PNG/WebP &lt;2 MB)</td><td>Avatar shows everywhere; reload preserves it</td><td><span class="tag p1">P1</span></td></tr>
+<tr class="p1"><td class="id">S2</td><td>Object storage path</td><td class="step">Upload a ticket attachment; check the configured storage driver</td><td>File lands in the S3-compatible bucket (or local dir) with correct key</td><td><span class="tag p1">P1</span></td></tr>
+</table>
+
+<h2>9 · Reliability &amp; security gates</h2>
+<table>
+<tr><th>ID</th><th>Test</th><th>Steps</th><th>Expected</th><th>Pri</th></tr>
+<tr class="p0"><td class="id">X1</td><td>Chunk-load recovery</td><td class="step">Deploy while a tab is open → navigate 10 min later</td><td>"App update" banner or auto-reload; never a crash screen</td><td><span class="tag p0">P0</span></td></tr>
+<tr class="p0"><td class="id">X2</td><td>Tenant isolation</td><td class="step">Sign in as two tenants; cross-open each other's ticket URLs</td><td>404/forbidden — no data leaks between tenants</td><td><span class="tag p0">P0</span></td></tr>
+<tr class="p1"><td class="id">X3</td><td>Audit trail</td><td class="step">Perform sensitive actions (rating, resolution, settings changes)</td><td>Each appears in Reports → Compliance audit log</td><td><span class="tag p1">P1</span></td></tr>
+<tr class="p1"><td class="id">X4</td><td>Mobile layout</td><td class="step">Open app and portal at 320/375/768 px widths</td><td>No horizontal scroll; nav collapses; controls usable</td><td><span class="tag p1">P1</span></td></tr>
+</table>
+
+<h2>10 · Automated coverage you already have</h2>
+<ul class="checklist" style="margin-left: 18px;">
+  <li><b>API unit/integration:</b> <code>npm test --workspace @deskos/api</code> → 71 files / 468 tests (auth, tenants, tickets, portal, remote, chat, storage, billing, notifications, reports).</li>
+  <li><b>Browser E2E:</b> <code>npx playwright test</code> → auth+lock (incl. MFA &amp; lock screen), layout audit at 320→1280 px, connect route, authenticated console.</li>
+  <li><b>Staging journeys</b> (credentials required): <code>PLAYWRIGHT_TARGET=staging</code> → real API auth, MFA setup, password-reset email, full remote-support journey.</li>
+  <li><b>CI gate:</b> every push runs lint, typecheck, API tests, web build, Playwright, Windows helper build, then auto-deploys to the VPS only when all pass.</li>
+</ul>
+
+<h2>Sign-off</h2>
+<table>
+<tr><th>Area</th><th>Tester</th><th>Date</th><th>Pass / Fail</th><th>Notes</th></tr>
+<tr><td>1 · Auth &amp; sessions</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>2 · Remote support</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>3 · Tickets &amp; CSAT</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>4 · Portal &amp; KB</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>5 · Chat</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>6 · Devices &amp; monitoring</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>7 · Billing</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>8 · Storage</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>9 · Reliability</td><td></td><td></td><td></td><td></td></tr>
+</table>
+
+<footer>ReyDesk Launch QA · generated from the live automated suites (API 468/468, E2E 68/68 green at the time of writing) + manual sign-off matrix. Report failures to the team with the build hash and a console dump.</footer>
+
+</body>
+</html>

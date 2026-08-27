@@ -276,6 +276,35 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
              count(*) FILTER (WHERE status IN ('resolved','closed') AND (sla_response_breached OR sla_resolution_breached))::int AS breached
            FROM tickets`,
         )
+        const csatTotals = await client.query(
+          `SELECT
+             count(*)::int AS rated,
+             COALESCE(avg(rating), 0)::numeric::float8 AS average,
+             count(*) FILTER (WHERE rating >= 4)::int AS satisfied
+           FROM ticket_ratings`,
+        )
+        const csatByRating = await client.query(
+          'SELECT rating, count(*)::int AS n FROM ticket_ratings GROUP BY rating ORDER BY rating')
+        const csatPerTechnician = await client.query(
+          `SELECT u.id, u.name,
+                  count(r.id)::int AS rated,
+                  COALESCE(avg(r.rating), 0)::numeric::float8 AS average
+             FROM ticket_ratings r
+             JOIN tickets t ON t.id = r.ticket_id
+             JOIN users u ON u.id = t.assignee_id
+            GROUP BY u.id, u.name
+            ORDER BY rated DESC, average DESC
+            LIMIT 20`,
+        )
+        const csat = {
+          rated: csatTotals.rows[0].rated,
+          responseRate: sla.rows[0].resolved ? Math.round((csatTotals.rows[0].rated / sla.rows[0].resolved) * 1000) / 10 : 0,
+          average: Math.round(csatTotals.rows[0].average * 10) / 10,
+          satisfied: csatTotals.rows[0].satisfied,
+          satisfactionRate: csatTotals.rows[0].rated ? Math.round((csatTotals.rows[0].satisfied / csatTotals.rows[0].rated) * 1000) / 10 : 0,
+          byRating: csatByRating.rows,
+          perTechnician: csatPerTechnician.rows,
+        }
         return {
           sessions: { ...sessionTotals.rows[0], byType: byType.rows, byState: byState.rows, perDay: sessionsPerDay.rows },
           workload: workload.rows,
@@ -284,6 +313,7 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
             breached: sla.rows[0].breached,
             complianceRate: sla.rows[0].resolved ? Math.round(((sla.rows[0].resolved - sla.rows[0].breached) / sla.rows[0].resolved) * 1000) / 10 : 100,
           },
+          csat,
         }
       })
     },

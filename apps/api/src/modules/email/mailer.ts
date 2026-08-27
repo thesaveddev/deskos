@@ -293,6 +293,7 @@ export class Mailer {
       offline: 'Device offline',
       low_disk: 'Low disk space',
       automation: 'Automation update',
+      'ai_worker.approval': 'AI worker approval needed',
       'telephony.call_received': 'Inbound call',
     }
     const label = labels[ctx.kind] ?? 'Workspace notification'

@@ -7,6 +7,7 @@ import { withTenant } from '../../db/pool.js'
 import { authenticate } from '../../middleware/authenticate.js'
 import { requirePermission } from '../../middleware/requirePermission.js'
 import { requireTenant } from '../../middleware/requireTenant.js'
+import { authenticateAgent } from '../devices/device-auth.js'
 import '../../types.js'
 
 const APPROVAL_STATUSES = ['draft', 'pending', 'approved', 'rejected'] as const
@@ -83,6 +84,23 @@ export async function scriptRoutes(app: FastifyInstance): Promise<void> {
       return res.rows[0]
     })
     return reply.code(201).send({ script })
+  })
+
+  // Agent-facing fetch: lets the endpoint agent pull an approved script body
+  // to execute a device action dispatched by a technician or an AI worker.
+  // Device-token auth keeps this scoped to one device + tenant via RLS.
+  app.get('/agent/scripts/:id', { preHandler: [authenticateAgent] }, async (request) => {
+    const ctx = request.deviceCtx!
+    const { id } = request.params as { id: string }
+    return withTenant(app.db, ctx.tenantId, async (client) => {
+      const { rows } = await client.query(
+        `SELECT id, name, category, os, version, body, args_schema, privilege_level
+           FROM scripts WHERE id = $1 AND approval_status = 'approved'`,
+        [id],
+      )
+      if (!rows[0]) throw AppError.notFound('Approved script not found')
+      return { script: rows[0] }
+    })
   })
 
   app.get('/scripts/:id', { preHandler: read }, async (request) => {

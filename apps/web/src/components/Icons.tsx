@@ -11,7 +11,7 @@ export type IconName =
   | 'package' | 'server' | 'flag' | 'chart' | 'box' | 'layers' | 'database' | 'book'
   | 'sun' | 'moon' | 'sparkles' | 'chat' | 'keyboard' | 'plug' | 'building'
   | 'users' | 'globe' | 'bell' | 'smartphone' | 'briefcase' | 'activity'
-  | 'minus' | 'arrow-right' | 'image' | 'paperclip'
+  | 'minus' | 'arrow-right' | 'image' | 'paperclip' | 'star'
 
 const paths: Record<IconName, JSX.Element> = {
   add: <><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></>,
@@ -85,6 +85,7 @@ const paths: Record<IconName, JSX.Element> = {
   'arrow-right': <><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></>,
   image: <><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></>,
   paperclip: <path d="m21.4 11.6-8.9 8.9a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/>,
+  star: <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>,
 }
 
 export function Icon({ name, size = 16, strokeWidth = 2, ...props }: { name: IconName; size?: number; strokeWidth?: number } & Omit<SVGProps<SVGSVGElement>, 'name'>) {

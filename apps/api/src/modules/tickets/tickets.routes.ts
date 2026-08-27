@@ -423,18 +423,27 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
       // instead of falling back to "unassigned"/"—" when only the IDs are set.
       const ticketRow = await client.query(
         `SELECT t.*, ru.name AS requester_name, au.name AS assignee_name, tm.name AS team_name,
-                tl.locked_by AS lock_user_id, lu.name AS lock_user_name
+                tl.locked_by AS lock_user_id, lu.name AS lock_user_name,
+                r.rating AS csat_rating, r.comment AS csat_comment, r.created_at AS csat_created_at
            FROM tickets t
            JOIN users ru ON ru.id = t.requester_id
            LEFT JOIN users au ON au.id = t.assignee_id
            LEFT JOIN teams tm ON tm.id = t.team_id
            LEFT JOIN ticket_locks tl ON tl.ticket_id = t.id AND tl.expires_at > now()
            LEFT JOIN users lu ON lu.id = tl.locked_by
+           LEFT JOIN ticket_ratings r ON r.ticket_id = t.id
           WHERE t.id = $1`,
         [id],
       )
       const ticket = ticketRow.rows[0]
       if (!ticket) throw AppError.notFound('Ticket not found')
+      const csat = ticket.csat_rating !== null && ticket.csat_rating !== undefined
+        ? { rating: ticket.csat_rating, comment: ticket.csat_comment, createdAt: ticket.csat_created_at }
+        : null
+      ticket.csat = csat
+      delete ticket.csat_rating
+      delete ticket.csat_comment
+      delete ticket.csat_created_at
       const device = ticket.device_id
         ? (await client.query(
             `SELECT d.id, d.name, d.hostname, d.os, d.os_version, d.arch, d.ip_address, d.agent_version, d.last_seen_at,

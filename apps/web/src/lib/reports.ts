@@ -42,6 +42,15 @@ export interface AnalyticsReport {
     id: string; name: string; open: number; resolved: number; avg_resolution_min: number
   }>
   sla: { resolved: number; breached: number; complianceRate: number }
+  csat: {
+    rated: number
+    responseRate: number
+    average: number
+    satisfied: number
+    satisfactionRate: number
+    byRating: Array<{ rating: number; n: number }>
+    perTechnician: Array<{ id: string; name: string; rated: number; average: number }>
+  }
 }
 
 export interface ComplianceReport {

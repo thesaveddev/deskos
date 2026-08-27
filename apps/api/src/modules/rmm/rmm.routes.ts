@@ -7,6 +7,8 @@ import { requirePermission } from '../../middleware/requirePermission.js'
 import { requireTenant } from '../../middleware/requireTenant.js'
 import { authenticateAgent } from '../devices/device-auth.js'
 import { recomputeDevice } from '../dex/dex.js'
+import { resumeWorkerRun } from '../ai-worker/engine.js'
+import { createTenantAiProvider } from '../ai/settings.js'
 import {
   createActions,
   createPolicy,
@@ -139,6 +141,19 @@ export async function rmmRoutes(app: FastifyInstance): Promise<void> {
     const { id } = request.params as { id: string }
     const body = actionResultSchema.parse(request.body)
     const action = await reportActionResult(app.db, ctx.tenantId, id, ctx.deviceId, body)
+    // Resume any AI worker run waiting on this device action.
+    const payload = (action.payload ?? {}) as Record<string, unknown>
+    const runId = payload.aiWorkerRunId ?? payload.aiWorkerId
+    if (typeof runId === 'string') {
+      const tenantAi = await createTenantAiProvider(app.db, app.config, ctx.tenantId, app.aiProvider).catch(() => null)
+      if (tenantAi) {
+        void resumeWorkerRun(app.db, ctx.tenantId, runId, id, { status: body.status, result: body.result }, {
+          pool: app.db,
+          provider: tenantAi.provider,
+          model: tenantAi.model,
+        }).catch((error) => request.log.warn({ error, runId }, 'worker resume after device action failed'))
+      }
+    }
     return { action }
   })
 }

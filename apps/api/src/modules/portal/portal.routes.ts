@@ -19,6 +19,11 @@ const createSchema = z.object({
 
 const replySchema = z.object({ body: z.string().min(1).max(20_000) })
 
+const ratingSchema = z.object({
+  rating: z.number().int().min(1).max(5),
+  comment: z.string().max(2_000).optional(),
+})
+
 /**
  * Customer portal endpoints. Any tenant member may use them, but data is
  * strictly limited to tickets they requested — the end-user role carries no
@@ -151,6 +156,82 @@ export async function portalRoutes(app: FastifyInstance): Promise<void> {
     })
     void dispatchTicketTriage(ctx.tenantId, thread.ticket_id as string, 'requester_reply').catch(() => undefined)
     return reply.code(201).send({ thread })
+  })
+
+  /** Get the requester's CSAT rating for a ticket, if one exists. */
+  app.get('/portal/tickets/:number/rating', { preHandler: guards }, async (request) => {
+    const ctx = request.tenantCtx!
+    const { number } = request.params as { number: string }
+    return withTenant(app.db, ctx.tenantId, async (client) => {
+      const { rows } = await client.query(
+        `SELECT r.id, r.rating, r.comment, r.created_at
+           FROM ticket_ratings r
+           JOIN tickets t ON t.id = r.ticket_id
+          WHERE t.number = $1 AND t.requester_id = $2`,
+        [Number(number), request.user!.id],
+      )
+      return { rating: rows[0] ?? null }
+    })
+  })
+
+  /**
+   * Requester rates their resolved request (CSAT). Only the ticket's own
+   * requester may call this, only after the ticket is resolved/closed, and
+   * only once — a repeat returns the stored rating unchanged (409).
+   */
+  app.post('/portal/tickets/:number/rating', { preHandler: guards }, async (request, reply) => {
+    const ctx = request.tenantCtx!
+    const { number } = request.params as { number: string }
+    const body = ratingSchema.parse(request.body)
+
+    const result = await withTenant(app.db, ctx.tenantId, async (client) => {
+      const { rows } = await client.query(
+        `SELECT * FROM tickets WHERE number = $1 AND requester_id = $2`,
+        [Number(number), request.user!.id],
+      )
+      const ticket = rows[0]
+      if (!ticket) throw AppError.notFound('Ticket not found')
+      if (ticket.status !== 'resolved' && ticket.status !== 'closed') {
+        throw AppError.conflict('Only resolved requests can be rated.', 'ticket_not_resolved')
+      }
+      const existing = await client.query(
+        'SELECT id, rating, comment, created_at FROM ticket_ratings WHERE ticket_id = $1',
+        [ticket.id],
+      )
+      if (existing.rows[0]) {
+        return { rating: existing.rows[0], changed: false }
+      }
+      const inserted = await client.query(
+        `INSERT INTO ticket_ratings (tenant_id, ticket_id, rating, comment, rated_by)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id, rating, comment, created_at`,
+        [ctx.tenantId, ticket.id, body.rating, body.comment ?? '', request.user!.id],
+      )
+      await client.query(
+        `INSERT INTO ticket_threads (tenant_id, ticket_id, kind, visibility, body)
+         VALUES ($1, $2, 'system_event', 'internal', 'Requester rated the resolution')`,
+        [ctx.tenantId, ticket.id],
+      )
+      await recordAudit(client, ctx.tenantId, {
+        actorId: request.user!.id,
+        action: 'ticket.rated',
+        objectType: 'ticket',
+        objectId: ticket.id,
+        ip: request.ip,
+        payload: { rating: body.rating, hasComment: Boolean(body.comment) },
+      })
+      if (ticket.assignee_id) {
+        await notify(client, ctx.tenantId, {
+          userId: ticket.assignee_id,
+          kind: 'ticket.rated',
+          subjectType: 'ticket',
+          subjectId: ticket.id,
+          body: `Request #${ticket.number} was rated ${body.rating}/5 — ${ticket.subject}`,
+        })
+      }
+      return { rating: inserted.rows[0], changed: true }
+    })
+    return reply.code(result.changed ? 201 : 200).send({ rating: result.rating })
   })
 
   /**

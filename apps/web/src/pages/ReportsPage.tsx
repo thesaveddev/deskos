@@ -21,7 +21,7 @@ const STATUS_COLORS: Record<string, string> = {
 const PRIORITY_COLORS: Record<string, string> = { p1: '#ef4444', p2: '#f59e0b', p3: '#3b82f6', p4: '#10b981' }
 const PRIORITY_LABELS: Record<string, string> = { p1: 'Critical', p2: 'High', p3: 'Medium', p4: 'Low' }
 
-type Tab = 'overview' | 'tickets' | 'agents' | 'sessions' | 'compliance'
+type Tab = 'overview' | 'tickets' | 'agents' | 'sessions' | 'csat' | 'compliance'
 type DatePreset = 'today' | '7d' | '30d' | '90d' | 'all' | 'custom'
 
 function dateRange(preset: DatePreset, customFrom?: string, customTo?: string): { from?: string; to?: string } {
@@ -423,8 +423,9 @@ export default function ReportsPage() {
           { id: 'tickets', label: 'Tickets', icon: 'ticket' },
           { id: 'agents', label: 'Agents', icon: 'user' },
           { id: 'sessions', label: 'Sessions', icon: 'monitor' },
+          { id: 'csat', label: 'Satisfaction', icon: 'star' },
           { id: 'compliance', label: 'Compliance', icon: 'shield' },
-        ] as { id: Tab; label: string; icon: 'chart' | 'ticket' | 'user' | 'monitor' | 'shield' }[]).map(t => (
+        ] as { id: Tab; label: string; icon: 'chart' | 'ticket' | 'user' | 'monitor' | 'star' | 'shield' }[]).map(t => (
           <button key={t.id} className={`rpt-tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>
             <span className="rpt-tab-icon"><Icon name={t.icon} size={14} /></span> {t.label}
           </button>
@@ -704,6 +705,53 @@ export default function ReportsPage() {
                   label: s.state, value: s.n, color: COLORS[i % COLORS.length],
                 }))}
               />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════
+         SATISFACTION (CSAT) TAB
+         ═══════════════════════════════════════════════════════════ */}
+      {analytics && tab === 'csat' && (
+        <div className="rpt-sections">
+          <div className="rpt-section-head">
+            <h2 className="rpt-section-title">Customer Satisfaction</h2>
+          </div>
+
+          <div className="rpt-kpi-row">
+            <StatCard label="Average Rating" value={analytics.csat.average ? `${analytics.csat.average}/5` : '—'}
+              tone={analytics.csat.average >= 4.5 ? 'ok' : analytics.csat.average >= 3.5 ? 'warn' : analytics.csat.average > 0 ? 'crit' : 'default'} />
+            <StatCard label="Satisfaction Rate" value={analytics.csat.rated ? `${analytics.csat.satisfactionRate}%` : '—'}
+              tone={analytics.csat.satisfactionRate >= 80 ? 'ok' : analytics.csat.satisfactionRate >= 60 ? 'warn' : 'crit'} />
+            <StatCard label="Ratings Received" value={analytics.csat.rated} />
+            <StatCard label="Response Rate" value={`${analytics.csat.responseRate}%`} />
+          </div>
+
+          <div className="rpt-charts-row">
+            <div className="rpt-chart-card">
+              <h3 className="rpt-card-title">Rating Distribution</h3>
+              <BarChart
+                data={analytics.csat.byRating.map((r) => ({
+                  label: `${r.rating}★`, value: r.n, color: r.rating >= 4 ? '#2ca66f' : r.rating === 3 ? '#e8a33d' : '#e5484d',
+                }))}
+              />
+            </div>
+            <div className="rpt-chart-card">
+              <h3 className="rpt-card-title">By Technician</h3>
+              {analytics.csat.perTechnician.length === 0 ? (
+                <p className="rpt-empty">No ratings yet. Scores appear once requesters rate resolved tickets.</p>
+              ) : (
+                <div className="rpt-csat-techs">
+                  {analytics.csat.perTechnician.map((tech) => (
+                    <div className="rpt-csat-tech" key={tech.id}>
+                      <span className="rpt-csat-tech-name">{tech.name}</span>
+                      <span className="rpt-csat-tech-star">{'★'.repeat(Math.round(tech.average))}{tech.average < 5 ? '☆'.repeat(5 - Math.round(tech.average)) : ''}</span>
+                      <span className="rpt-csat-tech-meta mono">{tech.rated} rated · {tech.average.toFixed(1)}/5</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

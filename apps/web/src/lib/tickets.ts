@@ -24,6 +24,7 @@ export interface Ticket {
   resolved_at: string | null
   service_id: string | null
   ext: Record<string, unknown> | null
+  csat?: { rating: number; comment: string; createdAt: string } | null
   created_at: string
   updated_at: string
 }
@@ -42,7 +43,7 @@ export interface TicketDevice {
 
 export interface Thread {
   id: string
-  kind: 'message' | 'internal_note' | 'system_event' | 'session_record' | 'ai_summary' | 'ai_triage'
+  kind: 'message' | 'internal_note' | 'system_event' | 'session_record' | 'ai_summary' | 'ai_triage' | 'ai_worker'
   visibility: 'public' | 'internal'
   body: string
   author_name?: string | null

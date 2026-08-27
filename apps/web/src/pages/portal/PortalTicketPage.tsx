@@ -4,7 +4,7 @@ import { PortalShell } from '../../components/PortalShell.js'
 import { Icon } from '../../components/Icons.js'
 import { Alert } from '../../components/ui.js'
 import { formatWhen, STATUS_LABELS } from '../../lib/tickets.js'
-import { portalTicket, replyPortalTicket, resolvePortalTicket, portalAttachments, uploadPortalAttachment, downloadPortalAttachment, type PortalThread, type PortalTicket, type PortalAttachment } from '../../lib/portal.js'
+import { portalTicket, replyPortalTicket, resolvePortalTicket, portalAttachments, uploadPortalAttachment, downloadPortalAttachment, portalTicketRating, submitPortalRating, type PortalThread, type PortalTicket, type PortalAttachment, type TicketRating } from '../../lib/portal.js'
 
 export default function PortalTicketPage() {
   const { number } = useParams<{ number: string }>()
@@ -17,6 +17,10 @@ export default function PortalTicketPage() {
   const [downloadBusy, setDownloadBusy] = useState<string | null>(null)
   const [pendingFiles, setPendingFiles] = useState<File[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [csatRating, setCsatRating] = useState<TicketRating | null>(null)
+  const [ratingDraft, setRatingDraft] = useState(0)
+  const [ratingComment, setRatingComment] = useState('')
+  const [ratingBusy, setRatingBusy] = useState(false)
 
   const load = useCallback(async () => {
     if (!number) return
@@ -26,6 +30,8 @@ export default function PortalTicketPage() {
       setThreads(res.threads)
       const attRes = await portalAttachments(Number(number))
       setAttachments(attRes.attachments)
+      const ratingRes = await portalTicketRating(Number(number))
+      setCsatRating(ratingRes.rating)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load request')
     }
@@ -82,6 +88,20 @@ export default function PortalTicketPage() {
       setError(err instanceof Error ? err.message : 'Reply failed')
     } finally {
       setBusy(false)
+    }
+  }
+
+  const submitRating = async () => {
+    if (ratingBusy || ratingDraft < 1) return
+    setRatingBusy(true)
+    setError(null)
+    try {
+      const res = await submitPortalRating(ticket.number, { rating: ratingDraft, comment: ratingComment.trim() || undefined })
+      setCsatRating(res.rating)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not submit your rating')
+    } finally {
+      setRatingBusy(false)
     }
   }
 
@@ -151,6 +171,58 @@ export default function PortalTicketPage() {
               </button>
             ))}
           </div>
+        </div>
+      ) : null}
+
+      {/* CSAT survey — shown only when the request is resolved and not yet rated */}
+      {closed && !csatRating ? (
+        <div className="portal-csat-card">
+          <div className="portal-csat-head">
+            <Icon name="star" size={16} />
+            <strong>How did we do?</strong>
+          </div>
+          <p className="portal-csat-question">How satisfied are you with the resolution of this request?</p>
+          <div className="portal-csat-stars" role="radiogroup" aria-label="Satisfaction rating">
+            {[1, 2, 3, 4, 5].map((value) => (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={ratingDraft === value}
+                aria-label={`${value} out of 5`}
+                className={`portal-csat-star${ratingDraft >= value ? ' selected' : ''}`}
+                onClick={() => setRatingDraft(value)}
+                disabled={ratingBusy}
+              >
+                <Icon name="star" size={20} />
+              </button>
+            ))}
+            <span className="portal-csat-star-label">{ratingDraft ? `${ratingDraft}/5` : 'Tap to rate'}</span>
+          </div>
+          {ratingDraft > 0 ? (
+            <>
+              <textarea
+                className="portal-csat-comment field-input"
+                placeholder="Anything else you want to tell us? (optional)"
+                rows={2}
+                value={ratingComment}
+                onChange={(e) => setRatingComment(e.target.value)}
+                maxLength={2000}
+              />
+              <button className="btn btn-primary btn-sm" disabled={ratingBusy} onClick={() => void submitRating()}>
+                {ratingBusy ? 'Submitting…' : 'Submit rating'}
+              </button>
+            </>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* CSAT thanks state — after rating, include the comment inline */}
+      {closed && csatRating ? (
+        <div className="portal-csat-card portal-csat-done">
+          <Icon name="star" size={16} />
+          <strong>Thanks — you rated this request {csatRating.rating}/5.</strong>
+          {csatRating.comment ? <p className="portal-csat-comment-done">“{csatRating.comment}”</p> : null}
         </div>
       ) : null}
 

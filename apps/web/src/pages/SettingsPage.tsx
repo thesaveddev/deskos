@@ -37,6 +37,14 @@ interface WorkspaceSettings {
     resolveConfidence: number
     sources: string[]
   }
+  ai_workers: {
+    enabled: boolean
+    autoApproveLowRisk: boolean
+    autoApproveRestart: boolean
+    requireApprovalForResolve: boolean
+    maxSteps: number
+    notifyApprovers: boolean
+  }
   portal: {
     enabled: boolean
     allow_public_kb: boolean
@@ -111,6 +119,7 @@ const DEFAULT_SETTINGS: WorkspaceSettings = {
   require_description: true, allow_attachments: true, public_notes_visible: true,
   default_priority: 'p3', default_type: 'incident',
   ai_triage: { enabled: true, autoReply: true, autoResolve: true, maxRounds: 4, resolveConfidence: 0.92, sources: ['portal', 'email', 'phone'] },
+  ai_workers: { enabled: true, autoApproveLowRisk: true, autoApproveRestart: false, requireApprovalForResolve: false, maxSteps: 8, notifyApprovers: true },
   portal: { enabled: true, allow_public_kb: true, show_device_context: true, allow_customer_resolution: true, allow_registration: false, registration_domains: [], welcome_message: '', slug: '' },
   remote_support: { require_consent: true, default_expiry_minutes: 30, allow_file_transfer: true, allow_clipboard: true, allow_terminal: false, allow_system_manage: false, default_recording_mode: 'metadata', recording_retention_days: 30, max_session_duration_minutes: 480, inactivity_timeout_minutes: 30, file_transfer_limit_mb: 100, require_elevated_action_reconsent: true, unattended_access_policy: 'approved_devices' },
   endpoints: { offline_after_minutes: 10, heartbeat_interval_seconds: 30, allow_self_enrollment: true, enrollment_code_expiry_minutes: 15, enrollment_approval_required: false, automatic_updates: true, minimum_agent_version: '', personal_device_policy: 'allow_support_only', inventory_collection: { hardware: true, software: true, processes: false, services: false, network: true }, retire_after_offline_days: 90 },
@@ -126,6 +135,7 @@ function normalizeWorkspaceSettings(raw: unknown): WorkspaceSettings {
     ...DEFAULT_SETTINGS,
     ...source,
     ai_triage: { ...DEFAULT_SETTINGS.ai_triage, ...(source.ai_triage ?? {}) },
+    ai_workers: { ...DEFAULT_SETTINGS.ai_workers, ...(source.ai_workers ?? {}) },
     portal: { ...DEFAULT_SETTINGS.portal, ...(source.portal ?? {}) },
     remote_support: { ...DEFAULT_SETTINGS.remote_support, ...(source.remote_support ?? {}) },
     endpoints: { ...DEFAULT_SETTINGS.endpoints, ...(source.endpoints ?? {}), inventory_collection: { ...DEFAULT_SETTINGS.endpoints.inventory_collection, ...((source.endpoints as Record<string, any> | undefined)?.inventory_collection ?? {}) } },
@@ -674,7 +684,30 @@ function AiTriageSettings() {
         <Field label="Maximum question rounds" hint="AI asks one diagnostic question per round before handoff."><input className="field-input" type="number" min={1} max={8} value={settings.ai_triage.maxRounds} disabled={!settings.ai_triage.enabled} onChange={(event) => void update({ ai_triage: { ...settings.ai_triage, maxRounds: Number(event.target.value) } })} /></Field>
         <Field label="Resolution confidence" hint="0.92 is the recommended production floor."><input className="field-input" type="number" min={0.5} max={0.99} step={0.01} value={settings.ai_triage.resolveConfidence} disabled={!settings.ai_triage.enabled} onChange={(event) => void update({ ai_triage: { ...settings.ai_triage, resolveConfidence: Number(event.target.value) } })} /></Field>
       </div>
-      <p className="settings-note"><Icon name="shield" size={14} /> AI cannot run terminal commands, change devices, access secrets, or bypass consent. Technicians can stop triage from the ticket.</p>
+      <p className="settings-note"><Icon name="shield" size={14} /> AI cannot run terminal commands, manage files, access secrets, or bypass consent. Technicians can stop triage from the ticket.</p>
+    </>
+  </SettingSection>
+}
+
+function AiWorkersSettings() {
+  const { settings, loading, error, setError, save } = useWorkspaceSettings()
+  const [message, setMessage] = useState<string | null>(null)
+  if (loading || !settings) return <div className="settings-card"><span className="etch">Loading AI worker settings…</span></div>
+  const update = async (patch: Partial<WorkspaceSettings>) => {
+    try { await save(patch); setMessage('AI worker settings saved.') }
+    catch (err) { setError(err instanceof Error ? err.message : 'Could not save AI worker settings') }
+  }
+  return <SettingSection title="AI workers" description="Workers read tickets, diagnose the linked device, run approved fixes on the endpoint agent, and notify the requester when resolved. Every action is gated by the risk policy below and fully audited.">
+    <>{error && <Alert kind="error">{error}</Alert>}{message && <Alert kind="info">{message}</Alert>}
+      <ToggleRow label="Enable AI workers" description="Allow technicians to start a worker on a ticket from the AI workers page." checked={settings.ai_workers.enabled} onChange={(value) => void update({ ai_workers: { ...settings.ai_workers, enabled: value } })} />
+      <ToggleRow label="Auto-run low-risk steps" description="Notes, resolution messages, and approved scripts run without a human approval. Restarts always follow the restart policy below." checked={settings.ai_workers.autoApproveLowRisk} disabled={!settings.ai_workers.enabled} onChange={(value) => void update({ ai_workers: { ...settings.ai_workers, autoApproveLowRisk: value } })} />
+      <ToggleRow label="Auto-approve device restarts" description="Allow the worker to restart a device without a technician approving each restart first. Off by default." checked={settings.ai_workers.autoApproveRestart} disabled={!settings.ai_workers.enabled} onChange={(value) => void update({ ai_workers: { ...settings.ai_workers, autoApproveRestart: value } })} />
+      <ToggleRow label="Require approval to resolve" description="When on, the worker must wait for a technician to approve before it marks a ticket resolved." checked={settings.ai_workers.requireApprovalForResolve} disabled={!settings.ai_workers.enabled} onChange={(value) => void update({ ai_workers: { ...settings.ai_workers, requireApprovalForResolve: value } })} />
+      <ToggleRow label="Notify approvers" description="Send an in-app notification to managers and engineers when the worker needs approval for a high-risk step." checked={settings.ai_workers.notifyApprovers} disabled={!settings.ai_workers.enabled} onChange={(value) => void update({ ai_workers: { ...settings.ai_workers, notifyApprovers: value } })} />
+      <div className="settings-form-grid">
+        <Field label="Maximum steps" hint="Upper bound on the number of tool steps a worker may run per ticket."><input className="field-input" type="number" min={2} max={12} value={settings.ai_workers.maxSteps} disabled={!settings.ai_workers.enabled} onChange={(event) => void update({ ai_workers: { ...settings.ai_workers, maxSteps: Number(event.target.value) } })} /></Field>
+      </div>
+      <p className="settings-note"><Icon name="shield" size={14} /> Workers only run scripts that a human has already approved in the Script library, and every step is recorded with its rationale and result in the AI workers page.</p>
     </>
   </SettingSection>
 }
@@ -716,6 +749,6 @@ export default function SettingsPage() {
   const location = useLocation()
   const path = location.pathname
   const active: SettingsTab = path === '/settings' ? 'home' : path.includes('/preferences') ? 'preferences' : path.includes('/tickets') ? 'tickets' : path.includes('/email') ? 'email' : path.includes('/canned') ? 'canned' : path.includes('/notifications') ? 'notifications' : path.includes('/settings/ai') ? 'ai' : path.includes('/security') ? 'security' : path.includes('/active-directory') ? 'active-directory' : path.includes('/settings/ad') ? 'ad' : path.includes('/branding') ? 'branding' : path.includes('/portal') ? 'portal' : path.includes('/remote') ? 'remote' : path.includes('/devices') ? 'devices' : path.includes('/monitoring') ? 'monitoring' : path.includes('/data') ? 'data' : path.includes('/integrations') ? 'integrations' : 'api'
-  return <Shell><div className="settings-page"><div className="page-head settings-page-head"><div className="page-head-main"><h1 className="page-title">Settings</h1><p className="page-subtitle">Organization-wide controls, operational defaults, and personal preferences.</p></div><NavLink className="btn btn-ghost btn-sm" to="/"><Icon name="back" size={14} />Back to dashboard</NavLink></div><div className="settings-layout"><SettingsNavigation active={active} /><main className="settings-content">{active === 'home' && <SettingsHome />}{active === 'preferences' && <PreferencesSettings />}{active === 'tickets' && <TicketSettingsPage />}{active === 'email' && <EmailSettingsPage />}{active === 'canned' && <CannedResponsesPage />}{active === 'notifications' && <NotificationSettingsPage />}{active === 'ai' && <AiSettingsPanel />}{active === 'security' && <SecuritySettingsPage />}
+  return <Shell><div className="settings-page"><div className="page-head settings-page-head"><div className="page-head-main"><h1 className="page-title">Settings</h1><p className="page-subtitle">Organization-wide controls, operational defaults, and personal preferences.</p></div><NavLink className="btn btn-ghost btn-sm" to="/"><Icon name="back" size={14} />Back to dashboard</NavLink></div><div className="settings-layout"><SettingsNavigation active={active} /><main className="settings-content">{active === 'home' && <SettingsHome />}{active === 'preferences' && <PreferencesSettings />}{active === 'tickets' && <TicketSettingsPage />}{active === 'email' && <EmailSettingsPage />}{active === 'canned' && <CannedResponsesPage />}{active === 'notifications' && <NotificationSettingsPage />}{active === 'ai' && <><AiSettingsPanel /><AiWorkersSettings /></>}{active === 'security' && <SecuritySettingsPage />}
 {active === 'active-directory' && <EntraSettingsPage />}{active === 'ad' && <AdSettingsPage />}{active === 'branding' && <BrandingSettings />}{active === 'portal' && <OperationalSettings tab="portal" />}{active === 'remote' && <OperationalSettings tab="remote" />}{active === 'devices' && <OperationalSettings tab="devices" />}{active === 'monitoring' && <OperationalSettings tab="monitoring" />}{active === 'data' && <OperationalSettings tab="data" />}{active === 'integrations' && <IntegrationsSettings />}{active === 'api' && <ApiSettings />}</main></div></div></Shell>
 }

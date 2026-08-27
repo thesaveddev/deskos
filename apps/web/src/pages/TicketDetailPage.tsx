@@ -782,6 +782,12 @@ export default function TicketDetailPage() {
           <div className="ticket-meta mono">
             opened {formatWhen(ticket.created_at)} · requester {ticket.requester_name ?? '—'} ·
             assignee {ticket.assignee_name ?? 'unassigned'}
+            {ticket.csat ? (
+              <span className="ticket-csat-badge" title={ticket.csat.comment ? `“${ticket.csat.comment}”` : 'Requester satisfaction rating'}>
+                <Icon name="star" size={12} />
+                {ticket.csat.rating}/5
+              </span>
+            ) : null}
           </div>
         </div>
         <div className="ticket-actions">
@@ -1162,7 +1168,7 @@ export default function TicketDetailPage() {
               ) : (
                 <>
                   <span className="timeline-author">{th.author_name ?? 'System'}</span>
-                  <span>{th.kind === 'internal_note' ? 'internal note' : th.kind === 'session_record' ? 'session' : th.kind === 'ai_triage' ? 'AI assistant' : 'message'}</span>
+                  <span>{th.kind === 'internal_note' ? 'internal note' : th.kind === 'session_record' ? 'session' : th.kind === 'ai_triage' ? 'AI assistant' : th.kind === 'ai_worker' ? 'AI worker' : 'message'}</span>
                   <span>{formatWhen(th.created_at)}</span>
                 </>
               )}
