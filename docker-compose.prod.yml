@@ -116,7 +116,7 @@ services:
   # relay range (49160-49200/udp) in the VPS firewall. Without this service,
   # sessions depend on direct P2P + STUN and fail across strict NATs.
   turn:
-    image: coturn/coturn:latest-alpine
+    image: coturn/coturn:4.17.2
     restart: unless-stopped
     network_mode: host # coturn needs host networking for the relay port range
     command:
