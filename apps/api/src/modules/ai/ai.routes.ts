@@ -36,7 +36,7 @@ declare module 'fastify' {
 export async function aiRoutes(app: FastifyInstance): Promise<void> {
   const gate = [authenticate, requireTenant, requirePermission('ai.use')]
   const settingsGate = [authenticate, requireTenant, requirePermission('settings.manage')]
-  const providerFor = async (tenantId: string) => createTenantAiProvider(app.db, app.config, tenantId, app.aiProvider)
+  const providerFor = async (tenantId: string) => createTenantAiProvider(app.db, app.config, tenantId, app.aiProvider, Boolean(app.aiProvider))
 
   app.get('/ai/settings', { preHandler: settingsGate }, async (request) => {
     const ctx = request.tenantCtx!

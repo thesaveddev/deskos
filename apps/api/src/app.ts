@@ -185,7 +185,7 @@ export async function buildApp(config: AppConfig): Promise<FastifyInstance> {
   // here at the application boundary so core notification writes stay small
   // and transaction-safe.
   setTriageDispatcher(async (tenantId, ticketId, trigger = 'created') => {
-    const tenantAi = await createTenantAiProvider(pool, config, tenantId, app.aiProvider).catch((error) => {
+    const tenantAi = await createTenantAiProvider(pool, config, tenantId, app.aiProvider, Boolean(app.aiProvider)).catch((error) => {
       // Keep ticket creation resilient when AI is intentionally disabled or
       // not yet configured. Triage will record a disabled/handoff state.
       if (error && typeof error === 'object' && 'code' in error && String((error as { code?: unknown }).code) === 'ai_unavailable') {

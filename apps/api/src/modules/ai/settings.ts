@@ -407,7 +407,7 @@ class MeteredAiProvider implements AiProvider {
 }
 
 export async function createTenantAiProvider(pool: DbPool, config: AppConfig, tenantId: string, injectedProvider?: AiProvider, allowInjectedProvider = false): Promise<{ runtime: TenantAiRuntime; provider: AiProvider; model: string }> {
-  const runtime = await getTenantAiRuntime(pool, config, tenantId, Boolean(injectedProvider) && allowInjectedProvider)
+  const runtime = await getTenantAiRuntime(pool, config, Boolean(injectedProvider) && allowInjectedProvider ? tenantId : tenantId, Boolean(injectedProvider) && allowInjectedProvider)
   if (!runtime.enabled && !(injectedProvider && allowInjectedProvider)) {
     // Keep deployment misconfiguration distinguishable from a tenant policy
     // denial. The former is surfaced as the gateway's 503 ai_disabled response;
