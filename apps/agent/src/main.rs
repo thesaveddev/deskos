@@ -51,6 +51,7 @@ use webrtc::{
     media::Sample,
     peer_connection::{
         configuration::RTCConfiguration, sdp::session_description::RTCSessionDescription,
+        peer_connection_state::RTCPeerConnectionState,
     },
     rtp_transceiver::rtp_codec::RTCRtpCodecCapability,
     track::track_local::track_local_static_sample::TrackLocalStaticSample,
@@ -5010,13 +5011,33 @@ async fn run_relay_connection(
                         if description.get("type").and_then(serde_json::Value::as_str)
                             == Some("offer")
                         {
-                            // Only answer the first offer. The browser companion
-                            // page can join the same relay room for chat, which
-                            // makes the technician re-offer; answering twice would
-                            // create a second (orphaned) media peer.
-                            if peer.is_some() {
-                                println!("Ignoring additional WebRTC offer (peer already negotiated)");
-                                continue;
+                            // Ignore re-offers while the live peer is healthy —
+                            // the browser companion page joining for chat makes
+                            // the technician re-offer, and answering twice would
+                            // create a second orphaned media peer. But a dead
+                            // peer must never block recovery: when ICE has
+                            // failed, accept the technician's fresh offer as a
+                            // full replacement so a media-path blip heals
+                            // without ending or restarting the session.
+                            if let Some(existing) = &peer {
+                                let state = existing.connection_state();
+                                let unhealthy = matches!(
+                                    state,
+                                    RTCPeerConnectionState::Failed
+                                        | RTCPeerConnectionState::Disconnected
+                                        | RTCPeerConnectionState::Closed
+                                );
+                                if !unhealthy {
+                                    println!(
+                                        "Ignoring additional WebRTC offer (peer already negotiated)"
+                                    );
+                                    continue;
+                                }
+                                println!(
+                                    "WebRTC peer is {state:?}; replacing it with the renegotiated offer"
+                                );
+                                let _ = existing.close().await;
+                                peer = None;
                             }
                             let sdp = description
                                 .get("sdp")

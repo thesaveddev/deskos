@@ -65,6 +65,10 @@ type Runtime = {
   socket: WebSocket | null
   peer: RTCPeerConnection | null
   iceServers: RTCIceServer[] | null
+  /** Candidate types (host/srflx/relay/…) gathered by the current peer. */
+  gatheredTypes: Set<string>
+  /** How many automatic fresh-offer retries have been issued for this runtime. */
+  iceRetryAttempts: number
   controlChannel: RTCDataChannel | null
   inputChannel: RTCDataChannel | null
   terminalChannel: RTCDataChannel | null
@@ -287,6 +291,79 @@ function configureDataChannel(runtime: Runtime, channel: RTCDataChannel): void {
   channel.onmessage = (event) => handleControlMessage(runtime, event)
 }
 
+/**
+ * Diagnose why ICE produced no usable path, phrased so a technician can act:
+ * no candidates at all points at local network permissions/firewall; host-only
+ * means STUN could not see the internet; srflx-but-failed is strict NAT,
+ * which only a TURN server reliably fixes.
+ */
+function mediaPathError(runtime: Runtime): string {
+  const types = new Set(runtime.gatheredTypes)
+  const hasHost = types.has('host')
+  const hasSrflx = types.has('srflx') || types.has('prflx')
+  const hasRelay = types.has('relay')
+  if (!hasHost && !hasSrflx) {
+    return 'No network candidates were gathered — WebRTC may be blocked locally. Check firewall/browser permissions and reload.'
+  }
+  if (hasHost && !hasSrflx && !hasRelay) {
+    return 'Only LAN candidates were available — this browser or the endpoint cannot reach a STUN server, so a direct path was impossible. Check outbound UDP.'
+  }
+  return `WebRTC could not establish a media path${hasRelay ? '' : ' even with server-reflexive candidates'} — the endpoint and this browser are likely behind strict NATs. Retrying may help; permanently, deploy TURN and set REYDESK_ICE_TURN_URLS.`
+}
+
+/** Close every channel reference so the next peer starts from a clean slate. */
+function resetPeerChannels(runtime: Runtime): void {
+  try {
+    runtime.peer?.close()
+  } catch {
+    // already closed
+  }
+  runtime.peer = null
+  runtime.controlChannel = null
+  runtime.inputChannel = null
+  runtime.terminalChannel = null
+  runtime.fileChannel = null
+  runtime.sysdataChannel = null
+  runtime.pendingIce = []
+}
+
+/**
+ * Send a completely fresh offer on a brand-new peer connection. The agent
+ * replaces its dead peer when it sees the replacement offer.
+ */
+async function attemptFreshOffer(runtime: Runtime): Promise<void> {
+  resetPeerChannels(runtime)
+  runtime.gatheredTypes = new Set()
+  await new Promise((resolve) => setTimeout(resolve, 3_000))
+  if (runtime.socket?.readyState !== WebSocket.OPEN) {
+    notify(runtime, { state: 'error', error: 'The relay connection dropped while retrying the media path. Reconnect to the session.' })
+    return
+  }
+  const peer = makePeer(runtime)
+  notify(runtime, { state: 'negotiating', monitorStatus: 'Retrying the media path…' })
+  const offer = await peer.createOffer()
+  await peer.setLocalDescription(offer)
+  send(runtime, { type: 'sdp', description: peer.localDescription })
+}
+
+/**
+ * Recover automatically instead of dead-ending: issue up to two fresh offers
+ * (the endpoint swaps in the new offer once its own peer reports failed), and
+ * only surface the diagnostic error once retries are exhausted.
+ */
+async function handleMediaPathFailure(runtime: Runtime): Promise<void> {
+  if (runtime.socket?.readyState === WebSocket.OPEN && runtime.iceRetryAttempts < 2) {
+    runtime.iceRetryAttempts += 1
+    try {
+      await attemptFreshOffer(runtime)
+      return
+    } catch {
+      // fall through to the hard error below
+    }
+  }
+  notify(runtime, { state: 'error', error: mediaPathError(runtime) })
+}
+
 function makePeer(runtime: Runtime): RTCPeerConnection {
   if (runtime.peer) return runtime.peer
   const peer = new RTCPeerConnection({
@@ -300,7 +377,10 @@ function makePeer(runtime: Runtime): RTCPeerConnection {
   configureDataChannel(runtime, peer.createDataChannel('sysdata', { ordered: true }))
   peer.ondatachannel = (event) => configureDataChannel(runtime, event.channel)
   peer.onicecandidate = (event) => {
-    if (event.candidate) send(runtime, { type: 'ice', candidate: event.candidate.toJSON() })
+    const candidate = event.candidate
+    if (!candidate) return
+    if (candidate.type) runtime.gatheredTypes.add(candidate.type)
+    send(runtime, { type: 'ice', candidate: candidate.toJSON() })
   }
   peer.ontrack = (event) => {
     const stream = event.streams[0] ?? new MediaStream([event.track])
@@ -310,13 +390,12 @@ function makePeer(runtime: Runtime): RTCPeerConnection {
     notify(runtime, { remoteStream: stream, state: 'connected', error: null })
   }
   peer.onconnectionstatechange = () => {
-    if (peer.connectionState === 'connected') notify(runtime, { state: 'connected' })
-    if (peer.connectionState === 'failed') {
-      notify(runtime, {
-        state: 'error',
-        error: 'WebRTC could not establish a media path. Check LAN routing or TURN configuration.',
-      })
+    if (peer.connectionState === 'connected') {
+      // A working connection resets the recovery budget for future drops.
+      runtime.iceRetryAttempts = 0
+      notify(runtime, { state: 'connected' })
     }
+    if (peer.connectionState === 'failed') void handleMediaPathFailure(runtime)
     if (peer.connectionState === 'disconnected') notify(runtime, { state: 'waiting' })
   }
   runtime.peer = peer
@@ -494,6 +573,8 @@ function createRuntime(id: string): Runtime {
     socket: null,
     peer: null,
     iceServers: null,
+    gatheredTypes: new Set(),
+    iceRetryAttempts: 0,
     controlChannel: null,
     inputChannel: null,
     terminalChannel: null,
