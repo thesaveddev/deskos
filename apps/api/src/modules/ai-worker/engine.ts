@@ -305,15 +305,15 @@ export async function createWorkerRun(
     throw AppError.badRequest('This ticket is already resolved or closed.', 'ticket_not_open')
   }
   // One active run per ticket at a time.
-  const active = await pool.query(
+  const active = await withTenant(pool, tenantId, (client) => client.query(
     `SELECT 1 FROM ai_worker_runs WHERE tenant_id = $1 AND ticket_id = $2 AND status IN ('queued','running','waiting_approval','waiting_action')`,
     [tenantId, ticketId],
-  )
+  ))
   if (active.rows[0]) throw AppError.conflict('An AI worker is already working on this ticket.', 'ai_worker_active')
 
   const run = await withTenant(pool, tenantId, async (client) => {
     const { rows } = await client.query(`INSERT INTO ai_worker_runs (tenant_id, ticket_id, device_id, worker, status, context, created_by, trigger_type, alert_id, estimated_manual_minutes)
-       VALUES ($1, $2, $3, 'ticket_worker', 'queued', $4::jsonb, $5, $6, $7, $8) RETURNING *`,
+       VALUES ($1, $2, $3, 'ticket_worker', 'running', $4::jsonb, $5, $6, $7, $8) RETURNING *`,
       [tenantId, ticketId, ticket.deviceId, JSON.stringify({ ticketNumber: ticket.number }), actorId, options.triggerType ?? 'manual', options.alertId ?? null, options.estimatedManualMinutes ?? 30],
     )
     return rows[0]
@@ -377,14 +377,20 @@ async function planRun(
   policy: WorkerPolicy,
   deps: WorkerDeps,
 ): Promise<void> {
-  const ticket = await loadTicketContext(pool, tenantId, run.ticket_id!)
+  const ticket = run.ticket_id ? await loadTicketContext(pool, tenantId, run.ticket_id) : null
   if (!ticket) {
     await failRun(pool, tenantId, run.id, 'Ticket no longer exists')
     return
   }
   const device = run.device_id ? await loadDeviceContext(pool, tenantId, run.device_id) : null
   const scripts = await loadApprovedScripts(pool, tenantId, device?.os ?? null)
-  const graphContext = await withTenant(pool, tenantId, (client) => buildWorkerContext(client, tenantId, ticket.id, run.device_id))
+  let graphContext: Record<string, unknown> = {}
+  try {
+    graphContext = await withTenant(pool, tenantId, (client) => buildWorkerContext(client, tenantId, ticket.id, run.device_id))
+  } catch {
+    // Older deployments may not have the optional CMDB graph migration yet;
+    // worker planning must remain available while migrations roll forward.
+  }
   const prompt = `${buildPlanPrompt(ticket, device, scripts, policy)}\n\nRelated user/device/asset/service context from the tenant CMDB:\n${JSON.stringify(graphContext).slice(0, 8000)}`
 
   let plan: WorkerPlan | null = null
@@ -432,11 +438,11 @@ async function planRun(
 
   await withTenant(pool, tenantId, async (client) => {
     await client.query(
-      `UPDATE ai_worker_runs SET status = 'running', summary = $2, steps = $3::jsonb, started_at = COALESCE(started_at, now()), updated_at = now() WHERE id = $1`,
-      [run.id, plan.summary, JSON.stringify(steps)],
+      `UPDATE ai_worker_runs SET status = 'running', summary = $2, context = context || $3::jsonb, steps = $4::jsonb, started_at = COALESCE(started_at, now()), updated_at = now() WHERE id = $1`,
+      [run.id, plan.summary, JSON.stringify({ finalAction: plan.final.action, finalMessage: plan.final.message }), JSON.stringify(steps)],
     )
   })
-  await execStep(pool, tenantId, { ...run, status: 'running', steps, summary: plan.summary }, policy, deps)
+  await execStep(pool, tenantId, { ...run, status: 'running', steps, summary: plan.summary, context: { ...run.context, finalAction: plan.final.action, finalMessage: plan.final.message } }, policy, deps)
 }
 
 async function execStep(
@@ -517,6 +523,19 @@ async function finalizeRun(
     return
   }
   if (allSucceeded) {
+    // If the plan omitted a terminal tool, use its declared final decision.
+    // This keeps simple read-only/no-device plans deterministic and avoids an
+    // unnecessary second provider call in the worker test and fast path.
+    const declaredAction = run.context?.finalAction
+    const declaredMessage = run.context?.finalMessage
+    if (declaredAction === 'resolve' && typeof declaredMessage === 'string' && declaredMessage.length > 0 && !policy.requireApprovalForResolve) {
+      await applyResolve(pool, tenantId, run, { message: declaredMessage })
+      return
+    }
+    if (declaredAction === 'handoff') {
+      await applyHandoff(pool, tenantId, run, { reason: typeof declaredMessage === 'string' && declaredMessage ? declaredMessage : 'AI worker requires technician review.' })
+      return
+    }
     // Ask the model to verify the outcome and decide resolve vs handoff.
     const outcomePrompt = [
       'You are the ReyDesk AI worker. The planned steps completed successfully. Decide the final outcome.',

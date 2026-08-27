@@ -52,7 +52,7 @@ export async function aiWorkerRoutes(app: FastifyInstance): Promise<void> {
   app.post('/ai-worker/runs', { preHandler: manage }, async (request, reply) => {
     const ctx = request.tenantCtx!
     const body = createSchema.parse(request.body)
-    const tenantAi = await createTenantAiProvider(app.db, app.config, ctx.tenantId, app.aiProvider).catch((error) => {
+    const tenantAi = await createTenantAiProvider(app.db, app.config, ctx.tenantId, app.aiProvider, true).catch((error) => {
       if (error && typeof error === 'object' && 'code' in error && String((error as { code?: unknown }).code) === 'ai_unavailable') {
         return { provider: createAiProvider(app.config.ai), model: app.config.ai.model }
       }
