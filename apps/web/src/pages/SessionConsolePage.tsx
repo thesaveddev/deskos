@@ -83,6 +83,7 @@ export default function SessionConsolePage() {
   const [selectedMonitorId, setSelectedMonitorId] = useState<number | null>(null)
   const [monitorStatus, setMonitorStatus] = useState<string | null>(null)
   const [displayPickerOpen, setDisplayPickerOpen] = useState(false)
+  const [displaySelectionMode, setDisplaySelectionMode] = useState<'all' | 'single'>('all')
   const [recoveredAfterReload, setRecoveredAfterReload] = useState(false)
   const [cursorStyle, setCursorStyle] = useState<{ left: string; top: string } | null>(null)
   const [videoReady, setVideoReady] = useState(0)
@@ -241,6 +242,7 @@ export default function SessionConsolePage() {
           setRemoteCursor(snapshot.remoteCursor)
           setMonitors(snapshot.monitors)
           setSelectedMonitorId(snapshot.selectedMonitorId)
+          setDisplaySelectionMode(snapshot.selectedMonitorId === null ? 'all' : 'single')
           setMonitorStatus(snapshot.monitorStatus)
           setControlArmed(snapshot.controlArmed)
           setPresence(snapshot.presence)
@@ -453,6 +455,7 @@ export default function SessionConsolePage() {
     if (!id || !canSelectMonitor) return
     if (value === 'all') {
       setSelectedMonitorId(null)
+      setDisplaySelectionMode('all')
       setMonitorStatus('Showing all displays…')
       sendSessionControl(id, { action: 'monitor_all' }, controlArmed)
       return
@@ -460,6 +463,7 @@ export default function SessionConsolePage() {
     const monitorId = Number(value)
     if (!Number.isInteger(monitorId)) return
     setSelectedMonitorId(monitorId)
+    setDisplaySelectionMode('single')
     setMonitorStatus('Switching display…')
     sendSessionControl(id, { action: 'monitor_select', monitorId }, controlArmed)
   }
@@ -827,7 +831,7 @@ export default function SessionConsolePage() {
               <span className="session-screen-trigger-label">
                 {(() => {
                   const currentDisplay = monitors.find((monitor) => monitor.id === effectiveSelectedId) ?? monitors[0]
-                  return effectiveSelectedId === null ? 'All displays' : (currentDisplay ? monitorLabel(currentDisplay) : 'Display')
+                  return displaySelectionMode === 'all' ? 'All displays' : (currentDisplay ? monitorLabel(currentDisplay) : 'Display')
                 })()}
               </span>
               <span className="session-screen-trigger-chevron" aria-hidden="true">⌄</span>
@@ -836,14 +840,14 @@ export default function SessionConsolePage() {
               <div className="session-screen-menu-head"><strong>Remote displays</strong><span>{monitors.length} available</span></div>
               <button
                 type="button"
-                className={`session-screen-option${effectiveSelectedId === null ? ' active' : ''}`}
+                className={`session-screen-option${displaySelectionMode === 'all' ? ' active' : ''}`}
                 onClick={() => { selectMonitor('all'); setDisplayPickerOpen(false) }}
                 role="menuitemradio"
-                aria-checked={effectiveSelectedId === null}
+                aria-checked={displaySelectionMode === 'all'}
               >
                 <span className="session-screen-tile session-screen-tile-all" aria-hidden="true"><i /><i /></span>
                 <span className="session-screen-option-main"><strong>All displays</strong><small>Show the full desktop</small></span>
-                {effectiveSelectedId === null ? <span className="session-screen-check">✓</span> : null}
+                {displaySelectionMode === 'all' ? <span className="session-screen-check">✓</span> : null}
               </button>
               {monitors.map((monitor) => {
                 const current = effectiveSelectedId === monitor.id

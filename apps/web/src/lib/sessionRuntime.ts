@@ -393,6 +393,14 @@ function makePeer(runtime: Runtime): RTCPeerConnection {
   }
   peer.ontrack = (event) => {
     const stream = event.streams[0] ?? new MediaStream([event.track])
+    const current = runtime.snapshot.remoteStream
+    if (current && current !== stream) {
+      for (const track of stream.getTracks()) {
+        if (!current.getTracks().some((existing) => existing.id === track.id)) current.addTrack(track)
+      }
+      notify(runtime, { remoteStream: current, state: 'connected', error: null })
+      return
+    }
     // Do not report a usable session until the screen track is actually
     // attached. Data channels can open before media, which previously made the
     // console look connected while showing a blank stage.
@@ -507,10 +515,10 @@ async function connect(runtime: Runtime, joinToken: string): Promise<void> {
       }
       if (message.type === 'peer_joined') {
         clearWait()
-        // Only the native endpoint helper publishes screen media. Browser
-        // companions join as chat-only peers and must never trigger another
-        // WebRTC offer.
-        if (message.audience === 'agent') void offerEndpoint().catch((error) => notify(runtime, {
+        // Older relay versions did not include audience metadata. A peer_joined
+        // event still means the endpoint is present, so offer unless the relay
+        // explicitly identifies a chat-only companion.
+        if (message.audience !== 'companion' && message.audience !== 'browser') void offerEndpoint().catch((error) => notify(runtime, {
           state: 'error',
           error: error instanceof Error ? error.message : 'Could not create the browser media offer.',
         }))
