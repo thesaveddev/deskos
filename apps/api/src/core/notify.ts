@@ -17,6 +17,7 @@ export const NOTIFICATION_KINDS = [
   'offline',
   'low_disk',
   'session_invite',
+  'session.consent_required',
   'session.adhoc.claimed',
   'automation',
   'ai_worker.approval',

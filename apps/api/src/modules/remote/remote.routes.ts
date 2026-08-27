@@ -50,18 +50,14 @@ const controlAuditSchema = z.object({
 
 const agentDiagnosticSchema = z.object({
   event: z.enum([
-    'relay.joined',
-    'relay.peer_joined',
-    'relay.disconnected',
-    'relay.error',
-    'webrtc.offer_received',
-    'webrtc.answer_sent',
-    'webrtc.error',
-    'screen.publisher_started',
-    'screen.frame_encoded',
-    'screen.capture_error',
+    'relay.joined', 'relay.peer_joined', 'relay.disconnected', 'relay.error',
+    'webrtc.offer_received', 'webrtc.answer_sent', 'webrtc.error',
+    'webrtc.ice_candidate', 'webrtc.ice_gathering_state', 'webrtc.ice_connection_state',
+    'webrtc.connection_state', 'webrtc.ice_failed', 'webrtc.ice_checking', 'webrtc.ice_connected',
+    'screen.publisher_started', 'screen.frame_encoded', 'screen.capture_error',
   ]),
   reason: z.string().trim().max(240).optional(),
+  payload: z.record(z.unknown()).optional(),
 })
 
 function controlAuditEvent(body: z.infer<typeof controlAuditSchema>): string {
@@ -243,6 +239,15 @@ export async function remoteRoutes(app: FastifyInstance): Promise<void> {
       })
       if (body.ticketId) {
         await appendTicketTimeline(client, ctx.tenantId, session.id, 'session.created', `Remote ${body.type} session requested for ${device.name}.`, 'user', request.user!.id, { type: body.type })
+      }
+      if (body.type === 'attended') {
+        await notify(client, ctx.tenantId, {
+          userId: request.user!.id,
+          kind: 'session.consent_required',
+          subjectType: 'session',
+          subjectId: session.id,
+          body: `${device.name} needs to approve the remote support session.`,
+        })
       }
       app.metrics.sessionCreated()
       return { session, joinToken }
@@ -796,7 +801,10 @@ export async function remoteRoutes(app: FastifyInstance): Promise<void> {
       if (['ended', 'denied', 'expired'].includes(session.state)) {
         throw AppError.conflict('Session is no longer accepting diagnostics', 'invalid_session_state')
       }
-      await addSessionEvent(client, ctx.tenantId, id, `session.${body.event}`, 'agent', ctx.deviceId, body.reason ? { reason: body.reason } : {})
+      await addSessionEvent(client, ctx.tenantId, id, `session.${body.event}`, 'agent', ctx.deviceId, {
+        ...(body.reason ? { reason: body.reason } : {}),
+        ...(body.payload ?? {}),
+      })
       return reply.code(201).send({ recorded: true })
     })
   })

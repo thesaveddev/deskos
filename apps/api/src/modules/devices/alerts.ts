@@ -2,6 +2,8 @@ import type { DbClient, DbPool } from '../../db/pool.js'
 import { withTenant } from '../../db/pool.js'
 import { recordAudit } from '../../core/audit.js'
 import { notify } from '../../core/notify.js'
+import { createTenantAiProvider } from '../ai/settings.js'
+import { createWorkerRun } from '../ai-worker/engine.js'
 import { DEFAULT_SLA_MATRIX } from '../tenants/defaults.js'
 import { computeDeadlines } from '../tickets/sla.js'
 import { checkDeviceAvailabilityForTenant } from './availability.js'
@@ -113,6 +115,7 @@ async function raiseAlert(
   client: DbClient,
   tenantId: string,
   opts: { deviceId: string; deviceName: string; kind: 'offline' | 'low_disk'; severity: 'warning' | 'critical'; message: string; body: string; createTicket?: boolean },
+  workerDeps?: { pool?: DbPool; config: import('../../config.js').AppConfig; fallbackProvider?: import('../ai/gateway.js').AiProvider },
 ): Promise<number> {
   const ownerId = await firstOwner(client, tenantId)
   if (!ownerId) return 0 // no active owner -> nothing to notify or attribute the ticket to
@@ -144,6 +147,14 @@ async function raiseAlert(
     subjectId: opts.deviceId,
     body: opts.message,
   })
+  const settings = (await client.query('SELECT settings FROM tenants WHERE id = $1', [tenantId])).rows[0]?.settings ?? {}
+  const workerPolicy = settings.ai_workers ?? {}
+  if (workerPolicy.alertAutoStart === true && ticketId && workerDeps?.pool) {
+    const tenantAi = await createTenantAiProvider(workerDeps.pool, workerDeps.config, tenantId, workerDeps.fallbackProvider).catch(() => null)
+    if (tenantAi) {
+      void createWorkerRun(workerDeps.pool, tenantId, ticketId, ownerId, { pool: workerDeps.pool, provider: tenantAi.provider, model: tenantAi.model }, { triggerType: 'device_alert', alertId, estimatedManualMinutes: 45 }).catch(() => undefined)
+    }
+  }
   return 1
 }
 
@@ -152,6 +163,7 @@ export async function checkDeviceAlertsForTenant(
   pool: DbPool,
   tenantId: string,
   opts: DeviceAlertOpts,
+  workerDeps?: { pool?: DbPool; config: import('../../config.js').AppConfig; fallbackProvider?: import('../ai/gateway.js').AiProvider },
 ): Promise<AlertCheckResult> {
   return withTenant(pool, tenantId, async (client) => {
     const result: AlertCheckResult = { offline: 0, lowDisk: 0, tickets: 0, resolved: 0 }
@@ -201,7 +213,7 @@ export async function checkDeviceAlertsForTenant(
 }
 
 /** Sweep every tenant (tenant discovery uses the global tenants table, no RLS). */
-export async function checkAllDeviceAlerts(pool: DbPool, opts: DeviceAlertOpts): Promise<AlertCheckResult> {
+export async function checkAllDeviceAlerts(pool: DbPool, opts: DeviceAlertOpts, workerDeps?: { config: import('../../config.js').AppConfig; fallbackProvider?: import('../ai/gateway.js').AiProvider }): Promise<AlertCheckResult> {
   const { rows } = await pool.query('SELECT id, settings FROM tenants')
   const total: AlertCheckResult = { offline: 0, lowDisk: 0, tickets: 0, resolved: 0 }
   for (const tenant of rows) {
@@ -214,7 +226,7 @@ export async function checkAllDeviceAlerts(pool: DbPool, opts: DeviceAlertOpts):
         createTickets: settings.monitoring?.create_tickets_by_default !== false,
         offlineCreateTickets: settings.monitoring?.offline_ticket_mode === 'ticket' && settings.monitoring?.create_tickets_by_default !== false,
       }
-      const r = await checkDeviceAlertsForTenant(pool, tenant.id, tenantOpts)
+      const r = await checkDeviceAlertsForTenant(pool, tenant.id, tenantOpts, workerDeps)
       total.offline += r.offline
       total.lowDisk += r.lowDisk
       total.tickets += r.tickets
@@ -230,9 +242,10 @@ export function startDeviceAlertScheduler(
   pool: DbPool,
   opts: DeviceAlertOpts,
   intervalMs = 60_000,
+  workerDeps?: { pool?: DbPool; config: import('../../config.js').AppConfig; fallbackProvider?: import('../ai/gateway.js').AiProvider },
 ): NodeJS.Timeout {
   const timer = setInterval(() => {
-    void checkAllDeviceAlerts(pool, opts).catch(() => undefined)
+    void checkAllDeviceAlerts(pool, opts, workerDeps).catch(() => undefined)
   }, intervalMs)
   timer.unref()
   return timer

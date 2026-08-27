@@ -60,6 +60,14 @@ export interface SessionRuntimeSnapshot {
 
 type RuntimeListener = (snapshot: SessionRuntimeSnapshot) => void
 
+async function recordSessionDiagnostic(sessionId: string, event: string, payload: Record<string, unknown> = {}): Promise<void> {
+  try {
+    await api(`/sessions/${sessionId}/diagnostics`, { method: 'POST', body: JSON.stringify({ event, payload }) })
+  } catch {
+    // Diagnostics must never interfere with the media path.
+  }
+}
+
 type Runtime = {
   id: string
   socket: WebSocket | null
@@ -377,6 +385,7 @@ function makePeer(runtime: Runtime): RTCPeerConnection {
   configureDataChannel(runtime, peer.createDataChannel('sysdata', { ordered: true }))
   peer.ondatachannel = (event) => configureDataChannel(runtime, event.channel)
   peer.onicecandidate = (event) => {
+    void recordSessionDiagnostic(runtime.id, 'webrtc.ice_candidate', event.candidate ? { candidateType: event.candidate.candidate.split(' ')[7] ?? 'unknown', protocol: event.candidate.protocol, address: event.candidate.address ?? null } : { endOfCandidates: true })
     const candidate = event.candidate
     if (!candidate) return
     if (candidate.type) runtime.gatheredTypes.add(candidate.type)
@@ -389,7 +398,17 @@ function makePeer(runtime: Runtime): RTCPeerConnection {
     // console look connected while showing a blank stage.
     notify(runtime, { remoteStream: stream, state: 'connected', error: null })
   }
+  peer.oniceconnectionstatechange = () => {
+    void recordSessionDiagnostic(runtime.id, 'webrtc.ice_connection_state', { state: peer.iceConnectionState, gatheringState: peer.iceGatheringState })
+    if (peer.iceConnectionState === 'failed') {
+      void recordSessionDiagnostic(runtime.id, 'webrtc.ice_failed', { gatheredTypes: [...runtime.gatheredTypes], iceServers: (runtime.iceServers ?? []).map((server) => typeof server.urls === 'string' ? server.urls.replace(/:\/\/[^:]+:[^@]+@/, '://<redacted>@') : server.urls) })
+    }
+  }
+  peer.onicegatheringstatechange = () => {
+    void recordSessionDiagnostic(runtime.id, 'webrtc.ice_gathering_state', { state: peer.iceGatheringState, gatheredTypes: [...runtime.gatheredTypes] })
+  }
   peer.onconnectionstatechange = () => {
+    void recordSessionDiagnostic(runtime.id, 'webrtc.connection_state', { state: peer.connectionState })
     if (peer.connectionState === 'connected') {
       // A working connection resets the recovery budget for future drops.
       runtime.iceRetryAttempts = 0

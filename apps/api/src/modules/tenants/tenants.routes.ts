@@ -189,6 +189,8 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
     },
     ai_workers: {
       enabled: true,
+      alertAutoStart: false,
+      alertAutoResolve: false,
       autoApproveLowRisk: true,
       autoApproveRestart: false,
       requireApprovalForResolve: false,
@@ -289,6 +291,8 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
     }).partial().optional(),
     ai_workers: z.object({
       enabled: z.boolean().optional(),
+      alertAutoStart: z.boolean().optional(),
+      alertAutoResolve: z.boolean().optional(),
       autoApproveLowRisk: z.boolean().optional(),
       autoApproveRestart: z.boolean().optional(),
       requireApprovalForResolve: z.boolean().optional(),
@@ -368,6 +372,7 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
       endpoints: { ...DEFAULT_SETTINGS.endpoints, ...section('endpoints') },
       monitoring: { ...DEFAULT_SETTINGS.monitoring, ...section('monitoring') },
       data_retention: { ...DEFAULT_SETTINGS.data_retention, ...section('data_retention') },
+      integrations: { ...DEFAULT_SETTINGS.integrations, ...section('integrations') },
     }
   }
 

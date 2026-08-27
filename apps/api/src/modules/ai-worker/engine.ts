@@ -4,12 +4,15 @@ import { withTenant } from '../../db/pool.js'
 import { notify } from '../../core/notify.js'
 import type { AiProvider } from '../ai/gateway.js'
 import { getWorkerTool, workerToolCatalogForPrompt, type WorkerStep } from './tools.js'
+import { buildWorkerContext } from './context.js'
 
 export const WORKER_RUN_STATUSES = ['queued', 'running', 'waiting_approval', 'waiting_action', 'resolved', 'handoff', 'failed', 'cancelled'] as const
 export type WorkerRunStatus = (typeof WORKER_RUN_STATUSES)[number]
 
 export interface WorkerPolicy {
   enabled: boolean
+  alertAutoStart: boolean
+  alertAutoResolve: boolean
   autoApproveLowRisk: boolean
   autoApproveRestart: boolean
   requireApprovalForResolve: boolean
@@ -49,6 +52,8 @@ export interface WorkerRunRow {
 
 const DEFAULT_POLICY: WorkerPolicy = {
   enabled: true,
+  alertAutoStart: false,
+  alertAutoResolve: false,
   autoApproveLowRisk: true,
   autoApproveRestart: false,
   requireApprovalForResolve: false,
@@ -60,6 +65,8 @@ export function normalizeWorkerPolicy(raw: unknown): WorkerPolicy {
   const value = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
   return {
     enabled: value.enabled !== false,
+    alertAutoStart: value.alertAutoStart === true,
+    alertAutoResolve: value.alertAutoResolve === true,
     autoApproveLowRisk: value.autoApproveLowRisk !== false,
     autoApproveRestart: value.autoApproveRestart === true,
     requireApprovalForResolve: value.requireApprovalForResolve === true,
@@ -287,6 +294,7 @@ export async function createWorkerRun(
   ticketId: string,
   actorId: string,
   deps: WorkerDeps,
+  options: { triggerType?: 'manual' | 'device_alert' | 'ticket'; alertId?: string | null; estimatedManualMinutes?: number } = {},
 ): Promise<LoadRunRow | null> {
   const policy = await loadPolicy(pool, tenantId)
   if (!policy.enabled) throw new AppError(403, 'ai_worker_disabled', 'AI workers are disabled for this organization.')
@@ -304,11 +312,9 @@ export async function createWorkerRun(
   if (active.rows[0]) throw AppError.conflict('An AI worker is already working on this ticket.', 'ai_worker_active')
 
   const run = await withTenant(pool, tenantId, async (client) => {
-    const { rows } = await client.query(
-      `INSERT INTO ai_worker_runs (tenant_id, ticket_id, device_id, worker, status, context, created_by)
-       VALUES ($1, $2, $3, 'ticket_worker', 'queued', $4::jsonb, $5)
-       RETURNING *`,
-      [tenantId, ticketId, ticket.deviceId, JSON.stringify({ ticketNumber: ticket.number }), actorId],
+    const { rows } = await client.query(`INSERT INTO ai_worker_runs (tenant_id, ticket_id, device_id, worker, status, context, created_by, trigger_type, alert_id, estimated_manual_minutes)
+       VALUES ($1, $2, $3, 'ticket_worker', 'queued', $4::jsonb, $5, $6, $7, $8) RETURNING *`,
+      [tenantId, ticketId, ticket.deviceId, JSON.stringify({ ticketNumber: ticket.number }), actorId, options.triggerType ?? 'manual', options.alertId ?? null, options.estimatedManualMinutes ?? 30],
     )
     return rows[0]
   })
@@ -378,7 +384,8 @@ async function planRun(
   }
   const device = run.device_id ? await loadDeviceContext(pool, tenantId, run.device_id) : null
   const scripts = await loadApprovedScripts(pool, tenantId, device?.os ?? null)
-  const prompt = buildPlanPrompt(ticket, device, scripts, policy)
+  const graphContext = await withTenant(pool, tenantId, (client) => buildWorkerContext(client, tenantId, ticket.id, run.device_id))
+  const prompt = `${buildPlanPrompt(ticket, device, scripts, policy)}\n\nRelated user/device/asset/service context from the tenant CMDB:\n${JSON.stringify(graphContext).slice(0, 8000)}`
 
   let plan: WorkerPlan | null = null
   let error: string | null = null
@@ -544,7 +551,7 @@ function applyResolve(pool: DbPool, tenantId: string, run: LoadRunRow, args: Rec
     const tool = getWorkerTool('ticket.resolve')
     const result = await tool.run({ client, tenantId, ticketId: run.ticket_id, deviceId: run.device_id, runId: run.id }, args)
     await client.query(
-      `UPDATE ai_worker_runs SET status = 'resolved', outcome = $2::jsonb, finished_at = now(), updated_at = now() WHERE id = $1`,
+      `UPDATE ai_worker_runs SET status = 'resolved', resolved_by_worker = true, actual_minutes = GREATEST(1, EXTRACT(EPOCH FROM (now() - created_at))::int / 60), outcome = $2::jsonb, finished_at = now(), updated_at = now() WHERE id = $1`,
       [run.id, JSON.stringify({ resolution: result })],
     )
   })
@@ -555,8 +562,8 @@ function applyHandoff(pool: DbPool, tenantId: string, run: LoadRunRow, args: Rec
     const tool = getWorkerTool('ticket.handoff')
     const result = await tool.run({ client, tenantId, ticketId: run.ticket_id, deviceId: run.device_id, runId: run.id }, args)
     await client.query(
-      `UPDATE ai_worker_runs SET status = 'handoff', outcome = $2::jsonb, finished_at = now(), updated_at = now() WHERE id = $1`,
-      [run.id, JSON.stringify({ handoff: result })],
+      `UPDATE ai_worker_runs SET status = 'handoff', escalation_reason = $3, outcome = $2::jsonb, finished_at = now(), updated_at = now() WHERE id = $1`,
+      [run.id, JSON.stringify({ handoff: result }), typeof args.reason === 'string' ? args.reason : null],
     )
   })
 }
@@ -564,8 +571,8 @@ function applyHandoff(pool: DbPool, tenantId: string, run: LoadRunRow, args: Rec
 async function handRun(pool: DbPool, tenantId: string, runId: string, reason: string): Promise<void> {
   await withTenant(pool, tenantId, async (client) => {
     await client.query(
-      `UPDATE ai_worker_runs SET status = 'handoff', outcome = $2::jsonb, finished_at = now(), updated_at = now() WHERE id = $1`,
-      [runId, JSON.stringify({ reason })],
+      `UPDATE ai_worker_runs SET status = 'handoff', escalation_reason = $3, outcome = $2::jsonb, finished_at = now(), updated_at = now() WHERE id = $1`,
+      [runId, JSON.stringify({ reason }), reason],
     )
   })
 }

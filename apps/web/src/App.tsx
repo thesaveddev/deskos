@@ -51,6 +51,7 @@ const NotFoundPage = lazy(() => import('./pages/NotFoundPage.js'))
 const TeamsPage = lazy(() => import('./pages/TeamsPage.js'))
 const PatchPage = lazy(() => import('./pages/PatchPage.js'))
 const ReportsPage = lazy(() => import('./pages/ReportsPage.js'))
+const TurnProbePage = lazy(() => import('./pages/TurnProbePage.js'))
 const RmmPage = lazy(() => import('./pages/RmmPage.js'))
 const ScriptsPage = lazy(() => import('./pages/ScriptsPage.js'))
 const ServicesPage = lazy(() => import('./pages/ServicesPage.js'))
@@ -265,6 +266,7 @@ export default function App() {
       <Route path="/devices/groups" element={<Protected><DeviceGroupsPage /></Protected>} />
       <Route path="/devices/:id" element={<Protected><DeviceDetailPage /></Protected>} />
       <Route path="/reports" element={<Protected><ReportsPage /></Protected>} />
+      <Route path="/diagnostics/turn" element={<Protected><TurnProbePage /></Protected>} />
       <Route path="/compliance" element={<Protected><CompliancePage /></Protected>} />
       <Route path="/kb" element={<Protected><KnowledgeBasePage /></Protected>} />
       <Route path="/automations" element={<Protected><AutomationPage /></Protected>} />

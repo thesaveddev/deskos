@@ -144,6 +144,20 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
         const auditTotal = await client.query(
           `SELECT count(*)::int AS total FROM audit_logs`,
         )
+        const aiWorkers = await client.query(`SELECT
+          count(*)::int AS total,
+          count(*) FILTER (WHERE status = 'resolved')::int AS resolved,
+          count(*) FILTER (WHERE status = 'handoff')::int AS escalated,
+          COALESCE(sum(GREATEST(0, estimated_manual_minutes - COALESCE(actual_minutes, estimated_manual_minutes))) FILTER (WHERE status = 'resolved'), 0)::int AS time_saved_minutes,
+          COALESCE(avg(actual_minutes) FILTER (WHERE status = 'resolved'), 0)::float8 AS avg_actual_minutes
+          FROM ai_worker_runs`)
+        const updateHealth = await client.query(`SELECT
+          count(*) FILTER (WHERE action = 'agent.update.health_checked')::int AS health_checks,
+          count(*) FILTER (WHERE action = 'agent.update.checked')::int AS offers_checked,
+          count(*) FILTER (WHERE action IN ('agent.update.applied', 'agent.update.verified'))::int AS successful_updates,
+          count(*) FILTER (WHERE action IN ('agent.update.failed', 'agent.update.rolled_back'))::int AS failed_updates,
+          max(created_at) AS last_check
+          FROM audit_logs WHERE action LIKE 'agent.update.%'`)
 
         const slaRate = sla.rows[0].resolved
           ? Math.round(((sla.rows[0].resolved - sla.rows[0].response_breached - sla.rows[0].resolution_breached) / sla.rows[0].resolved) * 1000) / 10
@@ -165,6 +179,11 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
           byAssignee: byAssignee.rows,
           sessions: sessions.rows[0],
           auditTotal: auditTotal.rows[0].total,
+          updateHealth: updateHealth.rows[0],
+          aiWorkers: {
+            ...aiWorkers.rows[0],
+            resolutionRate: Number(aiWorkers.rows[0]?.total ?? 0) ? Math.round((Number(aiWorkers.rows[0]?.resolved ?? 0) / Number(aiWorkers.rows[0]?.total ?? 0)) * 1000) / 10 : 0,
+          },
         }
       })
     },

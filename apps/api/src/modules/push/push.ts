@@ -31,6 +31,7 @@ const KIND_TITLES: Record<string, string> = {
   offline: 'Device offline',
   low_disk: 'Low disk space',
   session_invite: 'Session invite',
+  'session.consent_required': 'Remote consent required',
   'session.adhoc.claimed': 'Support code claimed',
   automation: 'Automation',
   'membership.invited': 'Membership invited',

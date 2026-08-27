@@ -391,6 +391,19 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
   })
 
   // -- Updates: offer the configured release via a deterministic rollout ring --
+  app.get('/agent/update/health', { preHandler: [authenticateAgent] }, async (request) => {
+    const ctx = request.deviceCtx!
+    const query = request.query as { version?: string }
+    const currentVersion = typeof query.version === 'string' && query.version.trim() ? query.version.trim() : '0.0.0'
+    const checkedAt = new Date().toISOString()
+    const result = checkUpdate(app.config.update, ctx.deviceId, currentVersion)
+    await withTenant(app.db, ctx.tenantId, (client) => recordAudit(client, ctx.tenantId, {
+      actorType: 'agent', actorId: ctx.deviceId, action: 'agent.update.health_checked', objectType: 'device', objectId: ctx.deviceId,
+      ip: request.ip, payload: { currentVersion, status: result.status, configured: result.status !== 'not_configured' },
+    }))
+    return { ok: true, checkedAt, currentVersion, status: result.status, configured: result.status !== 'not_configured', offer: result.update ? { version: result.update.version, url: result.update.url, sha256: result.update.sha256, rolloutPercent: result.update.rolloutPercent } : null }
+  })
+
   app.get('/agent/update', { preHandler: [authenticateAgent], config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }, async (request) => {
     const ctx = request.deviceCtx!
     const query = request.query as { version?: string }

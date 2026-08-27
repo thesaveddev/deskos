@@ -6,6 +6,7 @@ import { authenticate } from '../../middleware/authenticate.js'
 import { requirePermission } from '../../middleware/requirePermission.js'
 import { requireTenant } from '../../middleware/requireTenant.js'
 import { createTenantAiProvider } from '../ai/settings.js'
+import { buildWorkerContext } from './context.js'
 import { createAiProvider } from '../ai/gateway.js'
 import { createWorkerRun, listWorkerRuns, getWorkerRun, cancelWorkerRun, approveWorkerStep, denyWorkerStep, WORKER_RUN_STATUSES } from './engine.js'
 import '../../types.js'
@@ -21,6 +22,21 @@ const listQuerySchema = z.object({
 export async function aiWorkerRoutes(app: FastifyInstance): Promise<void> {
   const read = [authenticate, requireTenant, requirePermission('ai_agent.read')]
   const manage = [authenticate, requireTenant, requirePermission('ai_agent.manage')]
+
+  app.get('/ai-worker/metrics', { preHandler: read }, async (request) => {
+    const ctx = request.tenantCtx!
+    return withTenant(app.db, ctx.tenantId, async (client) => {
+      const { rows } = await client.query(`SELECT
+        count(*)::int AS total,
+        count(*) FILTER (WHERE status = 'resolved')::int AS resolved,
+        count(*) FILTER (WHERE status = 'handoff')::int AS escalated,
+        COALESCE(avg(estimated_manual_minutes) FILTER (WHERE status IN ('resolved','handoff')), 0)::float8 AS estimated_manual_minutes,
+        COALESCE(sum(GREATEST(0, estimated_manual_minutes - COALESCE(actual_minutes, estimated_manual_minutes))) FILTER (WHERE status = 'resolved'), 0)::int AS time_saved_minutes
+        FROM ai_worker_runs`)
+      const total = Number(rows[0]?.total ?? 0)
+      return { metrics: { total, resolved: Number(rows[0]?.resolved ?? 0), escalated: Number(rows[0]?.escalated ?? 0), resolutionRate: total ? Math.round((Number(rows[0]?.resolved ?? 0) / total) * 1000) / 10 : 0, estimatedManualMinutes: Number(rows[0]?.estimated_manual_minutes ?? 0), timeSavedMinutes: Number(rows[0]?.time_saved_minutes ?? 0) } }
+    })
+  })
 
   app.get('/ai-worker/runs', { preHandler: read }, async (request) => {
     const ctx = request.tenantCtx!
@@ -47,7 +63,7 @@ export async function aiWorkerRoutes(app: FastifyInstance): Promise<void> {
       pool: app.db,
       provider: tenantAi.provider,
       model: tenantAi.model,
-    })
+    }, { triggerType: 'manual' })
     if (!run) throw new Error('worker run not created')
     await withTenant(app.db, ctx.tenantId, async (client) => {
       await recordAudit(client, ctx.tenantId, {

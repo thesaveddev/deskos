@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">ReyDesk Agent</string>
+    <string name="accessibility_service_label">ReyDesk remote control</string>
+    <string name="accessibility_service_description">Allows your IT technician\'s ReyDesk session to perform taps, swipes and scrolling on this device while a support session is active. Screen contents are never read by this service.</string>
+    <string name="ime_label">ReyDesk keyboard</string>
+    <string name="notif_channel_support">Remote support sessions</string>
+    <string name="notif_channel_desc">Shows when a ReyDesk support session is viewing or controlling this device.</string>
+    <string name="notif_session_title">ReyDesk support active</string>
+    <string name="stop_session">Stop</string>
+    <string name="consent_title">Remote support request</string>
+    <string name="allow">Allow</string>
+    <string name="deny">Deny</string>
+</resources>

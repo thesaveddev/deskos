@@ -90,7 +90,7 @@ async function main(): Promise<void> {
   startDeviceAlertScheduler(app.db, {
     offlineSec: app.config.deviceOfflineSec,
     lowDiskPct: app.config.deviceLowDiskPct,
-  })
+  }, 60_000, { pool: app.db, config, fallbackProvider: app.aiProvider })
   console.log(`[devices] alert scheduler running (60s interval; offline after ${app.config.deviceOfflineSec}s, low-disk at ${app.config.deviceLowDiskPct}%)`)
   const monitoringTimer = setInterval(() => { void checkAllMonitoringPolicies(app.db).catch(() => undefined) }, 60_000)
   monitoringTimer.unref()
