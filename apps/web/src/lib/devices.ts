@@ -140,11 +140,12 @@ export interface DeviceDetailResponse {
   asset: DeviceAssetIdentity | null
 }
 
-export function listDevices(params: { q?: string; groupId?: string; status?: DeviceStatus; cursor?: string; limit?: number; offset?: number } = {}): Promise<{ devices: Device[]; total: number; nextCursor: string | null }> {
+export function listDevices(params: { q?: string; groupId?: string; status?: DeviceStatus; deviceType?: DeviceType; cursor?: string; limit?: number; offset?: number } = {}): Promise<{ devices: Device[]; total: number; nextCursor: string | null }> {
   const query = new URLSearchParams()
   if (params.q) query.set('q', params.q)
   if (params.groupId) query.set('groupId', params.groupId)
   if (params.status) query.set('status', params.status)
+  if (params.deviceType) query.set('deviceType', params.deviceType)
   if (params.limit !== undefined) query.set('limit', String(params.limit))
   if (params.offset !== undefined) query.set('offset', String(params.offset))
   if (params.cursor) query.set('cursor', params.cursor)

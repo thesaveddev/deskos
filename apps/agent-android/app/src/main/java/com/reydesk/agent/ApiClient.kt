@@ -87,8 +87,11 @@ class ApiClient(
         )
     }
 
-    fun heartbeat(): Unit {
-        post("/api/v1/agent/heartbeat", JSONObject(), authorized = true)
+    fun heartbeat(batteryPct: Int?, powerSource: String?): Unit {
+        val body = JSONObject()
+        if (batteryPct != null) body.put("batteryPct", batteryPct)
+        if (powerSource != null) body.put("powerSource", powerSource)
+        post("/api/v1/agent/heartbeat", body, authorized = true)
     }
 
     /** Live sessions awaiting this endpoint's action (consent / reconnect). */

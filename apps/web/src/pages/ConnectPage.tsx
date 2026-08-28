@@ -8,6 +8,7 @@ interface ConnectInfo {
   permissions: string[]
   helperAvailable: boolean
   macHelperAvailable?: boolean
+  androidHelperAvailable?: boolean
   platform?: 'windows' | 'macos' | 'linux' | 'ios' | 'ipados' | 'android' | 'unknown'
   helperSupported?: boolean
   claimMode: 'code' | 'email_link'
@@ -233,6 +234,21 @@ export default function ConnectPage() {
 
   useEffect(() => { void load() }, [load])
 
+  // Browser-based support: an open (unclaimed) code must be claimed by this
+  // browser so the consent card and chat appear. The helper can still attach
+  // afterwards via /connect/:code/agent-join as the streaming engine. Only
+  // mark the attempt done when the claim actually succeeds so a transient
+  // failure retries on the next info refresh.
+  const claimedRef = useRef(false)
+  useEffect(() => {
+    if (!info || claimedRef.current) return
+    if (info.state === 'open' && !sessionStorage.getItem(tokenKey)) {
+      void ensureDevice().then((token) => {
+        if (token) claimedRef.current = true
+      })
+    }
+  }, [info, tokenKey, ensureDevice])
+
   useEffect(() => {
     if (!sessionId) return
     void loadChat()
@@ -435,9 +451,11 @@ export default function ConnectPage() {
           </section> : null}
           <div className="connect-code"><span className="etch">Support code</span><div className="support-code-digits">{code}</div><button className="btn btn-ghost btn-sm" onClick={() => void copyCode()}><span>{copied ? 'Copied' : 'Copy code'}</span></button></div>
           <section className="connect-how-to"><span className="settings-eyebrow">How this works</span><ol><li>Review the requested permissions above and approve only what you are comfortable sharing.</li><li>If your screen needs to be shared, download and open the ReyDesk helper on this device — it connects with this same code.</li><li>Keep this page open to chat with the technician and end support at any time.</li></ol></section>
-          {info.helperSupported ? <div className="connect-download"><a className="btn btn-primary" href={`/api/connect/${encodeURIComponent(code)}/download${claimToken ? `?claimToken=${encodeURIComponent(claimToken)}` : ''}`}><span>Download the {info.platform === 'macos' ? 'macOS' : 'Windows'} ReyDesk helper</span></a><span className="muted">Detected device: {info.platform === 'macos' ? 'MacBook/macOS' : 'Windows'}. The helper is portable and runs only for this support session.</span></div> : <div className="connect-download"><strong>{info.platform === 'ios' || info.platform === 'ipados' || info.platform === 'android' ? 'Use browser-based support on this device' : 'Helper download unavailable'}</strong><span className="muted">{info.platform === 'ios' || info.platform === 'ipados' || info.platform === 'android'
+          {info.helperSupported ? <div className="connect-download"><a className="btn btn-primary" href={`/api/connect/${encodeURIComponent(code)}/download${claimToken ? `?claimToken=${encodeURIComponent(claimToken)}` : ''}`}><span>{info.platform === 'android' ? 'Download the ReyDesk Android agent' : `Download the ${info.platform === 'macos' ? 'macOS' : 'Windows'} ReyDesk helper`}</span></a><span className="muted">{info.platform === 'android'
+            ? 'Install the APK, open the ReyDesk agent, and enter this page\u2019s 12-digit code to enroll. You will be prompted to allow screen capture and accessibility when your technician connects.'
+            : `Detected device: ${info.platform === 'macos' ? 'MacBook/macOS' : 'Windows'}. The helper is portable and runs only for this support session.`}</span></div> : <div className="connect-download"><strong>{info.platform === 'ios' || info.platform === 'ipados' || info.platform === 'android' ? 'Use browser-based support on this device' : 'Helper download unavailable'}</strong><span className="muted">{info.platform === 'ios' || info.platform === 'ipados' || info.platform === 'android'
                   ? (info.platform === 'android'
-                    ? 'Install the ReyDesk Android agent for full remote control (screen share + taps). Your IT team distributes it from the console\u2019s device-enrolment screen \u2014 it accepts this page\u2019s 12-digit code too. Otherwise keep this page open to approve access, chat, and share context with your technician.'
+                    ? 'Keep this page open to approve access, chat, and share context with your technician. If your IT team has distributed the ReyDesk Android agent, install it and enter this page\u2019s 12-digit code to enroll.'
                     : 'Mobile operating systems do not permit a general unattended remote-control agent. Keep this page open to approve access, chat, and share context with your technician.')
                   : 'A signed helper for this platform is not configured yet. Ask your technician for a supported package.'}</span></div>}
           {canChat ? <section className="connect-chat-card">

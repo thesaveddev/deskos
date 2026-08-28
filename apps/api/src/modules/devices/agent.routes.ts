@@ -28,7 +28,12 @@ const enrolSchema = z.object({
   model: z.string().max(120).optional(),
 })
 
-const heartbeatSchema = z.object({}).strict()
+const heartbeatSchema = z.object({
+  // Mobile agents piggyback lightweight telemetry on the heartbeat so the
+  // Devices list can show battery without a separate inventory round-trip.
+  batteryPct: z.number().min(0).max(100).nullable().optional(),
+  powerSource: z.string().max(40).optional(),
+}).strict()
 
 const inventorySchema = z.object({
   hostname: z.string().max(255).optional(),
@@ -222,15 +227,17 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
 
   // -- Heartbeat: mark the device alive; resolves open offline alerts --------
   app.post('/agent/heartbeat', { preHandler: [authenticateAgent], config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }, async (request, _reply) => {
-    heartbeatSchema.parse(request.body ?? {})
+    const body = heartbeatSchema.parse(request.body ?? {})
     const ctx = request.deviceCtx!
 
     const updated = await withTenant(app.db, ctx.tenantId, async (client) => {
       const res = await client.query(
-        `UPDATE devices SET last_seen_at = now(), updated_at = now()
+        `UPDATE devices SET last_seen_at = now(), updated_at = now(),
+                battery_pct = COALESCE($3, battery_pct),
+                power_source = COALESCE($4, power_source)
           WHERE id = $1 AND tenant_id = $2
          RETURNING id, name`,
-        [ctx.deviceId, ctx.tenantId],
+        [ctx.deviceId, ctx.tenantId, body.batteryPct ?? null, body.powerSource ?? null],
       )
       if (!res.rows[0]) throw AppError.notFound('Device not found')
       const lastPresence = (await client.query('SELECT status FROM device_presence_events WHERE device_id = $1 ORDER BY observed_at DESC LIMIT 1', [ctx.deviceId])).rows[0]

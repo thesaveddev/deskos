@@ -12,6 +12,7 @@ export const NOTIFICATION_KINDS = [
   'ticket.lock_release_requested',
   'ticket.resolved',
   'ticket.rated',
+  'ticket.reminder',
   'sla.breached',
   'device.alert',
   'offline',

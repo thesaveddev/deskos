@@ -14,8 +14,10 @@ import {
   listActiveTicketLocks,
   startViewingTicket, stopViewingTicket, heartbeatViewing, getTicketViewers,
   slaSummary, STATUS_LABELS, formatWhen, fetchAttachmentBlob, searchLinkTargets,
+  listTicketReminders, createTicketReminder, updateTicketReminder, dismissTicketReminder, deleteTicketReminder,
   type Attachment, type Thread, type Ticket, type TicketDevice, type TicketLink, type LinkSearchResult,
   type Escalation, type EscalationPath, type Team, type TicketLockInfo, type LockReleaseRequest, type LockedTicketSummary,
+  type TicketReminder,
 } from '../lib/tickets.js'
 import { listCannedResponses, type CannedResponse } from '../lib/canned.js'
 import '../styles/ticket-lock.css'
@@ -33,6 +35,12 @@ function displayTicketValue(value: unknown): string {
   } catch {
     return '[unavailable]'
   }
+}
+
+/** Format a Date as a local `datetime-local` input value (YYYY-MM-DDTHH:mm). */
+function toLocalInputValue(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
 export default function TicketDetailPage() {
@@ -145,6 +153,11 @@ export default function TicketDetailPage() {
   const [fwdBusy, setFwdBusy] = useState(false)
   const [showEscalate, setShowEscalate] = useState(false)
   const [showForward, setShowForward] = useState(false)
+  const [showReminder, setShowReminder] = useState(false)
+  const [reminders, setReminders] = useState<TicketReminder[]>([])
+  const [reminderNote, setReminderNote] = useState('')
+  const [reminderDue, setReminderDue] = useState('')
+  const [reminderBusy, setReminderBusy] = useState(false)
 
   const canUseAi = useAuth((state) => state.memberships.some((m) => m.permissions.includes('ai.use')))
   const canOverrideTicketLock = auth.memberships.some((m) => m.permissions.includes('settings.manage'))
@@ -166,6 +179,9 @@ export default function TicketDetailPage() {
       try {
         setLinks((await listTicketLinks(id)).links)
       } catch { setLinks([]) }
+      try {
+        setReminders((await listTicketReminders(id)).reminders)
+      } catch { setReminders([]) }
 
       let activeLock: TicketLockInfo | null = null
       let activeLockIsMine = false
@@ -458,6 +474,62 @@ export default function TicketDetailPage() {
       setError(err instanceof Error ? err.message : 'Forward failed')
     }
     setFwdBusy(false)
+  }
+
+  // ── Reminder handlers ──
+  const openReminder = () => {
+    const next = !showReminder
+    setShowReminder(next)
+    setShowEscalate(false)
+    setShowForward(false)
+    if (next && !reminderDue) {
+      // Default to +2 hours from now.
+      const d = new Date(Date.now() + 2 * 60 * 60 * 1000)
+      setReminderDue(toLocalInputValue(d))
+    }
+  }
+
+  const handleCreateReminder = async () => {
+    if (!ticket || !reminderDue || reminderBusy) return
+    setReminderBusy(true)
+    try {
+      await createTicketReminder(ticket.id, { dueAt: new Date(reminderDue).toISOString(), note: reminderNote.trim() })
+      setReminderNote('')
+      setReminders((await listTicketReminders(ticket.id)).reminders)
+      setShowReminder(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not set reminder')
+    }
+    setReminderBusy(false)
+  }
+
+  const handleSnoozeReminder = async (reminder: TicketReminder) => {
+    try {
+      // Re-arm a fired reminder for +30 minutes.
+      const d = new Date(Date.now() + 30 * 60 * 1000)
+      await updateTicketReminder(reminder.id, { dueAt: d.toISOString() })
+      setReminders((await listTicketReminders(ticket!.id)).reminders)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not snooze reminder')
+    }
+  }
+
+  const handleDismissReminder = async (reminder: TicketReminder) => {
+    try {
+      await dismissTicketReminder(reminder.id)
+      setReminders((await listTicketReminders(ticket!.id)).reminders)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not dismiss reminder')
+    }
+  }
+
+  const handleDeleteReminder = async (reminder: TicketReminder) => {
+    try {
+      await deleteTicketReminder(reminder.id)
+      setReminders((await listTicketReminders(ticket!.id)).reminders)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not delete reminder')
+    }
   }
 
   // ── Lock handlers ──
@@ -813,6 +885,9 @@ export default function TicketDetailPage() {
           <button className="btn btn-ghost btn-sm" disabled={readOnlyForLock} onClick={() => { setShowForward(!showForward); setShowEscalate(false) }}>
             <Icon name="forward" size={14} />Forward
           </button>
+          <button className={`btn btn-ghost btn-sm${reminders.some((r) => !r.dismissed_at) ? ' btn-reminder-active' : ''}`} disabled={readOnlyForLock} onClick={openReminder}>
+            <Icon name="bell" size={14} />Reminder{reminders.some((r) => !r.dismissed_at) ? ` (${reminders.filter((r) => !r.dismissed_at).length})` : ''}
+          </button>
         </div>
 
         {/* Escalation form */}
@@ -861,6 +936,53 @@ export default function TicketDetailPage() {
               </button>
               <button className="btn btn-ghost btn-sm" onClick={() => setShowForward(false)}>Cancel</button>
             </div>
+          </div>
+        )}
+
+        {showReminder && (
+          <div className="ticket-escalate-form">
+            <h4 className="ticket-escalate-title">Set a reminder</h4>
+            <p className="ticket-escalate-hint">Remind yourself to follow up on this ticket later — when the user asks for a call-back, or you're waiting on an install to finish.</p>
+            <div className="form-row">
+              <div className="field">
+                <span className="field-label">When</span>
+                <input className="field-input" type="datetime-local" value={reminderDue} onChange={(e) => setReminderDue(e.target.value)} />
+              </div>
+              <div className="field" style={{ flex: 2 }}>
+                <span className="field-label">Note</span>
+                <input className="field-input" value={reminderNote} onChange={(e) => setReminderNote(e.target.value)} placeholder="e.g. Call back about VPN access" maxLength={500} />
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button className="btn btn-primary btn-sm" onClick={() => void handleCreateReminder()} disabled={reminderBusy || !reminderDue}>
+                {reminderBusy ? 'Saving…' : 'Set reminder'}
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowReminder(false)}>Cancel</button>
+            </div>
+            {reminders.length > 0 ? (
+              <div className="ticket-reminder-list">
+                <span className="etch">Your reminders on this ticket</span>
+                {reminders.map((r) => {
+                  const fired = Boolean(r.fired_at && !r.dismissed_at)
+                  const dismissed = Boolean(r.dismissed_at)
+                  return (
+                    <div key={r.id} className={`ticket-reminder-row${fired ? ' fired' : ''}${dismissed ? ' dismissed' : ''}`}>
+                      <div className="ticket-reminder-main">
+                        <strong>{formatWhen(r.due_at)}</strong>
+                        <span>{r.note || 'Follow up on this ticket'}</span>
+                      </div>
+                      <div className="ticket-reminder-actions">
+                        {fired ? <span className="status-pill status-warn">Due now</span> : null}
+                        {dismissed ? <span className="status-pill">Dismissed</span> : null}
+                        {!dismissed ? <button className="btn btn-ghost btn-xs" onClick={() => void handleSnoozeReminder(r)}>Snooze 30m</button> : null}
+                        {!dismissed ? <button className="btn btn-ghost btn-xs" onClick={() => void handleDismissReminder(r)}>Dismiss</button> : null}
+                        <button className="btn btn-ghost btn-xs" onClick={() => void handleDeleteReminder(r)} title="Delete"><Icon name="close" size={12} /></button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : null}
           </div>
         )}
 

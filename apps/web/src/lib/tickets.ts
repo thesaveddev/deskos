@@ -299,6 +299,39 @@ export function deleteEscalationPath(id: number): Promise<{ ok: boolean }> {
   return api(`/escalation-paths/${id}`, { method: 'DELETE' })
 }
 
+export interface TicketReminder {
+  id: string
+  ticket_id: string
+  ticket_number: number
+  ticket_subject: string
+  user_id: string
+  note: string
+  due_at: string
+  fired_at: string | null
+  dismissed_at: string | null
+  created_at: string
+}
+
+export function listTicketReminders(ticketId: string): Promise<{ reminders: TicketReminder[] }> {
+  return api(`/tickets/${ticketId}/reminders`)
+}
+
+export function createTicketReminder(ticketId: string, body: { dueAt: string; note?: string }): Promise<{ reminder: TicketReminder }> {
+  return api(`/tickets/${ticketId}/reminders`, { method: 'POST', body })
+}
+
+export function updateTicketReminder(id: string, body: { dueAt?: string; note?: string }): Promise<{ reminder: TicketReminder }> {
+  return api(`/reminders/${id}`, { method: 'PATCH', body })
+}
+
+export function dismissTicketReminder(id: string): Promise<{ reminder: TicketReminder }> {
+  return api(`/reminders/${id}/dismiss`, { method: 'POST', body: {} })
+}
+
+export function deleteTicketReminder(id: string): Promise<{ ok: boolean }> {
+  return api(`/reminders/${id}`, { method: 'DELETE' })
+}
+
 export function getTicketEscalationPaths(ticketId: string): Promise<{ paths: EscalationPath[] }> {
   return api(`/tickets/${ticketId}/escalation-paths`)
 }

@@ -18,10 +18,30 @@ android {
         versionName = "1.0.0"
     }
 
+    signingConfigs {
+        create("release") {
+            val keystorePath = System.getenv("REYDESK_ANDROID_KEYSTORE")
+            if (!keystorePath.isNullOrBlank()) {
+                storeFile = file(keystorePath)
+                storePassword = System.getenv("REYDESK_ANDROID_KEYSTORE_PASSWORD") ?: ""
+                keyAlias = System.getenv("REYDESK_ANDROID_KEY_ALIAS") ?: "reydesk"
+                keyPassword = System.getenv("REYDESK_ANDROID_KEY_PASSWORD") ?: ""
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // A stable keystore (via env vars) keeps upgrade signatures consistent.
+            // Until one is configured, fall back to the debug key so the APK is
+            // installable for sideloading.
+            signingConfig = if (System.getenv("REYDESK_ANDROID_KEYSTORE").isNullOrBlank()) {
+                signingConfigs.getByName("debug")
+            } else {
+                signingConfigs.getByName("release")
+            }
         }
         debug {
             applicationIdSuffix = ".debug"

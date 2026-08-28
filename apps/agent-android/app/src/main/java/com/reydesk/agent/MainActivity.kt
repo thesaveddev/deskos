@@ -189,7 +189,7 @@ class MainActivity : Activity() {
         val api = ApiClient.forContext(this)
         while (!stopped && AgentPrefs.isEnrolled(this)) {
             scope.launch(Dispatchers.IO) {
-                runCatching { api.heartbeat() }
+                runCatching { api.heartbeat(Battery.levelPct(this@MainActivity), Battery.powerSource(this@MainActivity)) }
             }
             val pending = runCatching {
                 withContext(Dispatchers.IO) { api.pendingSessions() }

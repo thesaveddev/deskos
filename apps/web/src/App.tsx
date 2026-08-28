@@ -14,6 +14,7 @@ const ApprovalsPage = lazy(() => import('./pages/ApprovalsPage.js'))
 const AssetsPage = lazy(() => import('./pages/AssetsPage.js'))
 const AutomationPage = lazy(() => import('./pages/AutomationPage.js'))
 const ConnectPage = lazy(() => import('./pages/ConnectPage.js'))
+const EnrollPage = lazy(() => import('./pages/EnrollPage.js'))
 const DeviceDetailPage = lazy(() => import('./pages/DeviceDetailPage.js'))
 const DeviceGroupsPage = lazy(() => import('./pages/DeviceGroupsPage.js'))
 const DevicesPage = lazy(() => import('./pages/DevicesPage.js'))
@@ -237,6 +238,7 @@ export default function App() {
       <Route path="/accept-invitation" element={<AcceptInvitationPage />} />
       <Route path="/connect" element={<ConnectPage />} />
       <Route path="/connect/:code" element={<ConnectPage />} />
+      <Route path="/enrol/:code" element={<EnrollPage />} />
       <Route path="/features" element={<FeaturesPage />} />
       <Route path="/use-cases" element={<UseCasesPage />} />
       <Route path="/pricing" element={<PricingPage />} />

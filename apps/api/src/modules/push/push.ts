@@ -26,6 +26,7 @@ const KIND_TITLES: Record<string, string> = {
   'ticket.replied': 'Ticket update',
   'ticket.requester_replied': 'Requester replied',
   'ticket.resolved': 'Ticket resolved',
+  'ticket.reminder': 'Ticket reminder',
   'sla.breached': 'SLA breach',
   'device.alert': 'Device alert',
   offline: 'Device offline',

@@ -13,6 +13,7 @@ import {
   type Device,
   type DeviceGroup,
   type DeviceStatus,
+  type DeviceType,
 } from '../lib/devices.js'
 import { formatWhen } from '../lib/tickets.js'
 
@@ -23,6 +24,16 @@ const STATUS_OPTIONS: Array<{ value: '' | DeviceStatus; label: string }> = [
   { value: 'never', label: 'Never checked in' },
 ]
 
+const PLATFORM_OPTIONS: Array<{ value: '' | DeviceType; label: string }> = [
+  { value: '', label: 'All platforms' },
+  { value: 'mobile', label: 'Mobile (phones & tablets)' },
+  { value: 'laptop', label: 'Laptop' },
+  { value: 'workstation', label: 'Workstation' },
+  { value: 'server', label: 'Server' },
+  { value: 'network_device', label: 'Network device' },
+  { value: 'other', label: 'Other' },
+]
+
 function statusLabel(status: DeviceStatus): string {
   return status === 'never' ? 'Never checked in' : status[0].toUpperCase() + status.slice(1)
 }
@@ -30,6 +41,17 @@ function statusLabel(status: DeviceStatus): string {
 function platformLabel(device: Device): string {
   const os = device.os || 'Unknown OS'
   return device.os_version ? `${os} ${device.os_version}` : os
+}
+
+function isMobile(device: Device): boolean {
+  return device.device_type === 'mobile' || /android|ios|ipad/i.test(`${device.os} ${device.model ?? ''}`)
+}
+
+function batteryBadge(device: Device): { text: string; tone: 'ok' | 'warn' | 'crit' } | null {
+  if (device.battery_pct == null) return null
+  const level = Number(device.battery_pct)
+  const tone = level <= 20 ? 'crit' : level <= 50 ? 'warn' : 'ok'
+  return { text: `${level.toFixed(0)}%${device.power_source === 'charging' ? ' · charging' : ''}`, tone }
 }
 
 function directoryLabel(managedBy: string | undefined): string {
@@ -54,6 +76,7 @@ export default function DevicesPage() {
   const pagination = useOffsetPagination(20)
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState<'' | DeviceStatus>('')
+  const [deviceType, setDeviceType] = useState<'' | DeviceType>('')
   const [groupId, setGroupId] = useState('')
   const [showFilters, setShowFilters] = useState(false)
   const [enrolOpen, setEnrolOpen] = useState(false)
@@ -70,7 +93,7 @@ export default function DevicesPage() {
     setLoading(true)
     setError(null)
     try {
-      const response = await listDevices({ q: query.trim() || undefined, status: status || undefined, groupId: groupId || undefined, limit: pagination.pageSize, offset: pagination.offset })
+      const response = await listDevices({ q: query.trim() || undefined, status: status || undefined, deviceType: deviceType || undefined, groupId: groupId || undefined, limit: pagination.pageSize, offset: pagination.offset })
       setDevices(response.devices)
       setTotal(response.total ?? response.devices.length)
     } catch (err) {
@@ -79,7 +102,7 @@ export default function DevicesPage() {
     } finally {
       setLoading(false)
     }
-  }, [groupId, pagination.offset, pagination.pageSize, query, status])
+  }, [deviceType, groupId, pagination.offset, pagination.pageSize, query, status])
 
   useEffect(() => { void loadDevices() }, [loadDevices])
 
@@ -124,13 +147,15 @@ export default function DevicesPage() {
   const clearFilters = () => {
     setQuery('')
     setStatus('')
+    setDeviceType('')
     setGroupId('')
     pagination.reset()
   }
 
   const onlineOnPage = useMemo(() => devices.filter((device) => device.status === 'online').length, [devices])
   const offlineOnPage = useMemo(() => devices.filter((device) => device.status === 'offline').length, [devices])
-  const activeFilters = Boolean(query || status || groupId)
+  const mobileOnPage = useMemo(() => devices.filter((device) => isMobile(device)).length, [devices])
+  const activeFilters = Boolean(query || status || deviceType || groupId)
   const deviceTabs = [
     { label: 'All endpoints', count: total, active: !status },
     { label: 'Online', count: status === 'online' ? total : undefined, active: status === 'online' },
@@ -151,6 +176,7 @@ export default function DevicesPage() {
         <div className="device-summary-card"><span className="device-summary-label">Total endpoints</span><strong>{total}</strong><small>{activeFilters ? 'Matching filters' : 'Organization-wide'}</small></div>
         <div className="device-summary-card device-summary-online"><span className="device-summary-label">Online now</span><strong>{onlineOnPage}</strong><small>On this page</small></div>
         <div className="device-summary-card device-summary-offline"><span className="device-summary-label">Needs attention</span><strong>{offlineOnPage}</strong><small>On this page</small></div>
+        <div className="device-summary-card"><span className="device-summary-label">Mobile endpoints</span><strong>{mobileOnPage}</strong><small>On this page</small></div>
         <div className="device-summary-card"><span className="device-summary-label">Device groups</span><strong>{groups.length}</strong><small>For filtering</small></div>
       </div>
 
@@ -166,16 +192,16 @@ export default function DevicesPage() {
         {activeFilters ? <button type="button" className="btn btn-link btn-sm" onClick={clearFilters}>Clear filters</button> : null}
       </div>
 
-      {showFilters ? <div className="device-filter-panel"><div className="device-filter-field"><label className="tickets-filter-label" htmlFor="device-status">Status</label><select id="device-status" className="field-input" value={status} onChange={(event) => { setStatus(event.target.value as '' | DeviceStatus); pagination.goToPage(0) }}>{STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div><div className="device-filter-field"><label className="tickets-filter-label" htmlFor="device-group">Device group</label><select id="device-group" className="field-input" value={groupId} onChange={(event) => { setGroupId(event.target.value); pagination.goToPage(0) }}><option value="">All groups</option>{groups.map((group) => <option key={group.id} value={group.id}>{group.name} · {group.device_count}</option>)}</select></div>{groupsError ? <span className="muted device-filter-error">{groupsError}</span> : null}</div> : null}
+      {showFilters ? <div className="device-filter-panel"><div className="device-filter-field"><label className="tickets-filter-label" htmlFor="device-status">Status</label><select id="device-status" className="field-input" value={status} onChange={(event) => { setStatus(event.target.value as '' | DeviceStatus); pagination.goToPage(0) }}>{STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div><div className="device-filter-field"><label className="tickets-filter-label" htmlFor="device-platform">Platform</label><select id="device-platform" className="field-input" value={deviceType} onChange={(event) => { setDeviceType(event.target.value as '' | DeviceType); pagination.goToPage(0) }}>{PLATFORM_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div><div className="device-filter-field"><label className="tickets-filter-label" htmlFor="device-group">Device group</label><select id="device-group" className="field-input" value={groupId} onChange={(event) => { setGroupId(event.target.value); pagination.goToPage(0) }}><option value="">All groups</option>{groups.map((group) => <option key={group.id} value={group.id}>{group.name} · {group.device_count}</option>)}</select></div>{groupsError ? <span className="muted device-filter-error">{groupsError}</span> : null}</div> : null}
 
       <div className="device-list-head"><div><h2>Endpoint inventory</h2><p>{loading ? 'Refreshing device inventory…' : `${devices.length} shown${total !== devices.length ? ` of ${total}` : ''}`}</p></div><span className="device-list-context">{activeFilters ? 'Filtered inventory' : 'Live inventory'}</span></div>
 
-      {loading ? <div className="device-loading"><span className="etch">Loading devices…</span></div> : devices.length === 0 ? <div className="empty-state"><Icon name="monitor" size={24} /><strong>No devices found</strong><span>{activeFilters ? 'Try changing or clearing your filters.' : 'Enroll your first endpoint to start managing your estate.'}</span>{canManage && !activeFilters ? <button className="btn btn-primary btn-sm" onClick={() => setEnrolOpen(true)}><Icon name="upload" size={14} />Deploy / enrol device</button> : null}</div> : <div className="device-table-wrap"><table className="device-table"><thead><tr><th>Endpoint</th><th>Platform</th><th>Asset tag</th><th>Assigned to</th><th>IP address</th><th>Status</th><th>Group</th><th>Agent</th><th>Last seen</th></tr></thead><tbody>{devices.map((device) => <tr key={device.id}><td><Link to={`/devices/${device.id}`} className="device-name-link"><span className="device-avatar">{device.name.slice(0, 1).toUpperCase()}</span><span><strong>{device.name}</strong><small>{device.hostname || 'No hostname'}</small></span></Link></td><td>{platformLabel(device)}<span className="device-ip">{device.arch || '—'}</span></td><td className="mono">{device.asset_tag || '—'}</td><td>{device.assigned_user_name || (device.assignment_status === 'shared' ? 'Shared device' : <span className="muted">Unassigned</span>)}</td><td className="mono device-ip-cell">{device.ip_address || '—'}</td><td><span className={`status-pill status-${device.status}`}>{statusLabel(device.status)}</span></td><td>{device.group_name ?? <span className="muted">Unassigned</span>}</td><td className="mono">{device.source === 'directory' ? <span className="device-badges"><span className="directory-device-badge">{directoryLabel(device.managed_by)}</span>{device.agent_device_id ? <span className="directory-device-badge directory-device-matched" title={`Linked to ${device.linked_agent_name || 'enrolled agent'}`}>Agent-linked</span> : null}</span> : device.agent_version || '—'}</td><td className="mono">{device.last_seen_at ? formatWhen(device.last_seen_at) : 'Never'}</td></tr>)}</tbody></table></div>}
+      {loading ? <div className="device-loading"><span className="etch">Loading devices…</span></div> : devices.length === 0 ? <div className="empty-state"><Icon name="monitor" size={24} /><strong>No devices found</strong><span>{activeFilters ? 'Try changing or clearing your filters.' : 'Enroll your first endpoint to start managing your estate.'}</span>{canManage && !activeFilters ? <button className="btn btn-primary btn-sm" onClick={() => setEnrolOpen(true)}><Icon name="upload" size={14} />Deploy / enrol device</button> : null}</div> : <div className="device-table-wrap"><table className="device-table"><thead><tr><th>Endpoint</th><th>Platform</th><th>Asset tag</th><th>Assigned to</th><th>IP address</th><th>Status</th><th>Group</th><th>Agent</th><th>Last seen</th></tr></thead><tbody>{devices.map((device) => <tr key={device.id}><td><Link to={`/devices/${device.id}`} className="device-name-link"><span className={`device-avatar${isMobile(device) ? ' device-avatar-mobile' : ''}`}>{isMobile(device) ? <Icon name="phone" size={15} /> : device.name.slice(0, 1).toUpperCase()}</span><span><strong>{device.name}</strong><small>{device.hostname || 'No hostname'}</small></span></Link></td><td>{platformLabel(device)}<span className="device-ip">{device.arch || '—'}</span>{isMobile(device) && batteryBadge(device) ? <span className={`device-battery battery-${batteryBadge(device)!.tone}`} title="Battery level">{batteryBadge(device)!.text}</span> : null}</td><td className="mono">{device.asset_tag || '—'}</td><td>{device.assigned_user_name || (device.assignment_status === 'shared' ? 'Shared device' : <span className="muted">Unassigned</span>)}</td><td className="mono device-ip-cell">{device.ip_address || '—'}</td><td><span className={`status-pill status-${device.status}`}>{statusLabel(device.status)}</span></td><td>{device.group_name ?? <span className="muted">Unassigned</span>}</td><td className="mono">{device.source === 'directory' ? <span className="device-badges"><span className="directory-device-badge">{directoryLabel(device.managed_by)}</span>{device.agent_device_id ? <span className="directory-device-badge directory-device-matched" title={`Linked to ${device.linked_agent_name || 'enrolled agent'}`}>Agent-linked</span> : null}</span> : device.agent_version || '—'}</td><td className="mono">{device.last_seen_at ? formatWhen(device.last_seen_at) : 'Never'}</td></tr>)}</tbody></table></div>}
 
       {devices.length > 0 ? <Pagination page={pagination.page} pageSize={pagination.pageSize} totalItems={total} loading={loading} onPageChange={pagination.goToPage} onPageSizeChange={pagination.changeSize} /> : null}
 
       <Modal open={enrolOpen} onClose={() => { if (!tokenBusy) setEnrolOpen(false) }} title="Deploy or enrol a device" width={700}>
-        <div className="enrol-modal-content"><p className="enrol-modal-intro">Choose the method that matches the device. For a user-assisted install, send the 12-digit code to the person at the device. They download the helper, enter the code, and approve access when prompted.</p><div className="enrol-method-grid"><article><span className="enrol-method-icon"><Icon name="key" size={18} /></span><h3>Customer-assisted install</h3><p>Generate a 12-digit, single-use code. The user visits the support page, downloads the ReyDesk helper, enters the code, and approves the enrollment.</p><button className="btn btn-primary btn-sm" onClick={() => void rotate()} disabled={tokenBusy}><Icon name="refresh" size={14} />{tokenBusy ? 'Generating…' : 'Generate enrollment code'}</button>{enrolCode ? <div className="enrol-secret"><code>{enrolCode}</code><button className="btn btn-ghost btn-xs" onClick={() => void copy(enrolCode, 'Enrollment code')}><Icon name="copy" size={13} />Copy</button></div> : null}<small>{codeExpiresAt ? `Expires ${new Date(codeExpiresAt).toLocaleString()}` : 'Code is shown only after generation.'}</small></article><article><span className="enrol-method-icon"><Icon name="settings" size={18} /></span><h3>IT fleet deployment</h3><p>Use the opaque fleet token with Intune, Group Policy, or your endpoint management platform.</p>{fleetToken ? <div className="enrol-secret"><code>{fleetToken}</code><button className="btn btn-ghost btn-xs" onClick={() => void copy(fleetToken, 'Fleet token')}><Icon name="copy" size={13} />Copy</button></div> : <span className="muted">Rotate credentials to create a fleet token.</span>}<small>Never expose the fleet token in client-side scripts or tickets.</small></article><article><span className="enrol-method-icon"><Icon name="monitor" size={18} /></span><h3>Android &amp; tablets</h3><p>Install the ReyDesk Android agent on phones and tablets, then enter this same 12-digit code — or open the deep link <code>reydesk://enrol?token={enrolCode || 'CODE'}</code> from a QR code on the device.</p><small>Enrolled devices appear here as mobile endpoints; sessions ask the user for consent plus screen-capture permission each time.</small></article></div>{message ? <Alert kind="info">{message}</Alert> : null}<div className="enrol-endpoints"><span className="etch">Server endpoints</span><div><span>API</span><code>{serverApiUrl()}</code></div><div><span>Relay</span><code>{serverRelayUrl()}</code></div></div><div className="enrol-modal-note"><Icon name="shield" size={15} /><span>Credentials are tenant-scoped. Rotate them if exposed. A directory record is inventory-only until the ReyDesk agent is installed and enrolled.</span></div></div>
+        <div className="enrol-modal-content"><p className="enrol-modal-intro">Choose the method that matches the device. Enrollment adds an endpoint to Devices; it does not start a remote support session.</p><div className="enrol-method-grid"><article><span className="enrol-method-icon"><Icon name="key" size={18} /></span><h3>Customer-assisted install</h3><p>Generate a 12-digit, single-use code. Send the enrollment URL below to the person at the device. They open it, download the agent, and enter the code inside the agent.</p><button className="btn btn-primary btn-sm" onClick={() => void rotate()} disabled={tokenBusy}><Icon name="refresh" size={14} />{tokenBusy ? 'Generating…' : 'Generate enrollment code'}</button>{enrolCode ? <><div className="enrol-secret"><code>{enrolCode}</code><button className="btn btn-ghost btn-xs" onClick={() => void copy(enrolCode, 'Enrollment code')}><Icon name="copy" size={13} />Copy</button></div><div className="enrol-secret"><code>{window.location.origin}/enrol/{enrolCode}</code><button className="btn btn-ghost btn-xs" onClick={() => void copy(`${window.location.origin}/enrol/${enrolCode}`, 'Enrollment URL')}><Icon name="copy" size={13} />Copy URL</button></div></> : null}<small>{codeExpiresAt ? `Expires ${new Date(codeExpiresAt).toLocaleString()}` : 'Code is shown only after generation.'}</small></article><article><span className="enrol-method-icon"><Icon name="settings" size={18} /></span><h3>IT fleet deployment</h3><p>Use the opaque fleet token with Intune, Group Policy, or your endpoint management platform.</p>{fleetToken ? <div className="enrol-secret"><code>{fleetToken}</code><button className="btn btn-ghost btn-xs" onClick={() => void copy(fleetToken, 'Fleet token')}><Icon name="copy" size={13} />Copy</button></div> : <span className="muted">Rotate credentials to create a fleet token.</span>}<small>Never expose the fleet token in client-side scripts or tickets.</small></article><article><span className="enrol-method-icon"><Icon name="monitor" size={18} /></span><h3>Android &amp; tablets</h3><p>Install the ReyDesk Android agent on phones and tablets from the enrollment URL, then enter this enrollment code — or open the deep link <code>reydesk://enrol?token={enrolCode || 'CODE'}</code> from a QR code on the device.</p><small>Enrolled devices appear here as mobile endpoints; sessions ask the user for consent plus screen-capture permission each time.</small></article></div>{message ? <Alert kind="info">{message}</Alert> : null}<div className="enrol-endpoints"><span className="etch">Server endpoints</span><div><span>API</span><code>{serverApiUrl()}</code></div><div><span>Relay</span><code>{serverRelayUrl()}</code></div></div><div className="enrol-modal-note"><Icon name="shield" size={15} /><span>Enrollment codes are tenant-scoped and single-use. Share the enrollment URL only with the intended device owner. Do not paste an enrollment code into the Remote Session support page; use <code>/enrol/&lt;code&gt;</code> instead.</span></div></div>
       </Modal>
     </Shell>
   )

@@ -46,7 +46,7 @@ const DEPLOYMENTS = [
   {
     tag: 'One-time code',
     title: 'No pre-install needed',
-    body: 'User runs a small helper, enters a 10-digit code you give them over the phone. Done.',
+    body: 'User runs a small helper, enters a 12-digit code you give them over the phone. Done.',
   },
   {
     tag: 'Silent install',

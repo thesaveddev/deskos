@@ -8,6 +8,7 @@ import { checkAllMonitoringPolicies } from './modules/monitoring/monitoring.js'
 import { generateVapidKeyPair } from './modules/push/vapid.js'
 import { startSlaScheduler } from './modules/tickets/sla.js'
 import { startEscalationScheduler } from './modules/tickets/escalation.scheduler.js'
+import { startReminderScheduler } from './modules/tickets/reminders.routes.js'
 
 function setting(name: string): string | undefined {
   return process.env[name] ?? process.env[name.replace(/^REYDESK_/, 'DESKOS_')]
@@ -87,6 +88,8 @@ async function main(): Promise<void> {
   console.log('[sla] breach scheduler running (60s interval)')
   startEscalationScheduler(app.db)
   console.log('[escalation] auto-escalation policy scheduler running (60s interval)')
+  startReminderScheduler(app.db)
+  console.log('[tickets] reminder scheduler running (30s interval)')
   startDeviceAlertScheduler(app.db, {
     offlineSec: app.config.deviceOfflineSec,
     lowDiskPct: app.config.deviceLowDiskPct,

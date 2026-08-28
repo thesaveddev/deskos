@@ -69,6 +69,17 @@ describe('devices & agent v1', () => {
       expect(d.agent_token_hash).toBeNull() // never leaks the hash
     })
 
+    it('validates enrollment codes without treating them as remote support links', async () => {
+      const rotated = await app.inject({ method: 'POST', url: '/api/v1/devices/enrol-token/rotate', headers: authHeaders(owner) })
+      expect(rotated.statusCode).toBe(201)
+      const code = rotated.json().code as string
+      const validation = await app.inject({ method: 'GET', url: `/api/enrol/${code}`, headers: { 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' } })
+      expect(validation.statusCode).toBe(200)
+      expect(validation.json()).toMatchObject({ valid: true, platform: 'windows' })
+      const remote = await app.inject({ method: 'GET', url: `/api/connect/${code}` })
+      expect(remote.statusCode).toBe(404)
+    })
+
     it('rejects an invalid or revoked enrolment token', async () => {
       const bad = await app.inject({
         method: 'POST',

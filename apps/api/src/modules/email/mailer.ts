@@ -282,6 +282,7 @@ export class Mailer {
       'ticket.requester_replied': 'Requester replied',
       'ticket.ai_triage': 'ReyDesk assistant update',
       'ticket.resolved': 'Ticket resolved',
+      'ticket.reminder': 'Ticket reminder',
       'sla.breached': 'SLA breach',
       'service.approval': 'Approval needed',
       'service.approval_decided': 'Approval decision',

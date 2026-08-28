@@ -296,7 +296,7 @@ class CaptureService : Service() {
 
     private suspend fun heartbeatLoop() {
         while (true) {
-            runCatching { api.heartbeat() }
+            runCatching { api.heartbeat(Battery.levelPct(this), Battery.powerSource(this)) }
             delay(30_000)
         }
     }

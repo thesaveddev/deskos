@@ -25,8 +25,10 @@ export interface AppConfig {
   relayUrl: string
   /** Absolute path to the signed portable Windows helper binary served on the connect page. */
   helperBinaryPath: string
-  /** Optional signed macOS helper package; omitted until the notarized agent is configured. */
+  /** Optional signed macOS helper package; omitted unless the notarized agent is configured. */
   macHelperBinaryPath: string
+  /** Absolute path to the Android agent APK served on the connect page for mobile devices. */
+  androidApkPath: string
   deviceOfflineSec: number
   deviceLowDiskPct: number
   smtp: SmtpConfig
@@ -249,6 +251,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       'artifacts',
       'macos',
       'reydesk-helper.dmg',
+    ),
+    androidApkPath: value('REYDESK_ANDROID_APK') ?? path.join(
+      path.dirname(fileURLToPath(import.meta.url)),
+      '..',
+      '..',
+      '..',
+      'artifacts',
+      'android',
+      'reydesk-agent.apk',
     ),
     deviceOfflineSec: Number(value('REYDESK_DEVICE_OFFLINE_SEC') ?? 120),
     deviceLowDiskPct: Number(value('REYDESK_DEVICE_LOW_DISK_PCT') ?? 85),

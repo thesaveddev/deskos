@@ -111,9 +111,10 @@ function publicAdhoc(
   row: AdhocRow,
   helperAvailable: boolean,
   macHelperAvailable: boolean,
+  androidHelperAvailable: boolean,
   platform: ClientPlatform,
   sessionState?: string,
-): { state: string; sessionState?: string; reason: string; permissions: string[]; helperAvailable: boolean; macHelperAvailable: boolean; platform: ClientPlatform; helperSupported: boolean; claimMode: string; sessionId?: string } {
+): { state: string; sessionState?: string; reason: string; permissions: string[]; helperAvailable: boolean; macHelperAvailable: boolean; androidHelperAvailable: boolean; platform: ClientPlatform; helperSupported: boolean; claimMode: string; sessionId?: string } {
   return {
     state: row.state,
     ...(sessionState ? { sessionState } : {}),
@@ -121,8 +122,9 @@ function publicAdhoc(
     permissions: row.permissions,
     helperAvailable,
     macHelperAvailable,
+    androidHelperAvailable,
     platform,
-    helperSupported: platform === 'windows' ? helperAvailable : platform === 'macos' ? macHelperAvailable : false,
+    helperSupported: platform === 'windows' ? helperAvailable : platform === 'macos' ? macHelperAvailable : platform === 'android' ? androidHelperAvailable : false,
     claimMode: row.claim_mode,
     ...(row.remote_session_id ? { sessionId: row.remote_session_id } : {}),
   }
@@ -297,11 +299,12 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         existsSync(app.config.macHelperBinaryPath) &&
         app.config.env !== 'test' && process.env.REYDESK_MAC_HELPER_VERIFIED === 'true',
       )
+    const androidHelperAvailable = Boolean(app.config.androidApkPath && existsSync(app.config.androidApkPath))
     const platform = clientPlatform(request)
     const sessionState = row.remote_session_id
       ? (await withTenant(app.db, row.tenant_id, (client) => client.query('SELECT state FROM remote_sessions WHERE id = $1', [row.remote_session_id]))).rows[0]?.state as string | undefined
       : undefined
-    return reply.send(publicAdhoc(row, helperAvailable, macHelperAvailable, platform, sessionState))
+    return reply.send(publicAdhoc(row, helperAvailable, macHelperAvailable, androidHelperAvailable, platform, sessionState))
   })
 
   app.get(
@@ -322,23 +325,34 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
           .send({ error: { code: 'not_found', message: 'This support link is invalid or expired.' } })
       }
       const platform = clientPlatform(request)
-      const binaryPath = platform === 'macos' && process.env.REYDESK_MAC_HELPER_VERIFIED === 'true'
-        ? app.config.macHelperBinaryPath
-        : platform === 'windows'
-          ? app.config.helperBinaryPath
-          : app.config.env === 'test' && app.config.helperBinaryPath
-            ? app.config.helperBinaryPath
-            : ''
-      const filename = platform === 'macos' ? 'reydesk-helper.dmg' : 'reydesk-helper.exe'
+      let binaryPath = ''
+      let filename = ''
+      let contentType = 'application/octet-stream'
+      if (platform === 'android') {
+        binaryPath = app.config.androidApkPath
+        filename = 'reydesk-agent.apk'
+        contentType = 'application/vnd.android.package-archive'
+      } else if (platform === 'macos' && process.env.REYDESK_MAC_HELPER_VERIFIED === 'true') {
+        binaryPath = app.config.macHelperBinaryPath
+        filename = 'reydesk-helper.dmg'
+      } else if (platform === 'windows') {
+        binaryPath = app.config.helperBinaryPath
+        filename = 'reydesk-helper.exe'
+      } else if (app.config.env === 'test' && app.config.helperBinaryPath) {
+        binaryPath = app.config.helperBinaryPath
+        filename = 'reydesk-helper.exe'
+      }
       if (!binaryPath || !existsSync(binaryPath)) {
         const message = platform === 'macos'
           ? 'The macOS helper is not available yet. Use the browser support experience or ask your technician for a signed notarized package.'
           : platform === 'windows'
             ? 'The Windows helper is not available yet.'
-            : 'A native helper is not available for this device. Use the browser support experience.'
+            : platform === 'android'
+              ? 'The Android agent is not available yet. Keep this page open to approve access and chat with your technician.'
+              : 'A native helper is not available for this device. Use the browser support experience.'
         return reply.code(404).send({ error: { code: 'helper_unavailable', message } })
       }
-      reply.header('Content-Type', 'application/octet-stream')
+      reply.header('Content-Type', contentType)
       reply.header('Content-Disposition', `attachment; filename="${filename}"`)
       return reply.send(createReadStream(binaryPath))
     },

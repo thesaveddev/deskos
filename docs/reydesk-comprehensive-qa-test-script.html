@@ -1,0 +1,692 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>ReyDesk — Comprehensive QA &amp; UAT Test Script</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 10.5pt; line-height: 1.45; color: #17202a; background: #fff;
+    padding: 36px 40px;
+  }
+  h1 { font-size: 20pt; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h2 {
+    font-size: 12.5pt; margin: 22px 0 8px; padding-bottom: 4px;
+    border-bottom: 2px solid #e8a33d; color: #1b1408;
+    page-break-after: avoid;
+  }
+  h3 { font-size: 11pt; margin: 14px 0 6px; page-break-after: avoid; }
+  p { margin: 4px 0; }
+  .sub { color: #5b6472; font-size: 10pt; }
+  .meta { display: flex; gap: 24px; flex-wrap: wrap; margin: 12px 0; }
+  .meta div { background: #f6f7f9; border: 1px solid #dfe3e8; border-radius: 8px; padding: 8px 14px; }
+  .meta .k { font-size: 8.5pt; text-transform: uppercase; letter-spacing: 0.06em; color: #6b7280; }
+  table { width: 100%; border-collapse: collapse; margin: 8px 0 14px; page-break-inside: auto; }
+  th, td { border: 1px solid #d4d9df; padding: 5px 8px; vertical-align: top; text-align: left; }
+  th { background: #f0f2f5; font-size: 9pt; text-transform: uppercase; letter-spacing: 0.04em; color: #3c4450; }
+  td.id { font-family: "Consolas", "SF Mono", monospace; font-size: 8.5pt; color: #6b7280; white-space: nowrap; }
+  tr { page-break-inside: avoid; }
+  .p0 { background: #fdeeee; } .p1 { background: #fdf6e7; } .p2 { background: #f4f7f4; }
+  .tag { display: inline-block; font-size: 8pt; font-weight: 700; border-radius: 3px; padding: 1px 5px; color: #fff; }
+  .tag.p0 { background: #c0392b; } .tag.p1 { background: #d9820b; } .tag.p2 { background: #2c7a4b; }
+  .step { color: #3c4450; }
+  ul { margin: 3px 0 3px 18px; padding: 0; }
+  code { font-family: "Consolas", "SF Mono", monospace; font-size: 9pt; background: #f2f4f7; padding: 0 3px; border-radius: 3px; }
+  .note { background: #fdf6e7; border: 1px solid #e8d9a3; border-radius: 6px; padding: 8px 12px; margin: 10px 0; }
+  .section-note { background: #f0f4ff; border: 1px solid #c5d3f0; border-radius: 6px; padding: 8px 12px; margin: 8px 0 12px; font-size: 9.5pt; }
+  .checklist li { margin: 2px 0; }
+  footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid #d4d9df; color: #6b7280; font-size: 8.5pt; }
+  @media print { body { padding: 12px 16px; } }
+  .toc { columns: 2; column-gap: 24px; margin: 10px 0 16px; }
+  .toc li { break-inside: avoid; margin: 2px 0; }
+</style>
+</head>
+<body>
+
+<h1>ReyDesk — Comprehensive QA &amp; UAT Test Script</h1>
+<p class="sub">End-to-end manual test guide covering every product surface · for go-live sign-off</p>
+
+<div class="meta">
+  <div><span class="k">Build</span><br /><b>master @ latest deployed SHA</b></div>
+  <div><span class="k">Scope</span><br />Full product — every feature, every role</div>
+  <div><span class="k">Automated</span><br /><code>npm test</code> (API · 472+ tests) + <code>npx playwright test</code> (E2E · 68+ tests)</div>
+  <div><span class="k">Priority key</span><br /><span class="tag p0">P0</span> launch blocker · <span class="tag p1">P1</span> must pass · <span class="tag p2">P2</span> should pass</div>
+</div>
+
+<div class="note"><b>Before you start:</b> Open the app in an incognito window. Have ready: (1) a Windows PC with the helper agent installed, (2) a Mac or tablet for the portal, (3) two people — a <b>technician</b> and a <b>requester</b>, (4) a Stripe/Paystack test mode account, (5) an S3-compatible bucket or local storage configured. Record failures with console (F12), the build hash, and the timestamp.</div>
+
+<!-- ================================================================== -->
+<!-- SECTION 0: PRE-FLIGHT CHECKLIST -->
+<!-- ================================================================== -->
+
+<h2>0 &middot; Pre-flight environment checklist</h2>
+<table>
+<tr><th>#</th><th>Check</th><th>How</th><th>Pass?</th></tr>
+<tr><td class="id">PF1</td><td>API server is reachable</td><td class="step"><code>curl https://reydesk.com/healthz</code> → 200</td><td>☐</td></tr>
+<tr><td class="id">PF2</td><td>Relay server is reachable</td><td class="step"><code>curl https://reydesk.com:3478/healthz</code> or relay health endpoint</td><td>☐</td></tr>
+<tr><td class="id">PF3</td><td>TURN probe passes</td><td class="step">Navigate to <code>/diagnostics/turn</code> → Run TURN probe → must say relay candidate gathered</td><td>☐</td></tr>
+<tr><td class="id">PF4</td><td>S3 storage configured</td><td class="step">Upload a profile photo; verify it persists across reload</td><td>☐</td></tr>
+<tr><td class="id">PF5</td><td>SMTP configured</td><td class="step">Trigger a password reset or staff invite; verify email arrives</td><td>☐</td></tr>
+<tr><td class="id">PF6</td><td>Stripe/Paystack test mode</td><td class="step">Open Billing page; verify plans load</td><td>☐</td></tr>
+<tr><td class="id">PF7</td><td>Web Push configured</td><td class="step">Open Settings → Notifications; subscribe; verify browser shows VAPID key</td><td>☐</td></tr>
+<tr><td class="id">PF8</td><td>Windows helper agent installed</td><td class="step">Agent appears on Devices page with heartbeat</td><td>☐</td></tr>
+<tr><td class="id">PF9</td><td>Two browser sessions available</td><td class="step">Technician and requester each have their own login</td><td>☐</td></tr>
+<tr><td class="id">PF10</td><td>Multi-monitor device available</td><td class="step">Test machine has at least 2 displays for display-switching tests</td><td>☐</td></tr>
+</table>
+
+<!-- ================================================================== -->
+<!-- SECTION 1: SIGN-UP, SIGN-IN & SESSION RELIABILITY -->
+<!-- ================================================================== -->
+
+<h2>1 &middot; Sign-up, sign-in &amp; session reliability</h2>
+<table>
+<tr><th>ID</th><th>Test</th><th>Steps</th><th>Expected</th><th>Pri</th><th>Pass</th></tr>
+<tr class="p0"><td class="id">A1</td><td>First-run tenant setup</td><td class="step">Open <code>/</code> — create an org — invite the owner</td><td>Tenant dashboard loads; welcome state guides setup</td><td><span class="tag p0">P0</span></td><td>☐</td></tr>
+<tr class="p0"><td class="id">A2</td><td>Sign-in with email/password</td><td class="step">Enter valid credentials → Submit</td><td>Redirects to dashboard; session cookie set; user identity correct</td><td><span class="tag p0">P0</span></td><td>☐</td></tr>
+<tr class="p0"><td class="id">A3</td><td>MFA (TOTP)</td><td class="step">Enable MFA in settings → sign in → enter TOTP code</td><td>Wrong TOTP rejected; correct TOTP grants access; session persists across reload</td><td><span class="tag p0">P0</span></td><td>☐</td></tr>
+<tr class="p0"><td class="id">A4</td><td>Idle-resume reload (chunk error fix)</td><td class="step">Stay idle 10+ min, resume, sign in, click into any page</td><td>No "dynamic import" crash — app updates and reloads cleanly via ErrorBoundary</td><td><span class="tag p0">P0</span></td><td>☐</td></tr>
+<tr class="p0"><td class="id">A5</td><td>Password reset flow</td><td class="step">Click "Forgot password" → enter email → follow emailed link → set new password</td><td>Old password rejected; new one works; email arrives within 2 min</td><td><span class="tag p0">P0</span></td><td>☐</td></tr>
+<tr class="p0"><td class="id">A6</td><td>Invalid password rejection</td><td class="step">Enter wrong password 5 times</td><td>Account locked or rate-limited with clear message</td><td><span class="tag p0">P0</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">A7</td><td>Lock screen — idle timeout</td><td class="step">Configure idle lock to 10 min in settings → wait 10 min without interaction</td><td>Locks at ~10 min (not earlier, not much later); fresh tab honours the same lock</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">A8</td><td>Lock screen — manual lock</td><td class="step">Press Ctrl+L or click the lock button in the top bar</td><td>Screen locks immediately; unlock requires password</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">A9</td><td>Lock screen — cross-tab sync</td><td class="step">Lock in tab A → check tab B</td><td>Tab B also shows lock screen</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">A10</td><td>Lock screen — unlock goes to login</td><td class="step">Lock screen → click "Go to login"</td><td>Clears session, redirects to login page</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">A11</td><td>Role-based access control</td><td class="step">Log in as each role: end-user, technician, admin</td><td>Each sees only their permitted nav items and pages</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p0"><td class="id">A12</td><td>Staff invitation via email</td><td class="step">Admin → Staff → Invite by email → recipient follows link</td><td>Magic link works; invited user joins as the correct role; invitation history records it</td><td><span class="tag p0">P0</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">A13</td><td>Accept invitation page</td><td class="step">Open <code>/accept-invitation?token=…</code> with a valid token</td><td>Signup form pre-fills; user can set password and join</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">A14</td><td>Expired invitation</td><td class="step">Open an expired invitation link</td><td>Clear error message; option to request a new invite</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">A15</td><td>Logout</td><td class="step">Click sign out</td><td>Session destroyed; redirect to login; protected pages return 401</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+</table>
+
+<!-- ================================================================== -->
+<!-- SECTION 2: DASHBOARD & HOME -->
+<!-- ================================================================== -->
+
+<h2>2 &middot; Dashboard &amp; home</h2>
+<table>
+<tr><th>ID</th><th>Test</th><th>Steps</th><th>Expected</th><th>Pri</th><th>Pass</th></tr>
+<tr class="p1"><td class="id">H1</td><td>Dashboard loads for signed-in user</td><td class="step">Sign in → land on <code>/</code></td><td>Home page renders with summary widgets (open tickets, active sessions, device status)</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">H2</td><td>Admin dashboard</td><td class="step">Sign in as admin → navigate to <code>/admin</code></td><td>Admin dashboard shows tenant stats, user counts, billing summary</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">H3</td><td>Dashboard widgets load without errors</td><td class="step">Open browser console → load dashboard</td><td>No JS errors; all widgets render data or show empty states</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">H4</td><td>Landing page (anonymous)</td><td class="step">Open <code>/</code> without signing in</td><td>Marketing landing page renders; CTA links to signup/login</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+</table>
+
+<!-- ================================================================== -->
+<!-- SECTION 3: TICKETS & CSAT -->
+<!-- ================================================================== -->
+
+<h2>3 &middot; Tickets &amp; CSAT</h2>
+<table>
+<tr><th>ID</th><th>Test</th><th>Steps</th><th>Expected</th><th>Pri</th><th>Pass</th></tr>
+<tr class="p0"><td class="id">T1</td><td>Create a ticket (staff)</td><td class="step">Technician → New Ticket → fill subject, body, attach file → Submit</td><td>Ticket appears in queue with correct number, attachment, and timestamp</td><td><span class="tag p0">P0</span></td><td>☐</td></tr>
+<tr class="p0"><td class="id">T2</td><td>Create a ticket (portal user)</td><td class="step">Portal user → New Request → fill form → Submit</td><td>Ticket created; requester sees it in their portal; staff see it in queue</td><td><span class="tag p0">P0</span></td><td>☐</td></tr>
+<tr class="p0"><td class="id">T3</td><td>Assign technician &amp; reply</td><td class="step">Technician assigns self → sends a reply; requester replies back</td><td>Thread visible to both; requester gets notification; internal notes hidden from requester</td><td><span class="tag p0">P0</span></td><td>☐</td></tr>
+<tr class="p0"><td class="id">T4</td><td>Resolve → CSAT prompt</td><td class="step">Technician marks resolved → requester opens portal ticket</td><td>1–5 star survey appears; submit works once; repeat submission blocked</td><td><span class="tag p0">P0</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">T5</td><td>CSAT visible to staff</td><td class="step">After rating, open ticket as technician → check Reports → Satisfaction</td><td>Rating badge on ticket; reports show average, distribution, per-technician breakdown</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">T6</td><td>SLA timers &amp; breach</td><td class="step">Create ticket with 4h SLA; wait past deadline (or adjust clock)</td><td>Queue shows SLA breach state; escalation fires; SLA badge turns red</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">T7</td><td>Attachments round-trip</td><td class="step">Upload image + zip to a ticket; download from both sides; delete one</td><td>Files stored (S3/local) and retrievable; deletion reflected in the thread</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">T8</td><td>Canned responses</td><td class="step">Open Settings → Canned Responses → create one → use it in a ticket reply</td><td>Canned response inserts the template text into the reply box</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">T9</td><td>Ticket settings (SLA, auto-assign)</td><td class="step">Settings → Tickets → change SLA defaults and auto-assign rules</td><td>New tickets pick up the updated settings; existing tickets unchanged</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">T10</td><td>Ticket search &amp; filter</td><td class="step">Use the ticket queue search bar; filter by status, priority, assignee</td><td>Results update correctly; filters persist in URL</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">T11</td><td>Ticket priority &amp; status changes</td><td class="step">Change priority from Low → Urgent; change status from Open → In Progress</td><td>Changes reflect in queue and ticket detail; audit trail updated</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">T12</td><td>Bulk ticket operations</td><td class="step">Select multiple tickets → bulk assign / bulk close</td><td>All selected tickets updated; no partial failures</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">T13</td><td>Notes (internal)</td><td class="step">Create an internal note on a ticket</td><td>Note visible to staff only; hidden from portal users</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+</table>
+
+<!-- ================================================================== -->
+<!-- SECTION 4: REMOTE SUPPORT SESSIONS -->
+<!-- ================================================================== -->
+
+<h2>4 &middot; Remote support sessions</h2>
+<div class="section-note">This section requires a Windows PC with the helper agent installed and a multi-monitor setup for display tests.</div>
+<table>
+<tr><th>ID</th><th>Test</th><th>Steps</th><th>Expected</th><th>Pri</th><th>Pass</th></tr>
+
+<h3>4.1 &middot; Session creation &amp; lifecycle</h3>
+<tr class="p0"><td class="id">R1</td><td>Create attended session</td><td class="step">Technician → Sessions → New Session → select device → choose "Attended" → Request</td><td>Session created with consent_pending state; join token issued</td><td><span class="tag p0">P0</span></td><td>☐</td></tr>
+<tr class="p0"><td class="id">R2</td><td>Consent granted → session starts</td><td class="step">Client accepts consent dialog → technician approves in console</td><td>Session transitions to connecting → active; both sides see connected state</td><td><span class="tag p0">P0</span></td><td>☐</td></tr>
+<tr class="p0"><td class="id">R3</td><td>Consent denied → session ends</td><td class="step">Client declines consent</td><td>Session state → denied; technician sees denial; session is no longer joinable</td><td><span class="tag p0">P0</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">R4</td><td>End session (technician)</td><td class="step">Technician clicks "End session" in console</td><td>Session state → ended; both sides see disconnection; session history preserved</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">R5</td><td>End session (agent)</td><td class="step">Client clicks "Disconnect" on the helper</td><td>Session ends; technician sees disconnection; event recorded</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">R6</td><td>Session list &amp; filtering</td><td class="step">Open Sessions page → filter by state (active, ended), by device</td><td>Correct sessions shown; pagination works; total count accurate</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">R7</td><td>Session events timeline</td><td class="step">Open a session detail → view events</td><td>Timeline shows created, consent_granted, ended events with timestamps and actor</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+
+<h3>4.2 &middot; WebRTC &amp; media</h3>
+<tr class="p0"><td class="id">R8</td><td>Primary display loads by default</td><td class="step">Connect to a multi-screen PC</td><td>Primary display (Display 1) loads immediately — no "switch to 2 then back" workaround</td><td><span class="tag p0">P0</span></td><td>☐</td></tr>
+<tr class="p0"><td class="id">R9</td><td>Mouse precision (multi-monitor)</td><td class="step">Click icons, edges, and corners across both screens with different resolutions</td><td>Click lands exactly where pointed on every display — no offset</td><td><span class="tag p0">P0</span></td><td>☐</td></tr>
+<tr class="p0"><td class="id">R10</td><td>Single pointer (no ghost cursor)</td><td class="step">Move technician mouse, then client mouse, then click</td><td>One pointer controls both; no duplicate/ghost pointer visible</td><td><span class="tag p0">P0</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">R11</td><td>Display switcher — names &amp; switching</td><td class="step">Open display picker → verify display names → switch between displays</td><td>Shows "Display 1", "Display 2" (no <code>//./</code> paths); switch is seamless and fast</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">R12</td><td>Display switcher — stays visible during negotiation</td><td class="step">Connect to session → observe display picker during "negotiating" state</td><td>Display picker remains visible and functional during WebRTC negotiation</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">R13</td><td>Video playback starts automatically</td><td class="step">Connect → wait for remote screen</td><td>Video starts playing without requiring a manual click (or shows "Click to start" fallback)</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">R14</td><td>Video playback — manual click fallback</td><td class="step">If browser blocks autoplay → click the video area</td><td>Video starts playing on click</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">R15</td><td>Keyboard input</td><td class="step">Type in a remote application (Notepad, browser)</td><td>All keystrokes land in the focused remote window; special keys (Tab, Enter, Esc) work</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">R16</td><td>Mouse wheel / scroll</td><td class="step">Scroll a long page in the remote session</td><td>Scroll gestures transfer correctly; no jitter or lag</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">R17</td><td>Right-click</td><td class="step">Right-click on a remote desktop element</td><td>Context menu opens at the correct location</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+
+<h3>4.3 &middot; File transfer</h3>
+<tr class="p1"><td class="id">R18</td><td>File upload (technician → client)</td><td class="step">Drag a file into the session or use file transfer button</td><td>File transfers to <code>Downloads\ReyDesk</code> on the remote machine; no false "unknown/oversized" error</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">R19</td><td>File download (client → technician)</td><td class="step">Download a file from the remote machine</td><td>File arrives on the technician's machine; integrity preserved</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">R20</td><td>File size limit enforcement</td><td class="step">Attempt to transfer a file exceeding the configured size limit</td><td>Clear error message; file not transferred; no crash</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+
+<h3>4.4 &middot; Session recording</h3>
+<tr class="p1"><td class="id">R21</td><td>Start / stop recording</td><td class="step">Start recording → perform actions → stop after 1 min</td><td>Recording indicator visible; recording available in session history after stop</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">R22</td><td>Recording playback &amp; download</td><td class="step">Open a completed session → play recording → download</td><td>Recording plays back smoothly; downloadable as video file</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">R23</td><td>Recording retention policy</td><td class="step">Set recording retention to 1 day → wait or manually expire</td><td>Recordings older than retention period are auto-purged</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+
+<h3>4.5 &middot; Reconnect &amp; resilience</h3>
+<tr class="p0"><td class="id">R24</td><td>Technician browser refresh mid-session</td><td class="step">Refresh the browser tab during an active session</td><td>Returns to the live session; no orphan session; video resumes</td><td><span class="tag p0">P0</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">R25</td><td>Agent reconnect after network blip</td><td class="step">Temporarily disconnect the client's network for 5 seconds</td><td>Session enters reconnecting state; reconnects automatically when network returns</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">R26</td><td>Reboot reconnect</td><td class="step">Reboot the remote machine during a session with reboot_reconnect permission</td><td>Session reconnects after the machine comes back online</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+
+<h3>4.6 &middot; Session permissions &amp; elevation</h3>
+<tr class="p1"><td class="id">R27</td><td>Permission negotiation</td><td class="step">Create session with terminal + file_transfer + control_input permissions</td><td>Agent receives the correct permission list; unauthorized actions are blocked</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">R28</td><td>Elevation (JIT grant)</td><td class="step">Request elevation on a session → admin approves via Grants page</td><td>Elevation granted; terminal/process management becomes available</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">R29</td><td>Partial consent (elevation denied)</td><td class="step">Client grants screen sharing but declines elevation</td><td>Screen works; terminal/process actions are blocked; session continues</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+
+<h3>4.7 &middot; Session participants &amp; transfer</h3>
+<tr class="p2"><td class="id">R30</td><td>Invite participant to session</td><td class="step">Technician A → invite Technician B to an active session</td><td>Technician B receives notification; can join and see the remote screen</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">R31</td><td>Transfer session ownership</td><td class="step">Owner transfers session to another technician</td><td>New owner has full control; previous owner becomes observer</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+
+<h3>4.8 &middot; Unattended access</h3>
+<tr class="p1"><td class="id">R32</td><td>Unattended session (policy permitting)</td><td class="step">Connect to a device while nobody is at it</td><td>Policy applies; session connects without consent prompt; reason is required</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">R33</td><td>Inspection session</td><td class="step">Create an inspection session (view-only)</td><td>Technician can view screen but not control input</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+
+<h3>4.9 &middot; In-session chat</h3>
+<tr class="p2"><td class="id">R34</td><td>Send message during session</td><td class="step">Technician sends a chat message during a remote session</td><td>Message appears in session chat; linked to ticket timeline if ticket exists</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">R35</td><td>Session chat history</td><td class="step">Open an existing session → view chat history</td><td>All messages displayed in chronological order; sender names shown</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+
+<h3>4.10 &middot; ICE diagnostics</h3>
+<tr class="p1"><td class="id">R36</td><td>ICE diagnostics recorded in session events</td><td class="step">Start a session → check session events timeline</td><td>WebRTC ICE events (ice_candidate, ice_connection_state, ice_failed if applicable) appear in the event timeline</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">R37</td><td>TURN probe endpoint</td><td class="step">Navigate to <code>/diagnostics/turn</code> → Run probe</td><td>Probe reports whether TURN is configured, whether relay candidate was gathered, and credential expiry</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+</table>
+
+<!-- ================================================================== -->
+<!-- SECTION 5: CONNECT PAGE (END-USER) -->
+<!-- ================================================================== -->
+
+<h2>5 &middot; Connect page (end-user side)</h2>
+<table>
+<tr><th>ID</th><th>Test</th><th>Steps</th><th>Expected</th><th>Pri</th><th>Pass</th></tr>
+<tr class="p0"><td class="id">CN1</td><td>Enter support code</td><td class="step">Open <code>/connect</code> → enter a valid 6-digit code</td><td>Code validated; device info shown; consent dialog appears</td><td><span class="tag p0">P0</span></td><td>☐</td></tr>
+<tr class="p0"><td class="id">CN2</td><td>Invalid code</td><td class="step">Enter an expired or wrong code</td><td>Clear error message; option to retry</td><td><span class="tag p0">P0</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">CN3</td><td>Consent dialog permissions</td><td class="step">Review the consent dialog → selectively grant/deny permissions</td><td>User can choose which permissions to grant; partial consent works</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">CN4</td><td>Platform detection on Connect</td><td class="step">Open <code>/connect</code> from Windows, Mac, Linux, Android</td><td>Correct download option shown for each platform (Windows helper, macOS agent, Android agent)</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">CN5</td><td>Deep link enrollment</td><td class="step">Click a <code>reydesk://enrol?token=…</code> deep link</td><td>Opens the agent app and starts enrollment</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+</table>
+
+<!-- ================================================================== -->
+<!-- SECTION 6: TEAM CHAT -->
+<!-- ================================================================== -->
+
+<h2>6 &middot; Team chat (real-time)</h2>
+<table>
+<tr><th>ID</th><th>Test</th><th>Steps</th><th>Expected</th><th>Pri</th><th>Pass</th></tr>
+<tr class="p1"><td class="id">CH1</td><td>Send a message</td><td class="step">Open Chat page → select a channel → type and send a message</td><td>Message appears instantly for all channel members (WebSocket delivery)</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">CH2</td><td>File sharing in chat</td><td class="step">Drag and drop or attach a file to a chat message</td><td>File uploads and displays as a downloadable attachment</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">CH3</td><td>Chat reconnection</td><td class="step">Kill network for 5 seconds → reconnect</td><td>Chat reconnects automatically; missed messages are delivered</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">CH4</td><td>Chat history</td><td class="step">Open a channel with existing messages</td><td>Previous messages load; scroll back works</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">CH5</td><td>Voice calls</td><td class="step">Navigate to <code>/calls</code> → initiate a call</td><td>Call interface loads; connection established; audio works</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+</table>
+
+<!-- ================================================================== -->
+<!-- SECTION 7: CUSTOMER PORTAL & KNOWLEDGE BASE -->
+<!-- ================================================================== -->
+
+<h2>7 &middot; Customer portal &amp; knowledge base</h2>
+<table>
+<tr><th>ID</th><th>Test</th><th>Steps</th><th>Expected</th><th>Pri</th><th>Pass</th></tr>
+<tr class="p0"><td class="id">P1</td><td>Portal branding &amp; slug</td><td class="step">Settings → Customer Portal → change portal ID and branding → open portal URL</td><td>New slug serves the portal; branding applied; old slug returns 404</td><td><span class="tag p0">P0</span></td><td>☐</td></tr>
+<tr class="p0"><td class="id">P2</td><td>Portal self-registration</td><td class="step">Open portal URL → register with a work email</td><td>Account created; user can log in and submit tickets</td><td><span class="tag p0">P0</span></td><td>☐</td></tr>
+<tr class="p0"><td class="id">P3</td><td>Portal ticket submission</td><td class="step">Portal user → New Request → fill form → submit</td><td>Ticket created; appears in staff queue; requester can track it</td><td><span class="tag p0">P0</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">P4</td><td>Portal ticket detail</td><td class="step">Portal user → click an existing ticket</td><td>Full conversation thread visible; attachments downloadable; reply works</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">P5</td><td>Portal toggles</td><td class="step">Settings → Customer Portal → toggle lock, device context, self-resolution</td><td>Each toggle changes portal behaviour immediately</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">P6</td><td>KB — public article</td><td class="step">Create a KB article with "Public" visibility → open portal without sign-in</td><td>Public article readable by anonymous users</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">P7</td><td>KB — internal article</td><td class="step">Create a KB article with "Internal" visibility → open portal without sign-in</td><td>Internal article not visible to anonymous users</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">P8</td><td>KB — article search</td><td class="step">Use the KB search bar in the portal</td><td>Results match article titles and content</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">P9</td><td>Portal public KB article via slug URL</td><td class="step">Open <code>/portal/:slug/kb/:articleId</code></td><td>Article renders without authentication</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+</table>
+
+<!-- ================================================================== -->
+<!-- SECTION 8: DEVICES, AGENT & MONITORING -->
+<!-- ================================================================== -->
+
+<h2>8 &middot; Devices, agent &amp; monitoring</h2>
+<table>
+<tr><th>ID</th><th>Test</th><th>Steps</th><th>Expected</th><th>Pri</th><th>Pass</th></tr>
+<tr class="p1"><td class="id">D1</td><td>Agent enrollment</td><td class="step">Install helper on PC → enrol with device token</td><td>Device appears on Devices page with heartbeat; OS/version info populated</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">D2</td><td>Device heartbeat</td><td class="step">Wait 30+ seconds after enrollment</td><td>Device status shows "Online"; last seen timestamp updates</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">D3</td><td>Offline detection</td><td class="step">Shut down the helper agent</td><td>Device goes "Offline" within the configured window</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">D4</td><td>Device detail page</td><td class="step">Click a device → view detail page</td><td>Shows OS, IP, agent version, heartbeat, group, last session</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">D5</td><td>Device groups</td><td class="step">Create a group → assign devices → filter by group</td><td>Devices appear under the group; group filter works</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">D6</td><td>Monitoring alert → notification</td><td class="step">Configure CPU/disk threshold in Settings → Monitoring → trigger threshold</td><td>Alert fires; notification sent to configured channels</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">D7</td><td>Monitoring alert → auto-ticket</td><td class="step">Enable auto-ticket creation for monitoring alerts → trigger threshold</td><td>Ticket auto-created with device context; linked to the device</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">D8</td><td>Monitoring rules CRUD</td><td class="step">Create / edit / delete monitoring rules</td><td>Rules persist; deleted rules stop generating alerts</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">D9</td><td>Agent update check</td><td class="step">Agent polls <code>/agent/update</code> → verify health endpoint</td><td>Returns current version, channel status, offer details; audit event recorded</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">D10</td><td>Storage quota enforcement</td><td class="step">Set a small tenant storage quota → upload past it</td><td>Upload blocked with clear message; usage endpoint reflects actual usage</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">D11</td><td>Patch management</td><td class="step">Navigate to <code>/patches</code> → view available patches</td><td>Patch list loads; patch status and details shown</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">D12</td><td>RMM dashboard</td><td class="step">Navigate to <code>/rmm</code></td><td>RMM overview loads with device health, alerts, and policy status</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+</table>
+
+<!-- ================================================================== -->
+<!-- SECTION 9: AI AGENT & AI WORKERS -->
+<!-- ================================================================== -->
+
+<h2>9 &middot; AI agent &amp; AI workers</h2>
+<table>
+<tr><th>ID</th><th>Test</th><th>Steps</th><th>Expected</th><th>Pri</th><th>Pass</th></tr>
+<tr class="p1"><td class="id">AI1</td><td>AI agent page loads</td><td class="step">Navigate to <code>/ai-agent</code></td><td>AI agent interface loads; shows available tools and configuration</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">AI2</td><td>AI settings configuration</td><td class="step">Settings → AI → configure provider (OpenAI/Anthropic/etc.) and API key</td><td>Settings save; test connection button works; provider status shows connected</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">AI3</td><td>AI workers page</td><td class="step">Navigate to <code>/ai-workers</code></td><td>Workers list loads; shows active/paused workers with run history</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">AI4</td><td>AI worker metrics endpoint</td><td class="step">Call <code>GET /api/v1/ai-worker/metrics</code></td><td>Returns trigger counts, resolution rates, escalation counts, avg duration</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">AI5</td><td>Alert auto-trigger (opt-in)</td><td class="step">Enable <code>alertAutoStart</code> in tenant settings → trigger a device alert</td><td>AI worker automatically starts investigating the alert; creates a run</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">AI6</td><td>AI worker run history</td><td class="step">Open AI Workers page → view past runs</td><td>Each run shows trigger source, duration, outcome, escalation reason if applicable</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">AI7</td><td>Knowledge graph context</td><td class="step">Trigger an AI worker on a device linked to assets/services</td><td>Worker receives full context: device, assets, services, related users</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">AI8</td><td>AI worker disabled by default</td><td class="step">Create a new tenant → check AI worker settings</td><td>Alert auto-trigger is OFF by default; no automatic worker runs without opt-in</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+</table>
+
+<!-- ================================================================== -->
+<!-- SECTION 10: REPORTS -->
+<!-- ================================================================== -->
+
+<h2>10 &middot; Reports &amp; analytics</h2>
+<table>
+<tr><th>ID</th><th>Test</th><th>Steps</th><th>Expected</th><th>Pri</th><th>Pass</th></tr>
+<tr class="p1"><td class="id">RP1</td><td>Reports overview</td><td class="step">Navigate to <code>/reports</code></td><td>Overview loads with ticket stats, session stats, device counts, CSAT, AI worker metrics</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">RP2</td><td>CSAT report</td><td class="step">Open Reports → Satisfaction tab</td><td>Average rating, distribution chart, per-technician breakdown</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">RP3</td><td>Compliance audit log</td><td class="step">Open Reports → Compliance</td><td>Audit events listed with timestamp, actor, action, and details</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">RP4</td><td>AI worker metrics in reports</td><td class="step">Open Reports → check AI worker section</td><td>Shows health-check count, offers checked, successful updates, failed updates, resolution rate</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">RP5</td><td>Report date range filtering</td><td class="step">Change the date range filter on a report</td><td>Data updates to reflect selected range</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">RP6</td><td>Report export</td><td class="step">Click export/download on a report</td><td>CSV/PDF file downloads with correct data</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+</table>
+
+<!-- ================================================================== -->
+<!-- SECTION 11: BILLING & PAYMENTS -->
+<!-- ================================================================== -->
+
+<h2>11 &middot; Billing &amp; payments</h2>
+<table>
+<tr><th>ID</th><th>Test</th><th>Steps</th><th>Expected</th><th>Pri</th><th>Pass</th></tr>
+<tr class="p0"><td class="id">B1</td><td>Billing page loads</td><td class="step">Navigate to <code>/billing</code></td><td>Current plan, usage, invoices, and payment methods displayed</td><td><span class="tag p0">P0</span></td><td>☐</td></tr>
+<tr class="p0"><td class="id">B2</td><td>Stripe checkout</td><td class="step">Billing → choose card payment → complete test checkout (Stripe test card 4242…)</td><td>Redirects to hosted Stripe page; payment succeeds; invoice/status updates</td><td><span class="tag p0">P0</span></td><td>☐</td></tr>
+<tr class="p0"><td class="id">B3</td><td>Paystack checkout</td><td class="step">Billing → choose Paystack payment → complete test checkout</td><td>Paystack modal opens; payment succeeds; status updates</td><td><span class="tag p0">P0</span></td><td>☐</td></tr>
+<tr class="p0"><td class="id">B4</td><td>Region ↔ currency sync</td><td class="step">Settings → Overview → change billing region</td><td>Billing page reflects the correct currency and payment options for the region</td><td><span class="tag p0">P0</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">B5</td><td>Invoice history</td><td class="step">Open Billing → Invoices tab</td><td>Past invoices listed with amounts, dates, and download links</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">B6</td><td>Plan upgrade</td><td class="step">Upgrade from Free to a paid plan</td><td>Plan changes immediately; new limits apply; invoice generated</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">B7</td><td>Plan downgrade</td><td class="step">Downgrade from a paid plan</td><td>Downgrade takes effect at end of billing cycle; no immediate loss of access</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">B8</td><td>Webhook delivery (Stripe)</td><td class="step">Trigger a Stripe webhook event (payment_intent.succeeded)</td><td>API processes the webhook; invoice status updates in the database</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">B9</td><td>Webhook delivery (Paystack)</td><td class="step">Trigger a Paystack webhook event</td><td>API processes the webhook; payment status updates</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">B10</td><td>Failed payment handling</td><td class="step">Use a declined test card</td><td>Clear error message; no plan change; retry option available</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+</table>
+
+<!-- ================================================================== -->
+<!-- SECTION 12: STAFF, TEAMS & RBAC -->
+<!-- ================================================================== -->
+
+<h2>12 &middot; Staff, teams &amp; RBAC</h2>
+<table>
+<tr><th>ID</th><th>Test</th><th>Steps</th><th>Expected</th><th>Pri</th><th>Pass</th></tr>
+<tr class="p1"><td class="id">ST1</td><td>Staff list</td><td class="step">Navigate to <code>/staff</code></td><td>List of all staff members with roles, status, and last active</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">ST2</td><td>Invite staff by email</td><td class="step">Staff → Invite → enter email + role → send</td><td>Invitation email sent; invitee can join via magic link</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">ST3</td><td>Change staff role</td><td class="step">Admin → edit a staff member's role</td><td>Role changes; permissions update immediately</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">ST4</td><td>Deactivate staff member</td><td class="step">Admin → deactivate a staff member</td><td>Member cannot log in; their sessions end; data preserved</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">ST5</td><td>Teams CRUD</td><td class="step">Navigate to <code>/teams</code> → create / edit / delete teams</td><td>Teams persist; members can be added/removed</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">ST6</td><td>RBAC — end-user cannot access admin pages</td><td class="step">Log in as end-user → try <code>/admin</code>, <code>/settings</code>, <code>/staff</code></td><td>403/redirect; no admin data exposed</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">ST7</td><td>RBAC — technician cannot access billing</td><td class="step">Log in as technician (non-admin) → try <code>/billing</code></td><td>Access denied or read-only view depending on permissions</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">ST8</td><td>Grants (JIT elevation)</td><td class="step">Navigate to <code>/grants</code> → create a temporary elevation grant</td><td>Grant appears; user gains elevated permissions for the specified duration; auto-expires</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">ST9</td><td>Approvals workflow</td><td class="step">Navigate to <code>/approvals</code> → approve/deny a pending request</td><td>Approval recorded; requester notified; action taken if applicable</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+</table>
+
+<!-- ================================================================== -->
+<!-- SECTION 13: SETTINGS (ALL SECTIONS) -->
+<!-- ================================================================== -->
+
+<h2>13 &middot; Settings (all sections)</h2>
+<table>
+<tr><th>ID</th><th>Test</th><th>Steps</th><th>Expected</th><th>Pri</th><th>Pass</th></tr>
+
+<h3>13.1 &middot; Overview &amp; general</h3>
+<tr class="p1"><td class="id">SG1</td><td>Settings page loads</td><td class="step">Navigate to <code>/settings</code></td><td>All settings sections visible in sidebar; current values loaded</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">SG2</td><td>Overview — company name &amp; region</td><td class="step">Settings → Overview → change company name and region</td><td>Changes persist; region default syncs to billing payment region</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">SG3</td><td>Branding — logo upload</td><td class="step">Settings → Branding → upload logo</td><td>Logo appears in sidebar, emails, and portal</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+
+<h3>13.2 &middot; Customer portal settings</h3>
+<tr class="p1"><td class="id">SP1</td><td>Portal — "How staff use it" section border</td><td class="step">Settings → Customer Portal → inspect the "How staff use it" section</td><td>Section has a visible border around it, visually distinct from other sections</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">SP2</td><td>Portal — "Invite staff by email" section border</td><td class="step">Settings → Customer Portal → inspect the "Invite staff by email" section</td><td>Section has a visible border around it, visually distinct</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">SP3</td><td>Portal — Welcome text input width</td><td class="step">Settings → Customer Portal → try the Welcome text input</td><td>Input box is wide enough for comfortable text entry (full width or near-full)</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+
+<h3>13.3 &middot; Notifications</h3>
+<tr class="p1"><td class="id">SN1</td><td>Notification preferences</td><td class="step">Settings → Notifications → toggle notification kinds on/off</td><td>Preferences save; notifications respect the toggles</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">SN2</td><td>Push notification subscription</td><td class="step">Settings → Notifications → Subscribe to push</td><td>Browser shows permission prompt; after granting, subscription registered</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">SN3</td><td>Push notification delivery</td><td class="step">Trigger an event that sends a push (e.g., ticket assigned)</td><td>Push notification arrives on the subscribed device</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+
+<h3>13.4 &middot; Remote support settings</h3>
+<tr class="p1"><td class="id">SR1</td><td>Remote support defaults</td><td class="step">Settings → Remote → change default recording mode, session duration, inactivity timeout</td><td>New sessions pick up the updated defaults</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">SR2</td><td>Unattended access policy</td><td class="step">Settings → Remote → configure unattended access policy</td><td>Policy applies to new unattended sessions</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">SR3</td><td>File transfer size limit</td><td class="step">Settings → Remote → set file transfer size limit</td><td>Transfers exceeding the limit are blocked with a clear error</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">SR4</td><td>Elevated-action re-consent</td><td class="step">Settings → Remote → enable re-consent for elevated actions</td><td>Each elevated action prompts the endpoint user for consent</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+
+<h3>13.5 &middot; Device settings</h3>
+<tr class="p2"><td class="id">SD1</td><td>Enrollment approval</td><td class="step">Settings → Devices → enable enrollment approval</td><td>New device enrollments require admin approval before going online</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">SD2</td><td>Automatic updates policy</td><td class="step">Settings → Devices → configure auto-update and minimum version</td><td>Agents below minimum version are flagged; auto-update policy applied</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">SD3</td><td>Personal device policy</td><td class="step">Settings → Devices → configure personal device policy</td><td>Policy applied to newly enrolled devices</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">SD4</td><td>Device retirement</td><td class="step">Settings → Devices → configure retirement policy</td><td>Retired devices are removed from active inventory</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+
+<h3>13.6 &middot; Monitoring settings</h3>
+<tr class="p2"><td class="id">SM1</td><td>Maintenance windows</td><td class="step">Settings → Monitoring → define a maintenance window</td><td>Alerts suppressed during the window</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">SM2</td><td>Alert routing</td><td class="step">Settings → Monitoring → configure alert routing (email, webhook, Slack)</td><td>Alerts delivered to configured channels</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">SM3</td><td>Escalation delays</td><td class="step">Settings → Monitoring → set escalation delay</td><td>Escalation fires after the configured delay if unacknowledged</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+
+<h3>13.7 &middot; Integration settings</h3>
+<tr class="p1"><td class="id">SI1</td><td>Webhook event subscriptions</td><td class="step">Settings → Integrations → configure webhook URL and events</td><td>Webhooks fire for the selected events; payload correct</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">SI2</td><td>OAuth settings</td><td class="step">Settings → Integrations → configure OAuth provider</td><td>OAuth flow completes; tokens stored and refreshed</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">SI3</td><td>Entra ID (Azure AD) settings</td><td class="step">Settings → Integrations → configure Entra ID</td><td>Directory sync works; users imported from Entra</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">SI4</td><td>Public API settings</td><td class="step">Settings → Integrations → view API key management</td><td>API keys can be created, listed, and revoked</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+
+<h3>13.8 &middot; AI settings</h3>
+<tr class="p1"><td class="id">SA1</td><td>AI provider configuration</td><td class="step">Settings → AI → select provider → enter API key → test</td><td>Connection test passes; provider status shows connected</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">SA2</td><td>AI model selection</td><td class="step">Settings → AI → change the AI model</td><td>Model selection persists; AI features use the new model</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+
+<h3>13.9 &middot; Security &amp; compliance</h3>
+<tr class="p1"><td class="id">SX1</td><td>Security settings page</td><td class="step">Settings → Security</td><td>Page loads; shows MFA enforcement, session timeout, password policy options</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">SX2</td><td>Data retention settings</td><td class="step">Settings → Data → configure retention policies</td><td>Policies save; auto-purge runs on schedule</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">SX3</td><td>Legal hold</td><td class="step">Settings → Data → enable legal hold</td><td>Data subject to retention purge is preserved while legal hold is active</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+
+<h3>13.10 &middot; Email settings</h3>
+<tr class="p1"><td class="id">SE1</td><td>Email settings page</td><td class="step">Settings → Email</td><td>SMTP configuration visible; test email can be sent</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">SE2</td><td>Email template preview</td><td class="step">Settings → Email → preview notification templates</td><td>Templates render with sample data</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+</table>
+
+<!-- ================================================================== -->
+<!-- SECTION 14: PROFILE & AVATAR -->
+<!-- ================================================================== -->
+
+<h2>14 &middot; Profile &amp; avatar</h2>
+<table>
+<tr><th>ID</th><th>Test</th><th>Steps</th><th>Expected</th><th>Pri</th><th>Pass</th></tr>
+<tr class="p1"><td class="id">PF1</td><td>Profile page loads</td><td class="step">Navigate to <code>/profile</code></td><td>Profile shows name, email, role, avatar</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">PF2</td><td>Upload profile avatar</td><td class="step">Profile → upload a photo (JPG/PNG/WebP &lt; 2 MB)</td><td>Avatar shows everywhere (sidebar, tickets, chat); persists across reload</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">PF3</td><td>Avatar stored in S3</td><td class="step">Upload avatar → check S3 bucket</td><td>File lands in the configured S3 bucket with correct key</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">PF4</td><td>Avatar invalid file type</td><td class="step">Try uploading a .exe or .pdf as avatar</td><td>Rejected with clear error message; no file uploaded</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">PF5</td><td>Edit profile details</td><td class="step">Change name and display preferences</td><td>Changes save; reflected across the app</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+</table>
+
+<!-- ================================================================== -->
+<!-- SECTION 15: AUTOMATION -->
+<!-- ================================================================== -->
+
+<h2>15 &middot; Automation</h2>
+<table>
+<tr><th>ID</th><th>Test</th><th>Steps</th><th>Expected</th><th>Pri</th><th>Pass</th></tr>
+<tr class="p1"><td class="id">AU1</td><td>Automation page loads</td><td class="step">Navigate to <code>/automations</code></td><td>List of automation rules displayed; create/edit/delete options available</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">AU2</td><td>Create automation rule</td><td class="step">Create a rule: "When ticket created with priority Urgent → assign to Group X"</td><td>Rule saves; test with a matching ticket; assignment happens automatically</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">AU3</td><td>Edit automation rule</td><td class="step">Modify an existing rule's trigger or action</td><td>Changes take effect for new events; existing tickets unchanged</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">AU4</td><td>Delete automation rule</td><td class="step">Delete an automation rule</td><td>Rule removed; no longer triggers</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">AU5</td><td>Enable/disable automation rule</td><td class="step">Toggle a rule off → trigger its condition → toggle on</td><td>Disabled rule does not fire; re-enabled rule fires again</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+</table>
+
+<!-- ================================================================== -->
+<!-- SECTION 16: SCRIPTS -->
+<!-- ================================================================== -->
+
+<h2>16 &middot; Scripts</h2>
+<table>
+<tr><th>ID</th><th>Test</th><th>Steps</th><th>Expected</th><th>Pri</th><th>Pass</th></tr>
+<tr class="p2"><td class="id">SC1</td><td>Scripts page loads</td><td class="step">Navigate to <code>/scripts</code></td><td>List of saved scripts displayed</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">SC2</td><td>Create a script</td><td class="step">Create a new script with name, description, and content</td><td>Script saves; appears in the list</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">SC3</td><td>Execute a script on a device</td><td class="step">Select a device → run a script</td><td>Script executes; output visible in the console; exit code reported</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">SC4</td><td>Script library sharing</td><td class="step">Share a script with the team</td><td>Script visible to other technicians</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+</table>
+
+<!-- ================================================================== -->
+<!-- SECTION 17: INCIDENTS & ASSETS -->
+<!-- ================================================================== -->
+
+<h2>17 &middot; Incidents, assets &amp; services</h2>
+<table>
+<tr><th>ID</th><th>Test</th><th>Steps</th><th>Expected</th><th>Pri</th><th>Pass</th></tr>
+<tr class="p1"><td class="id">IN1</td><td>Incidents page loads</td><td class="step">Navigate to <code>/incidents</code></td><td>Incident list displayed; create/edit options available</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">IN2</td><td>Create an incident</td><td class="step">Create an incident → link to affected devices/services</td><td>Incident created; linked entities visible; status tracks correctly</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">IN3</td><td>Incident → resolve</td><td class="step">Mark incident as resolved</td><td>Status updated; resolution timestamp recorded</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">AS1</td><td>Assets page loads</td><td class="step">Navigate to <code>/assets</code></td><td>Asset inventory displayed with device, user, and service links</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">AS2</td><td>Create an asset</td><td class="step">Create a new asset → link to a device and service</td><td>Asset persists; linked entities show the relationship</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">SV1</td><td>Services page loads</td><td class="step">Navigate to <code>/services</code></td><td>Service catalog displayed</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">SV2</td><td>Create a service</td><td class="step">Create a new service → link to assets</td><td>Service persists; relationships visible in the knowledge graph</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+</table>
+
+<!-- ================================================================== -->
+<!-- SECTION 18: MARKETPLACE & MSP -->
+<!-- ================================================================== -->
+
+<h2>18 &middot; Marketplace &amp; MSP</h2>
+<table>
+<tr><th>ID</th><th>Test</th><th>Steps</th><th>Expected</th><th>Pri</th><th>Pass</th></tr>
+<tr class="p2"><td class="id">MK1</td><td>Marketplace page loads</td><td class="step">Navigate to <code>/marketplace</code></td><td>Available integrations/plugins displayed</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">MK2</td><td>Install a marketplace integration</td><td class="step">Click install on an integration</td><td>Integration installs; appears in Settings → Integrations</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">MS1</td><td>MSP page loads</td><td class="step">Navigate to <code>/msp</code></td><td>MSP overview loads with tenant management, billing aggregation</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">MS2</td><td>MSP — manage sub-tenants</td><td class="step">MSP → view sub-tenants → create/edit a sub-tenant</td><td>Sub-tenant created; can log in independently</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+</table>
+
+<!-- ================================================================== -->
+<!-- SECTION 19: DEVELOPER & API -->
+<!-- ================================================================== -->
+
+<h2>19 &middot; Developer tools &amp; public API</h2>
+<table>
+<tr><th>ID</th><th>Test</th><th>Steps</th><th>Expected</th><th>Pri</th><th>Pass</th></tr>
+<tr class="p2"><td class="id">DV1</td><td>Developer page</td><td class="step">Navigate to <code>/developer</code></td><td>Developer tools page loads; API key management, webhook config visible</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">DV2</td><td>API docs page</td><td class="step">Navigate to <code>/api-docs</code></td><td>OpenAPI/Swagger docs render; endpoints documented</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">DV3</td><td>Create API key</td><td class="step">Developer → create a new API key</td><td>Key generated once; can be used for API authentication</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">DV4</td><td>Revoke API key</td><td class="step">Developer → revoke an API key</td><td>Key immediately invalid; API calls with old key return 401</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">DV5</td><td>Webhook test delivery</td><td class="step">Developer → test a webhook endpoint</td><td>Test payload delivered; response logged</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+</table>
+
+<!-- ================================================================== -->
+<!-- SECTION 20: COMPLIANCE & NOTES -->
+<!-- ================================================================== -->
+
+<h2>20 &middot; Compliance &amp; notes</h2>
+<table>
+<tr><th>ID</th><th>Test</th><th>Steps</th><th>Expected</th><th>Pri</th><th>Pass</th></tr>
+<tr class="p1"><td class="id">CM1</td><td>Compliance page</td><td class="step">Navigate to <code>/compliance</code></td><td>Compliance dashboard loads; audit events, data retention status shown</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">CM2</td><td>Audit log entries</td><td class="step">Perform various actions (login, ticket create, settings change)</td><td>Each action appears in the audit log with correct timestamp and actor</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">NT1</td><td>Notes page</td><td class="step">Navigate to <code>/notes</code></td><td>Notes list displayed; create/edit/delete works</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">NT2</td><td>Create a note</td><td class="step">Create a note with title and body</td><td>Note saves; appears in the list; content preserved</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+</table>
+
+<!-- ================================================================== -->
+<!-- SECTION 21: PUBLIC MARKETING PAGES -->
+<!-- ================================================================== -->
+
+<h2>21 &middot; Public marketing pages</h2>
+<table>
+<tr><th>ID</th><th>Test</th><th>Steps</th><th>Expected</th><th>Pri</th><th>Pass</th></tr>
+<tr class="p2"><td class="id">MK1</td><td>Landing page</td><td class="step">Open <code>/</code> (not signed in)</td><td>Marketing landing page renders with CTA, features, pricing links</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">MK2</td><td>Features page</td><td class="step">Open <code>/features</code></td><td>Feature descriptions render correctly</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">MK3</td><td>Pricing page</td><td class="step">Open <code>/pricing</code></td><td>Pricing tiers and plan details displayed</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">MK4</td><td>About page</td><td class="step">Open <code>/about</code></td><td>Company information rendered</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">MK5</td><td>Contact page</td><td class="step">Open <code>/contact</code></td><td>Contact form renders; submission works (if implemented)</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">MK6</td><td>Terms page</td><td class="step">Open <code>/terms</code></td><td>Terms of service rendered</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">MK7</td><td>Privacy page</td><td class="step">Open <code>/privacy</code></td><td>Privacy policy rendered</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">MK8</td><td>Use Cases page</td><td class="step">Open <code>/use-cases</code></td><td>Use case content rendered</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">MK9</td><td>Learn page</td><td class="step">Open <code>/learn</code></td><td>Knowledge base / help articles displayed</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">MK10</td><td>Support page</td><td class="step">Open <code>/support</code></td><td>Support options displayed</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">MK11</td><td>404 page</td><td class="step">Open <code>/nonexistent-page</code></td><td>Custom 404 page renders; links back to home</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+</table>
+
+<!-- ================================================================== -->
+<!-- SECTION 22: MOBILE RESPONSIVENESS -->
+<!-- ================================================================== -->
+
+<h2>22 &middot; Mobile responsiveness</h2>
+<table>
+<tr><th>ID</th><th>Test</th><th>Steps</th><th>Expected</th><th>Pri</th><th>Pass</th></tr>
+<tr class="p1"><td class="id">MR1</td><td>Dashboard at 320px</td><td class="step">Resize browser to 320px width → navigate through dashboard</td><td>No horizontal scroll; nav collapses; content readable</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">MR2</td><td>Tickets at 375px</td><td class="step">Resize to 375px → open ticket queue and detail</td><td>Ticket list stacks; detail page usable; reply box accessible</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">MR3</td><td>Session console at 414px</td><td class="step">Resize to 414px → open a session console</td><td>Remote screen scales; controls accessible; display picker usable</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">MR4</td><td>Settings at 768px</td><td class="step">Resize to 768px → navigate through settings sections</td><td>Sidebar collapses; forms usable; save works</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">MR5</td><td>Portal at mobile widths</td><td class="step">Open the customer portal at 375px</td><td>Portal renders correctly; ticket submission works</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">MR6</td><td>Chat at mobile widths</td><td class="step">Open chat at 375px</td><td>Messages readable; send button accessible</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+</table>
+
+<!-- ================================================================== -->
+<!-- SECTION 23: SECURITY & TENANT ISOLATION -->
+<!-- ================================================================== -->
+
+<h2>23 &middot; Security &amp; tenant isolation</h2>
+<table>
+<tr><th>ID</th><th>Test</th><th>Steps</th><th>Expected</th><th>Pri</th><th>Pass</th></tr>
+<tr class="p0"><td class="id">X1</td><td>Chunk-load recovery</td><td class="step">Deploy while a tab is open → navigate 10 min later</td><td>"App update" banner or auto-reload; never a crash screen</td><td><span class="tag p0">P0</span></td><td>☐</td></tr>
+<tr class="p0"><td class="id">X2</td><td>Tenant isolation</td><td class="step">Sign in as Tenant A → cross-open Tenant B's ticket URL</td><td>404 / forbidden — no data leaks between tenants</td><td><span class="tag p0">P0</span></td><td>☐</td></tr>
+<tr class="p0"><td class="id">X3</td><td>API authentication enforcement</td><td class="step">Call any protected API endpoint without a token</td><td>401 returned; no data exposed</td><td><span class="tag p0">P0</span></td><td>☐</td></tr>
+<tr class="p0"><td class="id">X4</td><td>CSRF protection</td><td class="step">Attempt a state-changing request from a different origin</td><td>Request rejected</td><td><span class="tag p0">P0</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">X5</td><td>SQL injection attempt</td><td class="step">Enter <code>' OR 1=1 --</code> in a search field</td><td>Treated as literal text; no data leak</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">X6</td><td>XSS attempt</td><td class="step">Enter <code>&lt;script&gt;alert(1)&lt;/script&gt;</code> in a ticket body</td><td>Rendered as text, not executed</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">X7</td><td>Rate limiting on auth endpoints</td><td class="step">Rapidly attempt 20+ logins with wrong password</td><td>Rate limit kicks in; accounts temporarily locked</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">X8</td><td>HTTPS enforcement</td><td class="step">Attempt HTTP access to the app</td><td>Redirects to HTTPS</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+</table>
+
+<!-- ================================================================== -->
+<!-- SECTION 24: NOTIFICATIONS & EMAIL -->
+<!-- ================================================================== -->
+
+<h2>24 &middot; Notifications &amp; email</h2>
+<table>
+<tr><th>ID</th><th>Test</th><th>Steps</th><th>Expected</th><th>Pri</th><th>Pass</th></tr>
+<tr class="p1"><td class="id">NF1</td><td>In-app notification bell</td><td class="step">Trigger an event (ticket assigned, session consent) → check the bell icon</td><td>Badge count updates immediately; clicking shows notification list</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">NF2</td><td>Push notification for session consent</td><td class="step">Create a session → device user accepts consent</td><td>Technician receives push notification with link to session</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">NF3</td><td>Email notification for staff invite</td><td class="step">Admin → invite staff by email</td><td>Invitation email arrives within 2 min with working magic link</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">NF4</td><td>Email notification for ticket update</td><td class="step">Technician replies to a ticket → requester's notification preferences</td><td>Email sent if requester has email notifications enabled</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">NF5</td><td>Notification preferences respected</td><td class="step">Disable email notifications for ticket updates → trigger an update</td><td>No email sent; in-app notification still appears</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+</table>
+
+<!-- ================================================================== -->
+<!-- SECTION 25: KNOWLEDGE BASE (STAFF SIDE) -->
+<!-- ================================================================== -->
+
+<h2>25 &middot; Knowledge base (staff side)</h2>
+<table>
+<tr><th>ID</th><th>Test</th><th>Steps</th><th>Expected</th><th>Pri</th><th>Pass</th></tr>
+<tr class="p1"><td class="id">KB1</td><td>KB page loads</td><td class="step">Navigate to <code>/kb</code></td><td>Article list displayed; create/edit options available</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">KB2</td><td>Create a KB article</td><td class="step">Create an article with title, body, category, visibility</td><td>Article saves; appears in the list; content renders correctly</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">KB3</td><td>Edit a KB article</td><td class="step">Edit an existing article's content and visibility</td><td>Changes persist; visibility change is immediate</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">KB4</td><td>KB article categories</td><td class="step">Create categories; assign articles to categories</td><td>Category filter works; articles grouped correctly</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">KB5</td><td>KB article search (staff)</td><td class="step">Search for an article by keyword</td><td>Results match article titles and content</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">KB6</td><td>Delete a KB article</td><td class="step">Delete an article</td><td>Article removed from list; no longer accessible via direct URL</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+</table>
+
+<!-- ================================================================== -->
+<!-- SECTION 26: END-TO-END JOURNEYS -->
+<!-- ================================================================== -->
+
+<h2>26 &middot; End-to-end journeys (multi-role)</h2>
+<div class="section-note">These tests span multiple features and roles in sequence. They simulate real-world workflows.</div>
+<table>
+<tr><th>ID</th><th>Test</th><th>Steps</th><th>Expected</th><th>Pri</th><th>Pass</th></tr>
+<tr class="p0"><td class="id">E2E1</td><td>Full remote support journey</td><td class="step">
+1. End-user opens <code>/connect</code> and enters a code<br/>
+2. Helper agent receives consent dialog → user accepts<br/>
+3. Technician opens session console → sees remote screen<br/>
+4. Technician switches displays → controls mouse/keyboard<br/>
+5. Technician sends a file → file arrives on remote machine<br/>
+6. Technician ends session<br/>
+7. Check session events timeline
+</td><td>Complete journey works; events recorded; session ends cleanly</td><td><span class="tag p0">P0</span></td><td>☐</td></tr>
+<tr class="p0"><td class="id">E2E2</td><td>Full ticket lifecycle</td><td class="step">
+1. Portal user creates a ticket with attachment<br/>
+2. Staff sees the ticket in queue<br/>
+3. Technician assigns self → replies → links a remote session<br/>
+4. Requester replies from portal<br/>
+5. Technician resolves the ticket<br/>
+6. Requester rates 5 stars (CSAT)<br/>
+7. Check Reports → Satisfaction for the rating
+</td><td>Complete lifecycle works; CSAT captured; reports updated</td><td><span class="tag p0">P0</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">E2E3</td><td>New tenant onboarding</td><td class="step">
+1. Sign up as a new organization<br/>
+2. Complete setup wizard<br/>
+3. Invite a technician<br/>
+4. Technician accepts invitation<br/>
+5. Enrol a device<br/>
+6. Create first ticket<br/>
+7. Run first remote session
+</td><td>Full onboarding flow works without errors</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">E2E4</td><td>Billing cycle</td><td class="step">
+1. Start on Free plan<br/>
+2. Upgrade to paid plan via Stripe<br/>
+3. Verify plan limits update<br/>
+4. Check invoice in Billing → Invoices<br/>
+5. Downgrade plan<br/>
+6. Verify downgrade applies at cycle end
+</td><td>Complete billing cycle works correctly</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p1"><td class="id">E2E5</td><td>Device monitoring → AI worker → ticket</td><td class="step">
+1. Configure monitoring threshold<br/>
+2. Trigger threshold on a device<br/>
+3. Alert fires<br/>
+4. AI worker auto-starts (if enabled)<br/>
+5. Worker investigates and records outcome<br/>
+6. Check AI worker metrics in Reports
+</td><td>Alert → worker → metrics pipeline works end-to-end</td><td><span class="tag p1">P1</span></td><td>☐</td></tr>
+<tr class="p2"><td class="id">E2E6</td><td>Knowledge graph context</td><td class="step">
+1. Create an asset linked to a device and service<br/>
+2. Link a user to the device<br/>
+3. Trigger an AI worker run on that device<br/>
+4. Verify the worker received full context (device + assets + services + users)
+</td><td>Worker resolves with full graph context</td><td><span class="tag p2">P2</span></td><td>☐</td></tr>
+</table>
+
+<!-- ================================================================== -->
+<!-- SECTION 27: AUTOMATED TEST COVERAGE -->
+<!-- ================================================================== -->
+
+<h2>27 &middot; Automated test coverage</h2>
+<ul class="checklist" style="margin-left: 18px;">
+  <li><b>API unit/integration:</b> <code>npm test --workspace @deskos/api</code> → 472+ tests (auth, tenants, tickets, portal, remote, chat, storage, billing, notifications, reports, AI workers, automation, monitoring, devices, scripts, grants, approvals, knowledge graph).</li>
+  <li><b>Browser E2E:</b> <code>npx playwright test</code> → 68+ tests (auth + lock screen incl. MFA, layout audit at 320→1280 px, connect route, authenticated console).</li>
+  <li><b>Staging journeys</b> (credentials required): <code>PLAYWRIGHT_TARGET=staging</code> → real API auth, MFA setup, password-reset email, full remote-support journey.</li>
+  <li><b>CI gate:</b> every push runs lint, typecheck, API tests, web build, Playwright, Windows helper build, then auto-deploys to the VPS only when all pass.</li>
+</ul>
+
+<!-- ================================================================== -->
+<!-- SECTION 28: SIGN-OFF MATRIX -->
+<!-- ================================================================== -->
+
+<h2>28 &middot; Sign-off matrix</h2>
+<table>
+<tr><th>Area</th><th>Tester</th><th>Date</th><th>Pass / Fail</th><th>Notes</th></tr>
+<tr><td>0 · Pre-flight</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>1 · Auth &amp; sessions</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>2 · Dashboard</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>3 · Tickets &amp; CSAT</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>4 · Remote support</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>5 · Connect page</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>6 · Team chat</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>7 · Portal &amp; KB</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>8 · Devices &amp; monitoring</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>9 · AI agent &amp; workers</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>10 · Reports</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>11 · Billing</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>12 · Staff &amp; teams</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>13 · Settings (all)</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>14 · Profile &amp; avatar</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>15 · Automation</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>16 · Scripts</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>17 · Incidents &amp; assets</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>18 · Marketplace &amp; MSP</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>19 · Developer &amp; API</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>20 · Compliance</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>21 · Marketing pages</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>22 · Mobile responsive</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>23 · Security</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>24 · Notifications</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>25 · Knowledge base</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>26 · E2E journeys</td><td></td><td></td><td></td><td></td></tr>
+</table>
+
+<footer>
+ReyDesk Comprehensive QA &amp; UAT Test Script · Generated from the live codebase (472+ API tests, 68+ E2E tests, full route &amp; module audit) · Report failures to the team with the build hash, console dump, and section ID.
+</footer>
+
+</body>
+</html>

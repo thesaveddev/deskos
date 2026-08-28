@@ -231,12 +231,16 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
   // -- Devices ---------------------------------------------------------------
   app.get('/devices', { preHandler: [...guards, requirePermission('device.read')] }, async (request) => {
     const ctx = request.tenantCtx!
-    const q = request.query as { q?: string; groupId?: string; status?: string; limit?: string; offset?: string; cursor?: string }
+    const q = request.query as { q?: string; groupId?: string; status?: string; deviceType?: string; limit?: string; offset?: string; cursor?: string }
     const clauses: string[] = ['d.adhoc = false']
     const values: unknown[] = []
     if (q.q) {
       values.push(`%${q.q}%`)
       clauses.push(`(d.name ILIKE $${values.length} OR d.hostname ILIKE $${values.length} OR d.os ILIKE $${values.length})`)
+    }
+    if (q.deviceType && ['laptop', 'workstation', 'server', 'network_device', 'mobile', 'other'].includes(q.deviceType)) {
+      values.push(q.deviceType)
+      clauses.push(`d.device_type = $${values.length}`)
     }
     if (q.groupId && isUuid(q.groupId)) {
       values.push(q.groupId)

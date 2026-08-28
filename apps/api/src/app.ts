@@ -30,6 +30,7 @@ import { catalogueRoutes } from './modules/catalogue/catalogue.routes.js'
 import { dexRoutes } from './modules/dex/dex.routes.js'
 import { directoryRoutes } from './modules/directory/directory.routes.js'
 import { agentRoutes } from './modules/devices/agent.routes.js'
+import { enrolRoutes } from './modules/devices/enrol.routes.js'
 import { deviceRoutes } from './modules/devices/devices.routes.js'
 import { aiRoutes } from './modules/ai/ai.routes.js'
 import { createAiProvider } from './modules/ai/gateway.js'
@@ -84,6 +85,7 @@ import { ticketRoutes } from './modules/tickets/tickets.routes.js'
 import { ticketLinkRoutes } from './modules/tickets/links.routes.js'
 import { escalationRoutes } from './modules/tickets/escalation.routes.js'
 import { ticketLockRoutes } from './modules/tickets/locks.routes.js'
+import { registerReminderRoutes } from './modules/tickets/reminders.routes.js'
 import './types.js'
 
 function friendlyValidationMessage(error: ZodError): string {
@@ -376,6 +378,7 @@ export async function buildApp(config: AppConfig): Promise<FastifyInstance> {
     await v1.register(ticketLinkRoutes)
     await v1.register(escalationRoutes)
     await v1.register(ticketLockRoutes)
+    await v1.register(registerReminderRoutes)
     await v1.register(attachmentRoutes)
     await v1.register(teamRoutes)
     await v1.register(searchRoutes)
@@ -424,6 +427,7 @@ export async function buildApp(config: AppConfig): Promise<FastifyInstance> {
   // Registered under /api/connect so the JSON info/claim endpoints never shadow
   // the human-facing /connect/:code SPA page served by the web app.
   await app.register(connectRoutes, { prefix: '/api' })
+  await app.register(enrolRoutes, { prefix: '/api' })
 
   // Gateway webhooks (Paystack / Stripe). Registered outside the v1 scope so
   // their raw-body JSON parser applies only to these routes.

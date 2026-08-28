@@ -8,6 +8,9 @@ export default defineConfig({
     port: 5180,
     proxy: {
       '/api': { target: 'http://localhost:4000', changeOrigin: true },
+      // WebSocket signalling for the connect page / session console in dev.
+      // Production routes /ws via nginx to the relay container.
+      '/ws': { target: 'ws://localhost:4100', ws: true, changeOrigin: true },
     },
   },
   build: {
