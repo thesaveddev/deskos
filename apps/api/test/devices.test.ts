@@ -81,12 +81,14 @@ describe('devices & agent v1', () => {
     })
 
     it('serves the Windows helper download for a valid enrollment code', async () => {
-      const fixture = await import('node:fs/promises').then(({ mkdtemp, writeFile }) => mkdtemp('/tmp/reydesk-helper-test-').then(async (dir) => {
+      const fixture = await import('node:fs/promises').then(({ mkdtemp, writeFile }) => mkdtemp('reydesk-helper-test-').then(async (dir) => {
         const file = `${dir}/reydesk-helper.exe`
         await writeFile(file, Buffer.from('MZ-reydesk-test-helper'))
         return file
       }))
       const testApp = await createTestApp({ REYDESK_HELPER_BINARY: fixture })
+      const originalHelperPath = testApp.config.helperBinaryPath
+      testApp.config.helperBinaryPath = fixture
       const rotated = await testApp.inject({ method: 'POST', url: '/api/v1/devices/enrol-token/rotate', headers: authHeaders(owner) })
       expect(rotated.statusCode).toBe(201)
       const code = rotated.json().code as string
@@ -99,6 +101,7 @@ describe('devices & agent v1', () => {
       expect(download.headers['content-disposition']).toContain('reydesk-helper.exe')
       expect(download.headers['content-length']).toBe(String(Buffer.byteLength('MZ-reydesk-test-helper')))
       expect(download.body).toBe('MZ-reydesk-test-helper')
+      testApp.config.helperBinaryPath = originalHelperPath
       await testApp.close()
     })
 

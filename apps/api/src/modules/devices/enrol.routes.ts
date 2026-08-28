@@ -1,4 +1,4 @@
-import { createReadStream, existsSync, statSync } from 'node:fs'
+import { readFileSync, existsSync, statSync } from 'node:fs'
 import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
@@ -65,6 +65,9 @@ export async function enrolRoutes(app: FastifyInstance): Promise<void> {
     else if (currentPlatform === 'macos' && process.env.REYDESK_MAC_HELPER_VERIFIED === 'true') { file = app.config.macHelperBinaryPath; filename = 'reydesk-helper.dmg' }
     if (!file || !existsSync(file)) return reply.code(404).send({ error: { code: 'helper_unavailable', message: 'The agent package is not available for this device yet.' } })
     file = path.resolve(file)
+    // Fastify serializes a stream response through its reply pipeline; setting
+    // the stream's known length avoids an opaque internal error when the helper
+    // is served from a mounted artifact directory.
     let size: number
     try {
       size = statSync(file).size
@@ -74,7 +77,8 @@ export async function enrolRoutes(app: FastifyInstance): Promise<void> {
     if (!Number.isFinite(size) || size <= 0) return reply.code(404).send({ error: { code: 'helper_unavailable', message: 'The agent package is not available for this device yet.' } })
     reply.header('Content-Length', size)
     reply.header('Content-Type', contentType)
+    reply.header('Content-Transfer-Encoding', 'binary')
     reply.header('Content-Disposition', `attachment; filename="${filename}"`)
-    return reply.send(createReadStream(file))
+    return reply.send(readFileSync(file))
   })
 }
