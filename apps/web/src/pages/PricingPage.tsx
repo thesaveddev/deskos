@@ -80,7 +80,7 @@ const PLANS = [
     price: 'Custom',
     period: '',
     billed: 'volume pricing available',
-    desc: 'Multi-tenant MSP, SSO, on-premises deployment, dedicated support, and custom SLAs for large organizations.',
+    desc: 'Multi-tenant MSP, SSO, dedicated support, and custom SLAs for large organizations.',
     cta: 'Contact sales',
     ctaStyle: 'btn btn-ghost btn-block',
     features: [
@@ -89,8 +89,7 @@ const PLANS = [
       { text: 'Multi-tenant MSP console', included: true },
       { text: 'Cross-tenant management', included: true },
       { text: 'SAML SSO + SCIM provisioning', included: true },
-      { text: 'On-premises deployment option', included: true },
-      { text: 'JIT privileged access', included: true },
+      { text: 'Cross-tenant management', included: true },
       { text: 'Major incident command', included: true },
       { text: 'Compliance scoring dashboard', included: true },
       { text: 'Developer marketplace', included: true },
@@ -126,10 +125,6 @@ const FAQ = [
     a: 'Yes. We offer special pricing for educational institutions and registered non-profit organizations. Contact sales@reydesk.com.',
   },
   {
-    q: 'Can I self-host ReyDesk?',
-    a: 'Yes. ReyDesk ships with a Dockerfile and docker-compose. Run it on your own VPS or on-premises server. Self-hosted pricing is the same as cloud.',
-  },
-  {
     q: 'What payment methods do you accept?',
     a: 'Visa, Mastercard, American Express, and wire transfer for Enterprise plans.',
   },
@@ -154,7 +149,7 @@ const COMPARE_ROWS = [
   { feature: 'Session recording', starter: '—', pro: '✅', enterprise: '✅' },
   { feature: 'Multi-tenant MSP', starter: '—', pro: '—', enterprise: '✅' },
   { feature: 'SAML SSO', starter: '—', pro: '—', enterprise: '✅' },
-  { feature: 'On-premises deployment', starter: '—', pro: '—', enterprise: '✅' },
+  { feature: 'Cross-tenant management', starter: '—', pro: '—', enterprise: '✅' },
   { feature: 'JIT privileged access', starter: '—', pro: '—', enterprise: '✅' },
   { feature: 'Compliance scoring', starter: '—', pro: '—', enterprise: '✅' },
   { feature: 'Developer marketplace', starter: '—', pro: '✅', enterprise: '✅' },

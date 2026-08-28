@@ -1,15 +1,43 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
   <title id="title">ReyDesk — Support Simplified.</title>
   <desc id="desc">Remote support, endpoint management and IT service management in one workspace.</desc>
-  <rect width="1200" height="630" fill="#0e1114"/>
-  <circle cx="1020" cy="80" r="260" fill="#303a45" opacity=".65"/>
-  <circle cx="1120" cy="560" r="220" fill="#1a2027" opacity=".7"/>
-  <rect x="84" y="92" width="96" height="96" rx="24" fill="#e8a33d"/>
-  <path d="M111 162v-44h16c10 0 17 4 17 13 0 6-4 10-10 12l11 19h-14l-10-18h-2v18h-8zm11-25h4c4 0 6-2 6-5s-2-5-6-5h-4v10z" fill="#1b1408"/>
-  <text x="208" y="158" fill="#e6e9ec" font-family="Arial,Helvetica,sans-serif" font-size="52" font-weight="700">ReyDesk</text>
-  <text x="88" y="302" fill="#e6e9ec" font-family="Arial,Helvetica,sans-serif" font-size="68" font-weight="700">Support Simplified.</text>
-  <text x="92" y="366" fill="#9aa4af" font-family="Arial,Helvetica,sans-serif" font-size="28">Remote support, endpoint management and IT service management</text>
-  <text x="92" y="407" fill="#9aa4af" font-family="Arial,Helvetica,sans-serif" font-size="28">in one secure, consent-first workspace.</text>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0e1114"/>
+      <stop offset="100%" stop-color="#1a2027"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0%" stop-color="#e8a33d" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#e8a33d" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <!-- Subtle radial glow -->
+  <circle cx="200" cy="315" r="500" fill="url(#glow)"/>
+  <!-- Decorative circles -->
+  <circle cx="1020" cy="80" r="260" fill="#252d36" opacity="0.5"/>
+  <circle cx="1120" cy="560" r="220" fill="#1a2027" opacity="0.6"/>
+  <!-- Shield icon -->
+  <g transform="translate(88, 92)">
+    <!-- Shield body -->
+    <path d="M48 0 L92 18 L92 54 C92 78 48 96 48 96 C48 96 4 78 4 54 L4 18 Z" fill="#e8a33d" stroke="none"/>
+    <!-- Crown accent -->
+    <path d="M24 18 L33 6 L48 18 L63 6 L72 18 L48 18 Z" fill="#1a2027" opacity="0.12"/>
+    <!-- Stylized R -->
+    <path d="M32 72 L32 32 L44 32 C52 32 58 36 58 44 C58 50 53 54 47 54 L44 54 L58 72" fill="none" stroke="#1a2027" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M50 54 L62 72" fill="none" stroke="#1a2027" stroke-width="6" stroke-linecap="round"/>
+  </g>
+  <!-- Brand name -->
+  <text x="210" y="168" fill="#e6e9ec" font-family="'Inter','Segoe UI',Arial,Helvetica,sans-serif" font-size="56" font-weight="800" letter-spacing="-2">
+    <tspan fill="#e6e9ec">Rey</tspan><tspan fill="#e8a33d">Desk</tspan>
+  </text>
+  <!-- Tagline -->
+  <text x="92" y="302" fill="#e6e9ec" font-family="'Inter','Segoe UI',Arial,Helvetica,sans-serif" font-size="72" font-weight="800" letter-spacing="-2">Support Simplified.</text>
+  <!-- Subline -->
+  <text x="92" y="366" fill="#9aa4af" font-family="'Inter','Segoe UI',Arial,Helvetica,sans-serif" font-size="28">Remote support, endpoint management and IT service management</text>
+  <text x="92" y="407" fill="#9aa4af" font-family="'Inter','Segoe UI',Arial,Helvetica,sans-serif" font-size="28">in one secure, consent-first workspace.</text>
+  <!-- CTA button -->
   <rect x="92" y="500" width="252" height="58" rx="29" fill="#e8a33d"/>
-  <text x="137" y="538" fill="#1b1408" font-family="Arial,Helvetica,sans-serif" font-size="22" font-weight="700">reydesk.com</text>
+  <text x="147" y="538" fill="#1a2027" font-family="'Inter','Segoe UI',Arial,Helvetica,sans-serif" font-size="22" font-weight="700">reydesk.com</text>
 </svg>

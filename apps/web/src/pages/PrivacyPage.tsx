@@ -58,7 +58,7 @@ export default function PrivacyPage() {
 
           <h2>6. Data residency</h2>
           <p>
-            Data is stored on servers in the United Kingdom. We do not transfer data outside the UK/EEA unless you explicitly configure a different deployment region. Enterprise customers may request on-premises deployment.
+            Data is stored on servers in the United Kingdom. We do not transfer data outside the UK/EEA unless you explicitly configure a different deployment region.
           </p>
 
           <h2>7. Your rights</h2>

@@ -74,7 +74,7 @@ export default function LandingPage() {
             Fix things remotely.<br />Track everything.
           </h1>
           <p className="landing-sub landing-animate landing-animate-delay-2">
-            ReyDesk gives your IT team remote desktop access, device monitoring, and a ticketing system in one app. Every session requires user consent. Every action is logged. You can self-host it.
+            ReyDesk gives your IT team remote desktop access, device monitoring, and a ticketing system in one app. Every session requires user consent. Every action is logged. Your data stays in your region.
           </p>
           <div className="landing-cta landing-animate landing-animate-delay-3">
             <Link className="btn btn-primary" to="/signup" style={{ height: 44, padding: '0 28px', fontSize: 15 }}>
@@ -231,7 +231,7 @@ export default function LandingPage() {
             We built ReyDesk to replace that stack. One app. One database. One login. Remote sessions, tickets, devices, automation, knowledge base, patch tracking — sharing the same data and the same audit chain.
           </p>
           <p>
-            We think the important things are: your data stays yours (self-host if you want), every remote session requires explicit consent (no way around it), and the audit log is tamper-evident (so you can actually trust it).
+            We think the important things are: your data stays in your region with full encryption, every remote session requires explicit consent (no way around it), and the audit log is tamper-evident (so you can actually trust it).
           </p>
           <p>
             The AI features are useful but optional. They suggest, you decide. Nothing runs without approval.
@@ -259,7 +259,7 @@ export default function LandingPage() {
           </article>
           <article className="landing-feature">
             <h3>Enterprise</h3>
-            <p>Custom pricing. Multi-tenant MSP, SSO, on-premises deployment, dedicated support.</p>
+            <p>Custom pricing. Multi-tenant MSP, SSO, dedicated support, and custom SLAs.</p>
           </article>
         </div>
         <div style={{ textAlign: 'center', marginTop: 28 }}>

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 64" width="280" height="64" role="img" aria-label="ReyDesk">
+  <title>ReyDesk</title>
+  <!-- Shield with crown — "Rey" means king -->
+  <g transform="translate(2, 2)">
+    <!-- Shield body -->
+    <path d="M30 4 L56 14 L56 34 C56 48 30 60 30 60 C30 60 4 48 4 34 L4 14 Z" fill="#e8a33d" stroke="none"/>
+    <!-- Crown notch — three points at the top of the shield -->
+    <path d="M16 14 L22 6 L28 14 L34 6 L40 14 L30 14 Z" fill="#1a2027" opacity="0.15"/>
+    <!-- Stylized R -->
+    <path d="M20 46 L20 22 L28 22 C34 22 38 25 38 30 C38 34 35 37 31 37 L28 37 L38 46" fill="none" stroke="#1a2027" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M33 37 L40 46" fill="none" stroke="#1a2027" stroke-width="4.5" stroke-linecap="round"/>
+  </g>
+  <!-- Wordmark -->
+  <text x="74" y="46" fill="#1a2027" font-family="'Inter','Segoe UI',Arial,Helvetica,sans-serif" font-size="38" font-weight="800" letter-spacing="-1.5">Rey</text>
+  <text x="153" y="46" fill="#e8a33d" font-family="'Inter','Segoe UI',Arial,Helvetica,sans-serif" font-size="38" font-weight="800" letter-spacing="-1.5">Desk</text>
+</svg>
