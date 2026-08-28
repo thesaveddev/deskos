@@ -119,7 +119,7 @@ jobs:
     permissions:
       actions: read
       contents: read
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.head_branch == 'master' && github.event.workflow_run.conclusion == 'success') }}
+    if: ${{ (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.head_branch == 'master' && github.event.workflow_run.conclusion == 'success')) && needs.build-helper.result == 'success' }}
     steps:
       # The GitHub CLI needs a checked-out repository to resolve the current
       # owner/repository when querying the CI run for this exact commit.
@@ -162,7 +162,8 @@ jobs:
           name: reydesk-windows-helper
           path: artifacts/windows
 
-      - name: Download Android agent APK
+      - name: Download Android agent APK when available
+        if: ${{ needs.build-android-agent.result == 'success' }}
         uses: actions/download-artifact@v4
         with:
           name: reydesk-android-apk
@@ -171,7 +172,8 @@ jobs:
       - name: Stage helper for upload
         run: cp artifacts/windows/reydesk-helper.exe ./reydesk-helper.exe
 
-      - name: Stage APK for upload
+      - name: Stage APK for upload when available
+        if: ${{ needs.build-android-agent.result == 'success' }}
         run: cp artifacts/android/reydesk-agent.apk ./reydesk-agent.apk
 
       - name: Prepare helper directories on VPS
@@ -193,7 +195,8 @@ jobs:
           source: reydesk-helper.exe
           target: /root/reydesk-app/artifacts/windows
 
-      - name: Upload Android agent APK to VPS
+      - name: Upload Android agent APK to VPS when available
+        if: ${{ needs.build-android-agent.result == 'success' }}
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -233,7 +236,11 @@ jobs:
             curl -sf http://127.0.0.1:4000/healthz || { echo "API did not become healthy"; exit 1; }
             curl -sf http://127.0.0.1:4100/healthz || { echo "Relay did not become healthy"; exit 1; }
             docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T api test -f /app/artifacts/windows/reydesk-helper.exe || { echo "Portable helper is missing from the production API image"; exit 1; }
-            docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T api test -f /app/artifacts/android/reydesk-agent.apk || { echo "Android agent APK is missing from the production API image"; exit 1; }
+            if [ "${{ needs.build-android-agent.result }}" = "success" ]; then
+              docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T api test -f /app/artifacts/android/reydesk-agent.apk || { echo "Android agent APK is missing from the production API image"; exit 1; }
+            else
+              echo "Android agent build did not pass; deploying web/API/Windows helper without Android APK"
+            fi
             curl -sf https://reydesk.com/healthz || { echo "Public healthz failed"; exit 1; }
             # Sync host nginx config and reload so cache-busting and routing
             # changes take effect without a manual login.

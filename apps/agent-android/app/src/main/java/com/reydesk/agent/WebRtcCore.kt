@@ -19,6 +19,7 @@ import org.webrtc.SessionDescription
 import org.webrtc.SurfaceTextureHelper
 import org.webrtc.VideoTrack
 import org.webrtc.ScreenCapturerAndroid
+import org.webrtc.RtpTransceiver
 
 /**
  * Answers the technician's SDP offer with a screen-only description and owns
@@ -115,9 +116,7 @@ class WebRtcCore(
 
         val trackId = "screen0"
         screenTrack = factory.createVideoTrack(trackId, source)
-        peer!!.addTransceiver(screenTrack, PeerConnection.RTPTransceiverInit(
-            PeerConnection.RTPTransceiverDirection.SEND_ONLY,
-        ))
+        peer!!.addTrack(screenTrack)
     }
 
     private fun disposeCapture() {
@@ -248,7 +247,7 @@ class WebRtcCore(
         })
     }
     override fun onRenegotiationNeeded() = Unit
-    override fun onTrack(transceiver: org.webrtc.RtpTransceiver?) = Unit
+    override fun onTrack(transceiver: RtpTransceiver?) = Unit
 
     private open class SdpObserverAdapter : SdpObserver {
         override fun onCreateSuccess(description: SessionDescription?) = Unit

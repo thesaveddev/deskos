@@ -93,7 +93,7 @@ class CaptureService : Service() {
                 stopSelf()
             }
         }
-        relay.connect(sessionId, joinToken, relayListener)
+        relay.connect(sessionId, joinToken, relayListener())
         scope.launch { heartbeatLoop() }
 
         return START_NOT_STICKY
@@ -183,7 +183,7 @@ class CaptureService : Service() {
                 endAndStop()
                 return
             }
-            relay.connect(sessionId, joinToken, relayListener)
+            relay.connect(sessionId, joinToken, relayListener())
         }.onFailure {
             delay(3000L * (attempt + 1))
             reconnectOrStop(attempt + 1)

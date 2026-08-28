@@ -45,7 +45,7 @@ class ApiClient(
         val builder = Request.Builder()
             .url(baseUrl.trimEnd('/') + path)
             .post(body.toString().toRequestBody(json))
-        if (authorized) builder.header("Authorization", "Bearer $bearer()")
+        if (authorized) builder.header("Authorization", "Bearer ${bearer()}")
         http.newCall(builder.build()).execute().use { response ->
             val text = response.body?.string().orEmpty()
             if (!response.isSuccessful) throw IOException("HTTP ${response.code} from $path: ${text.take(200)}")
@@ -56,7 +56,7 @@ class ApiClient(
     fun get(path: String): JSONObject {
         val request = Request.Builder()
             .url(baseUrl.trimEnd('/') + path)
-            .header("Authorization", "Bearer $bearer()")
+            .header("Authorization", "Bearer ${bearer()}")
             .get()
             .build()
         http.newCall(request).execute().use { response ->

@@ -5,7 +5,7 @@ import android.graphics.Path
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import android.view.accessibility.GestureDescription
+import android.accessibilityservice.GestureDescription
 
 /**
  * Injects technician touches as accessibility gestures. Only gestures are
@@ -54,6 +54,8 @@ class InputAccessibilityService : AccessibilityService() {
     }
 
     override fun onInterrupt() = Unit
+
+    override fun onAccessibilityEvent(event: android.view.accessibility.AccessibilityEvent?) = Unit
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {
         if (instance === this) instance = null
