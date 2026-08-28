@@ -93,14 +93,39 @@ export default function EnrollPage() {
     setError(null)
     try {
       const response = await fetch(downloadUrl)
-      const payload = await response.json() as { file?: string; filename?: string; contentType?: string; error?: { message?: string } }
-      if (!response.ok || !payload.file) throw new Error(payload.error?.message ?? 'The agent package could not be downloaded.')
+      const contentType = response.headers.get('content-type') ?? ''
+      const looksLikeJson = contentType.toLowerCase().includes('application/json')
+      if (!response.ok) {
+        let message = 'The agent package could not be downloaded.'
+        try {
+          const payload = await response.json() as { error?: { message?: string }; message?: string }
+          message = payload.error?.message ?? payload.message ?? message
+        } catch {
+          const text = await response.text().catch(() => '')
+          if (text) message = text.slice(0, 240)
+        }
+        throw new Error(message)
+      }
+      if (looksLikeJson) {
+        const payload = await response.json() as { file?: string; filename?: string; contentType?: string; error?: { message?: string } }
+        if (!payload.file) throw new Error(payload.error?.message ?? 'The agent package could not be downloaded.')
+        const link = document.createElement('a')
+        link.href = `data:${payload.contentType ?? 'application/octet-stream'};base64,${payload.file}`
+        link.download = payload.filename ?? 'reydesk-helper.exe'
+        document.body.appendChild(link)
+        link.click()
+        link.remove()
+        return
+      }
+      const blob = await response.blob()
+      if (!blob.size) throw new Error('The downloaded agent package was empty.')
       const link = document.createElement('a')
-      link.href = `data:${payload.contentType ?? 'application/octet-stream'};base64,${payload.file}`
-      link.download = payload.filename ?? 'reydesk-helper.exe'
+      link.href = URL.createObjectURL(blob)
+      link.download = response.headers.get('content-disposition')?.match(/filename="?([^";]+)"?/i)?.[1] ?? 'reydesk-helper.exe'
       document.body.appendChild(link)
       link.click()
       link.remove()
+      URL.revokeObjectURL(link.href)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'The agent package could not be downloaded.')
     } finally {
