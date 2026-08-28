@@ -77,18 +77,18 @@ class MainActivity : Activity() {
         val serverInput = EditText(this).apply {
             hint = "Server URL"
             setText(AgentPrefs.apiBaseUrl(this@MainActivity))
-            inputType = android.text.InputType.TYPE_TEXT_VARIATION_URI
-            singleLine = true
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
+            setSingleLine(true)
         }
         val tokenInput = EditText(this).apply {
             hint = "Enrollment code"
             setText(AgentPrefs.pendingToken(this@MainActivity))
-            singleLine = true
+            setSingleLine(true)
         }
         val nameInput = EditText(this).apply {
             hint = "Device name (optional)"
             setText(android.os.Build.MODEL)
-            singleLine = true
+            setSingleLine(true)
         }
         val enrollButton = Button(this).apply { text = "Enroll" }
         val progress = ProgressBar(this).apply { visibility = View.GONE }

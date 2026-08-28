@@ -162,7 +162,11 @@ class WebRtcCore(
         target.setRemoteDescription(SessionDescriptionObserver(), SessionDescription(SessionDescription.Type.OFFER, sdp))
         val constraints = MediaConstraints()
         target.createAnswer(object : SdpObserverAdapter() {
-            override fun onCreateSuccess(description: SessionDescription) {
+            override fun onCreateSuccess(description: SessionDescription?) {
+                if (description == null) {
+                    listener.onFailed()
+                    return
+                }
                 target.setLocalDescription(SessionDescriptionObserver(), description)
                 relay.sendAnswer(description.description)
             }

@@ -74,7 +74,12 @@ class CaptureService : Service() {
         }
         sessionId = sessionIdExtra
         joinToken = intent.getStringExtra(EXTRA_JOIN_TOKEN).orEmpty()
-        val projectionData = intent.getParcelableExtra<Intent>(EXTRA_PROJECTION)
+        val projectionData = if (Build.VERSION.SDK_INT >= 33) {
+            intent?.getParcelableExtra(EXTRA_PROJECTION, Intent::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent?.getParcelableExtra<Intent>(EXTRA_PROJECTION)
+        }
         projectionIntent = projectionData
 
         if (projectionData == null || joinToken.isBlank()) {
