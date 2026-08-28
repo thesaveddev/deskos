@@ -2,7 +2,6 @@ import { createReadStream, existsSync } from 'node:fs'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { hashToken } from './device-auth.js'
-import { withTenant } from '../../db/pool.js'
 
 const codeSchema = z.string().regex(/^\d{12}$/)
 
