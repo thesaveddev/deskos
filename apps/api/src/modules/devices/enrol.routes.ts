@@ -1,4 +1,5 @@
-import { createReadStream, existsSync } from 'node:fs'
+import { createReadStream, existsSync, statSync } from 'node:fs'
+import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { hashToken } from './device-auth.js'
@@ -63,6 +64,15 @@ export async function enrolRoutes(app: FastifyInstance): Promise<void> {
     else if (currentPlatform === 'android') { file = app.config.androidApkPath; filename = 'reydesk-agent.apk'; contentType = 'application/vnd.android.package-archive' }
     else if (currentPlatform === 'macos' && process.env.REYDESK_MAC_HELPER_VERIFIED === 'true') { file = app.config.macHelperBinaryPath; filename = 'reydesk-helper.dmg' }
     if (!file || !existsSync(file)) return reply.code(404).send({ error: { code: 'helper_unavailable', message: 'The agent package is not available for this device yet.' } })
+    file = path.resolve(file)
+    let size: number
+    try {
+      size = statSync(file).size
+    } catch {
+      return reply.code(404).send({ error: { code: 'helper_unavailable', message: 'The agent package is not available for this device yet.' } })
+    }
+    if (!Number.isFinite(size) || size <= 0) return reply.code(404).send({ error: { code: 'helper_unavailable', message: 'The agent package is not available for this device yet.' } })
+    reply.header('Content-Length', size)
     reply.header('Content-Type', contentType)
     reply.header('Content-Disposition', `attachment; filename="${filename}"`)
     return reply.send(createReadStream(file))

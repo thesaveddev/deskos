@@ -80,6 +80,28 @@ describe('devices & agent v1', () => {
       expect(remote.statusCode).toBe(404)
     })
 
+    it('serves the Windows helper download for a valid enrollment code', async () => {
+      const fixture = await import('node:fs/promises').then(({ mkdtemp, writeFile }) => mkdtemp('/tmp/reydesk-helper-test-').then(async (dir) => {
+        const file = `${dir}/reydesk-helper.exe`
+        await writeFile(file, Buffer.from('MZ-reydesk-test-helper'))
+        return file
+      }))
+      const testApp = await createTestApp({ REYDESK_HELPER_BINARY: fixture })
+      const rotated = await testApp.inject({ method: 'POST', url: '/api/v1/devices/enrol-token/rotate', headers: authHeaders(owner) })
+      expect(rotated.statusCode).toBe(201)
+      const code = rotated.json().code as string
+      const download = await testApp.inject({
+        method: 'GET',
+        url: `/api/enrol/${code}/download`,
+        headers: { 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+      })
+      expect(download.statusCode).toBe(200)
+      expect(download.headers['content-disposition']).toContain('reydesk-helper.exe')
+      expect(download.headers['content-length']).toBe(String(Buffer.byteLength('MZ-reydesk-test-helper')))
+      expect(download.body).toBe('MZ-reydesk-test-helper')
+      await testApp.close()
+    })
+
     it('rejects an invalid or revoked enrolment token', async () => {
       const bad = await app.inject({
         method: 'POST',

@@ -114,6 +114,8 @@ function HomeRoute() {
 }
 
 function IdleLockWrapper({ children }: { children: ReactNode }) {
+  const pathname = window.location.pathname
+  const isPublicSupportRoute = pathname === '/connect' || pathname.startsWith('/connect/') || pathname.startsWith('/enrol/')
   const authStatus = useAuth((state) => state.status)
   const currentUser = useAuth((state) => state.user)
   const logout = useAuth((state) => state.logout)
@@ -196,7 +198,7 @@ function IdleLockWrapper({ children }: { children: ReactNode }) {
     navigate('/login', { replace: true })
   }, [logout, navigate, resetTimer])
 
-  if (locked) {
+  if (locked && !isPublicSupportRoute) {
     const user = lockedUser ?? currentUser
     if (user) return <LockScreen user={user} onUnlock={unlock} onGoToLogin={goToLogin} />
     // Auth is still resolving while the workspace is locked; hold the loader
