@@ -2,6 +2,7 @@ name: Deploy to Production
 
 on:
   # Deploy after the E2E suite passes on master. The deploy job then waits for
+  # Optional Android builds must not block the tested Windows/web/API release.
   # the CI workflow (typecheck, web/api/relay builds, API tests, lint) to pass
   # for the same commit before touching production, so a lint or test
   # regression can no longer ship unnoticed. Manual dispatch is available for
