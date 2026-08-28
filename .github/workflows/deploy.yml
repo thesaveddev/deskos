@@ -114,13 +114,15 @@ jobs:
   deploy:
     name: Deploy ReyDesk to VPS
     needs: [build-helper, build-android-agent]
+    # Android is an optional artifact; the tested web/API/Windows release must
+    # still deploy when the mobile build is unavailable.
+    if: ${{ always() && (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.head_branch == 'master' && github.event.workflow_run.conclusion == 'success')) && needs.build-helper.result == 'success' }}
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 45
     permissions:
       actions: read
       contents: read
-    if: ${{ (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.head_branch == 'master' && github.event.workflow_run.conclusion == 'success')) && needs.build-helper.result == 'success' }}
     steps:
       # The GitHub CLI needs a checked-out repository to resolve the current
       # owner/repository when querying the CI run for this exact commit.

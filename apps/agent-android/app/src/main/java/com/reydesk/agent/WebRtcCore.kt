@@ -252,6 +252,7 @@ class WebRtcCore(
     }
     override fun onRenegotiationNeeded() = Unit
     override fun onTrack(transceiver: RtpTransceiver?) = Unit
+    override fun onAddTrack(receiver: org.webrtc.RtpReceiver?, mediaStreams: Array<out org.webrtc.MediaStream>?) = Unit
 
     private open class SdpObserverAdapter : SdpObserver {
         override fun onCreateSuccess(description: SessionDescription?) = Unit
