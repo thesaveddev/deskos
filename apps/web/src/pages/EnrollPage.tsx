@@ -24,6 +24,7 @@ export default function EnrollPage() {
   const [info, setInfo] = useState<EnrolInfo | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [downloading, setDownloading] = useState(false)
 
   const copyCode = async () => {
     try {
@@ -87,6 +88,26 @@ export default function EnrollPage() {
   const platform = info?.platform ?? 'windows'
   const downloadUrl = `/api/enrol/${encodeURIComponent(code)}/download`
 
+  const downloadAgent = async () => {
+    setDownloading(true)
+    setError(null)
+    try {
+      const response = await fetch(downloadUrl)
+      const payload = await response.json() as { file?: string; filename?: string; contentType?: string; error?: { message?: string } }
+      if (!response.ok || !payload.file) throw new Error(payload.error?.message ?? 'The agent package could not be downloaded.')
+      const link = document.createElement('a')
+      link.href = `data:${payload.contentType ?? 'application/octet-stream'};base64,${payload.file}`
+      link.download = payload.filename ?? 'reydesk-helper.exe'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'The agent package could not be downloaded.')
+    } finally {
+      setDownloading(false)
+    }
+  }
+
   return (
     <div className="auth-screen">
       <div className="auth-panel connect-panel enrol-page">
@@ -106,7 +127,7 @@ export default function EnrollPage() {
               <li>Approve the requested Windows security or screen permissions.</li>
             </ol>
           </section>
-          {info.helperAvailable ? <a className="btn btn-primary btn-block" href={downloadUrl} download>Download the {platformLabel(platform)} ReyDesk agent</a> : <div className="connect-download"><strong>Agent download unavailable</strong><span className="muted">Ask your technician to configure the signed agent package before enrolling this device.</span></div>}
+          {info.helperAvailable ? <button type="button" className="btn btn-primary btn-block" onClick={() => void downloadAgent()} disabled={downloading}>{downloading ? 'Preparing download…' : `Download the ${platformLabel(platform)} ReyDesk agent`}</button> : <div className="connect-download"><strong>Agent download unavailable</strong><span className="muted">Ask your technician to configure the signed agent package before enrolling this device.</span></div>}
           {info.expiresAt ? <span className="muted">This code expires {new Date(info.expiresAt).toLocaleString()} and can be used once.</span> : null}
           <div className="enrol-modal-note"><strong>Important:</strong><span>Do not enter this enrollment code on the Remote Session support page. Remote Session codes and enrollment codes are separate.</span></div>
         </div> : null}

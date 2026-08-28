@@ -240,6 +240,7 @@ export default function App() {
       <Route path="/accept-invitation" element={<AcceptInvitationPage />} />
       <Route path="/connect" element={<ConnectPage />} />
       <Route path="/connect/:code" element={<ConnectPage />} />
+      <Route path="/enrol" element={<EnrollPage />} />
       <Route path="/enrol/:code" element={<EnrollPage />} />
       <Route path="/features" element={<FeaturesPage />} />
       <Route path="/use-cases" element={<UseCasesPage />} />

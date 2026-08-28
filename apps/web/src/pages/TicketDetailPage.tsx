@@ -158,6 +158,7 @@ export default function TicketDetailPage() {
   const [reminderNote, setReminderNote] = useState('')
   const [reminderDue, setReminderDue] = useState('')
   const [reminderBusy, setReminderBusy] = useState(false)
+  const [dueReminder, setDueReminder] = useState<TicketReminder | null>(null)
 
   const canUseAi = useAuth((state) => state.memberships.some((m) => m.permissions.includes('ai.use')))
   const canOverrideTicketLock = auth.memberships.some((m) => m.permissions.includes('settings.manage'))
@@ -249,6 +250,16 @@ export default function TicketDetailPage() {
     if (!id || !canUseAi) return
     getTriageState(id).then((result) => setAiTriage(result.triage)).catch(() => setAiTriage(null))
   }, [id, canUseAi])
+
+  useEffect(() => {
+    const checkDueReminder = () => {
+      const due = reminders.find((reminder) => Boolean(reminder.fired_at && !reminder.dismissed_at)) ?? null
+      setDueReminder(due)
+    }
+    checkDueReminder()
+    const interval = window.setInterval(checkDueReminder, 15_000)
+    return () => window.clearInterval(interval)
+  }, [reminders])
 
   useEffect(() => {
     if (!id) return
@@ -879,19 +890,72 @@ export default function TicketDetailPage() {
               <option key={s} value={s}>{STATUS_LABELS[s]}</option>
             ))}
           </select>
-          <button className="btn btn-ghost btn-sm" disabled={readOnlyForLock} onClick={openEscalate}>
-            <Icon name="activity" size={14} />Escalate
-          </button>
-          <button className="btn btn-ghost btn-sm" disabled={readOnlyForLock} onClick={() => { setShowForward(!showForward); setShowEscalate(false) }}>
-            <Icon name="forward" size={14} />Forward
-          </button>
-          <button className={`btn btn-ghost btn-sm${reminders.some((r) => !r.dismissed_at) ? ' btn-reminder-active' : ''}`} disabled={readOnlyForLock} onClick={openReminder}>
-            <Icon name="bell" size={14} />Reminder{reminders.some((r) => !r.dismissed_at) ? ` (${reminders.filter((r) => !r.dismissed_at).length})` : ''}
-          </button>
+          <div className="ticket-action-menu">
+            <button className="btn btn-ghost btn-sm" disabled={readOnlyForLock} onClick={openEscalate} aria-expanded={showEscalate}>
+              <Icon name="activity" size={14} />Escalate
+            </button>
+            {showEscalate && (
+              <div className="ticket-escalate-form ticket-action-dropdown">
+                <h4 className="ticket-escalate-title">Escalate ticket</h4>
+                <p className="ticket-escalate-hint">Raise to a higher-level team with a reason.</p>
+                {escPaths.length > 0 ? <div className="ticket-escalation-paths"><span className="etch">Recommended routes</span>{escPaths.map((path) => <button type="button" key={path.id} className={`ticket-escalation-path${escTeam === path.target_team_id ? ' active' : ''}`} onClick={() => chooseEscalationPath(path)}><span className="ticket-escalation-path-name">{path.name}</span><span className="ticket-escalation-path-target">→ {path.target_team_name || 'team'}</span></button>)}</div> : null}
+                <select className="field-input select-sm" value={escTeam} onChange={(e) => setEscTeam(e.target.value)}><option value="">Keep current team</option>{teams.filter((t) => t.accepts_tickets !== false).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
+                <textarea className="field-input" placeholder="Reason for escalation (required)" value={escReason} onChange={(e) => setEscReason(e.target.value)} rows={2} />
+                <div className="ticket-action-form-buttons"><button className="btn btn-primary btn-sm" onClick={() => void handleEscalate()} disabled={escBusy || !escReason.trim()}>{escBusy ? 'Escalating…' : 'Escalate'}</button><button className="btn btn-ghost btn-sm" onClick={() => setShowEscalate(false)}>Cancel</button></div>
+              </div>
+            )}
+          </div>
+          <div className="ticket-action-menu">
+            <button className="btn btn-ghost btn-sm" disabled={readOnlyForLock} onClick={() => { setShowForward(!showForward); setShowEscalate(false); setShowReminder(false) }} aria-expanded={showForward}>
+              <Icon name="forward" size={14} />Forward
+            </button>
+            {showForward && (
+              <div className="ticket-escalate-form ticket-action-dropdown">
+                <h4 className="ticket-escalate-title">Forward to another team</h4>
+                <p className="ticket-escalate-hint">Hand this ticket to the correct team.</p>
+                <select className="field-input select-sm" value={fwdTeam} onChange={(e) => setFwdTeam(e.target.value)}><option value="">Select a team…</option>{teams.filter((t) => t.accepts_tickets !== false).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
+                <textarea className="field-input" placeholder="Note (optional)" value={fwdNote} onChange={(e) => setFwdNote(e.target.value)} rows={2} />
+                <div className="ticket-action-form-buttons"><button className="btn btn-primary btn-sm" onClick={() => void handleForward()} disabled={fwdBusy || !fwdTeam}>{fwdBusy ? 'Forwarding…' : 'Forward'}</button><button className="btn btn-ghost btn-sm" onClick={() => setShowForward(false)}>Cancel</button></div>
+              </div>
+            )}
+          </div>
+          <div className="ticket-action-menu">
+            <button className={`btn btn-ghost btn-sm${reminders.some((r) => !r.dismissed_at) ? ' btn-reminder-active' : ''}`} disabled={readOnlyForLock} onClick={openReminder} aria-expanded={showReminder}>
+              <Icon name="bell" size={14} />Reminder{reminders.some((r) => !r.dismissed_at) ? ` (${reminders.filter((r) => !r.dismissed_at).length})` : ''}
+            </button>
+            {showReminder && (
+              <div className="ticket-escalate-form ticket-action-dropdown">
+                <h4 className="ticket-escalate-title">Set a reminder</h4>
+                <p className="ticket-escalate-hint">Choose when to follow up on this ticket.</p>
+                <div className="form-row"><div className="field"><span className="field-label">When</span><input className="field-input" type="datetime-local" value={reminderDue} onChange={(e) => setReminderDue(e.target.value)} /></div><div className="field" style={{ flex: 2 }}><span className="field-label">Note</span><input className="field-input" value={reminderNote} onChange={(e) => setReminderNote(e.target.value)} placeholder="e.g. Call back about VPN access" maxLength={500} /></div></div>
+                <div className="ticket-action-form-buttons"><button className="btn btn-primary btn-sm" onClick={() => void handleCreateReminder()} disabled={reminderBusy || !reminderDue}>{reminderBusy ? 'Saving…' : 'Set reminder'}</button><button className="btn btn-ghost btn-sm" onClick={() => setShowReminder(false)}>Cancel</button></div>
+                {reminders.length > 0 ? <div className="ticket-reminder-list"><span className="etch">Your reminders</span>{reminders.map((r) => { const fired = Boolean(r.fired_at && !r.dismissed_at); const dismissed = Boolean(r.dismissed_at); return <div key={r.id} className={`ticket-reminder-row${fired ? ' fired' : ''}${dismissed ? ' dismissed' : ''}`}><div className="ticket-reminder-main"><strong>{formatWhen(r.due_at)}</strong><span>{r.note || 'Follow up on this ticket'}</span></div><div className="ticket-reminder-actions">{fired ? <span className="status-pill status-warn">Due now</span> : null}{dismissed ? <span className="status-pill">Dismissed</span> : null}{!dismissed ? <button className="btn btn-ghost btn-xs" onClick={() => void handleSnoozeReminder(r)}>Snooze 30m</button> : null}{!dismissed ? <button className="btn btn-ghost btn-xs" onClick={() => void handleDismissReminder(r)}>Dismiss</button> : null}<button className="btn btn-ghost btn-xs" onClick={() => void handleDeleteReminder(r)} title="Delete"><Icon name="close" size={12} /></button></div></div> })}</div> : null}
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Escalation form */}
-        {showEscalate && (
+        {/* Legacy inline action panels removed; action forms now render as anchored dropdowns. */}
+        {dueReminder ? (
+          <aside className="ticket-reminder-flyout" role="alert" aria-live="assertive">
+            <div className="ticket-reminder-flyout-head"><Icon name="bell" size={18} /><div><strong>Reminder due</strong><span>{dueReminder.note || 'Follow up on this ticket'}</span></div><button className="btn btn-ghost btn-xs" onClick={() => void handleDismissReminder(dueReminder)} aria-label="Dismiss reminder">Dismiss</button></div>
+            <div className="ticket-reminder-flyout-actions"><button className="btn btn-primary btn-sm" onClick={() => void handleSnoozeReminder(dueReminder)}>Snooze 30 min</button><Link className="btn btn-ghost btn-sm" to="#ticket-timeline">Open ticket</Link></div>
+          </aside>
+        ) : null}
+
+        {/* Escalation history */}
+          <div className="ticket-escalation-history">
+            <span className="etch">Escalation history</span>
+            {escalations.map((e) => (
+              <div key={e.id} className="ticket-escalation-entry">
+                <span className="ticket-esc-level">Level {e.level}</span>
+                <span className="ticket-esc-reason">{e.reason}</span>
+                <span className="ticket-esc-meta">by {e.escalated_by_name || 'Unknown'} · {formatWhen(e.created_at)}</span>
+              </div>
+            ))}
+          </div>
+        {/* Removed stale inline action-panel fragment. */}
+        {false && (
           <div className="ticket-escalate-form">
             <h4 className="ticket-escalate-title">Escalate ticket</h4>
             <p className="ticket-escalate-hint">Raise to a higher-level team with a reason. This bumps the escalation level and records a permanent entry in the escalation history.</p>
@@ -983,20 +1047,6 @@ export default function TicketDetailPage() {
                 })}
               </div>
             ) : null}
-          </div>
-        )}
-
-        {/* Escalation history */}
-        {escalations.length > 0 && (
-          <div className="ticket-escalation-history">
-            <span className="etch">Escalation history</span>
-            {escalations.map((e) => (
-              <div key={e.id} className="ticket-escalation-entry">
-                <span className="ticket-esc-level">Level {e.level}</span>
-                <span className="ticket-esc-reason">{e.reason}</span>
-                <span className="ticket-esc-meta">by {e.escalated_by_name || 'Unknown'} · {formatWhen(e.created_at)}</span>
-              </div>
-            ))}
           </div>
         )}
       </div>

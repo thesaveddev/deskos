@@ -97,8 +97,10 @@ describe('devices & agent v1', () => {
         url: `/api/enrol/${code}/download`,
         headers: { 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
       })
-      expect(download.statusCode, `${download.statusCode}: ${download.body}`).toBe(404)
-      expect(download.json()).toMatchObject({ error: { code: 'helper_unavailable' } })
+      expect(download.statusCode, `${download.statusCode}: ${download.body}`).toBe(200)
+      expect(download.headers['content-type']).toContain('application/octet-stream')
+      expect(download.headers['content-disposition']).toContain('reydesk-helper.exe')
+      expect(download.body).toBe('MZ-reydesk-test-helper')
 
       testApp.config.helperBinaryPath = originalHelperPath
       await testApp.close()
