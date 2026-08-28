@@ -76,9 +76,9 @@ export async function enrolRoutes(app: FastifyInstance): Promise<void> {
     }
     if (!Number.isFinite(size) || size <= 0) return reply.code(404).send({ error: { code: 'helper_unavailable', message: 'The agent package is not available for this device yet.' } })
     reply.header('Content-Length', size)
-    reply.header('Content-Type', contentType)
+    reply.type(contentType)
     reply.header('Content-Transfer-Encoding', 'binary')
     reply.header('Content-Disposition', `attachment; filename="${filename}"`)
-    return reply.send(readFileSync(file))
+    return reply.raw.end(readFileSync(file))
   })
 }
