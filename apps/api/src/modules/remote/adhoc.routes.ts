@@ -35,7 +35,7 @@ const emailSchema = z.object({
 // accidentally accept one another's codes.
 const publicCodeSchema = z.string().regex(/^\d{12}$/)
 const ENROLLMENT_CODE_HINT = 'This is an enrollment code. Open /enrol and enter it there; remote support codes are generated from Remote sessions.'
-const SUPPORT_CODE_HINT = 'This is a remote support code. Open /connect and enter the technician support code there; enrollment codes are generated from Devices → Deploy / enrol.'
+
 
 const claimSchema = z.object({
   name: z.string().min(1).max(120).optional(),
