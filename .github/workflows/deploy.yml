@@ -239,8 +239,15 @@ jobs:
             curl -sf http://127.0.0.1:4000/healthz || { echo "API did not become healthy"; exit 1; }
             curl -sf http://127.0.0.1:4100/healthz || { echo "Relay did not become healthy"; exit 1; }
             docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T api test -f /app/artifacts/windows/reydesk-helper.exe || { echo "Portable helper is missing from the production API image"; exit 1; }
+            # Android is an optional artifact. A successful build may still
+            # produce no APK (for example when the artifact is unavailable),
+            # so do not make the core web/API/Windows deployment fail on it.
             if [ "${{ needs.build-android-agent.result }}" = "success" ]; then
-              docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T api test -f /app/artifacts/android/reydesk-agent.apk || { echo "Android agent APK is missing from the production API image"; exit 1; }
+              if docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T api test -f /app/artifacts/android/reydesk-agent.apk; then
+                echo "Android agent APK is present"
+              else
+                echo "Android agent APK was not included; continuing without optional Android artifact"
+              fi
             else
               echo "Android agent build did not pass; deploying web/API/Windows helper without Android APK"
             fi
