@@ -45,7 +45,10 @@ export default function EnrollPage() {
     let cancelled = false
     void fetch(`/api/enrol/${encodeURIComponent(code)}`)
       .then(async (response) => {
-        if (!response.ok) throw new Error('This enrollment code is invalid or expired. Ask your technician for a new code.')
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null) as { error?: { message?: string } } | null
+          throw new Error(payload?.error?.message ?? 'This enrollment code is invalid or expired. Ask your technician for a new code.')
+        }
         return response.json() as Promise<EnrolInfo>
       })
       .then((next) => { if (!cancelled) setInfo(next) })

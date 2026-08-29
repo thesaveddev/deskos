@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { hashToken } from './device-auth.js'
 
 const codeSchema = z.string().regex(/^\d{12}$/)
+const SUPPORT_CODE_HINT = 'This is a remote support code. Open /connect and enter it there; enrollment codes are generated from Devices → Deploy / enrol.'
 
 function platform(request: { headers: Record<string, string | string[] | undefined> }): 'windows' | 'android' | 'macos' | 'unknown' {
   const ua = String(request.headers['user-agent'] ?? '').toLowerCase()
@@ -34,7 +35,10 @@ export async function enrolRoutes(app: FastifyInstance): Promise<void> {
       [hashToken(parsed.data)],
     )
     const row = result.rows[0]
-    if (!row) return reply.code(404).send({ error: { code: 'not_found', message: 'This enrollment code is invalid or expired.' } })
+    if (!row) {
+      const support = await app.db.query('SELECT 1 FROM adhoc_sessions WHERE code_hash = $1 AND state = \'open\' AND expires_at > now() LIMIT 1', [hashToken(parsed.data)])
+      return reply.code(404).send({ error: { code: support.rowCount ? 'wrong_code_type' : 'not_found', message: support.rowCount ? SUPPORT_CODE_HINT : 'This enrollment code is invalid or expired.' } })
+    }
     const currentPlatform = platform(request)
     const helperAvailable = currentPlatform === 'windows'
       ? Boolean(app.config.helperBinaryPath && existsSync(app.config.helperBinaryPath))
@@ -59,7 +63,10 @@ export async function enrolRoutes(app: FastifyInstance): Promise<void> {
         LIMIT 1`,
       [hashToken(parsed.data)],
     )
-    if (!result.rowCount) return reply.code(404).send({ error: { code: 'not_found', message: 'This enrollment code is invalid or expired.' } })
+    if (!result.rowCount) {
+      const support = await app.db.query('SELECT 1 FROM adhoc_sessions WHERE code_hash = $1 AND state = \'open\' AND expires_at > now() LIMIT 1', [hashToken(parsed.data)])
+      return reply.code(404).send({ error: { code: support.rowCount ? 'wrong_code_type' : 'not_found', message: support.rowCount ? SUPPORT_CODE_HINT : 'This enrollment code is invalid or expired.' } })
+    }
     const currentPlatform = platform(request)
     let file = ''
     let filename = ''

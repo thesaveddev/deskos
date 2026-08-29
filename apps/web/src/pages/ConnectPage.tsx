@@ -110,7 +110,8 @@ export default function ConnectPage() {
       const res = await fetch(`/api/connect/${encodeURIComponent(code)}${query}`)
       if (!res.ok) {
         setInfo(null)
-        setError('This support link is invalid or has expired. Ask your technician for a new one.')
+        const payload = await res.json().catch(() => null) as { error?: { code?: string; message?: string } } | null
+        setError(payload?.error?.message ?? 'This support link is invalid or has expired. Ask your technician for a new one.')
         return
       }
       const next = (await res.json()) as ConnectInfo & { session_id?: string; remote_session_id?: string; consented?: boolean }

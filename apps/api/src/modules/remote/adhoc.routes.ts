@@ -30,7 +30,12 @@ const emailSchema = z.object({
 
 // Older links remain readable for compatibility; new support sessions default
 // to the stronger 12-digit code.
+// Support-session codes are always 12 digits. Keep this validation separate from
+// enrollment credentials: the two stores have different lifecycles and must not
+// accidentally accept one another's codes.
 const publicCodeSchema = z.string().regex(/^\d{12}$/)
+const ENROLLMENT_CODE_HINT = 'This is an enrollment code. Open /enrol and enter it there; remote support codes are generated from Remote sessions.'
+const SUPPORT_CODE_HINT = 'This is a remote support code. Open /connect and enter the technician support code there; enrollment codes are generated from Devices → Deploy / enrol.'
 
 const claimSchema = z.object({
   name: z.string().min(1).max(120).optional(),
@@ -286,7 +291,17 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
     const query = request.query as { claimToken?: string }
     const claimToken = typeof query.claimToken === 'string' ? query.claimToken : null
     const row = await findAdhocByCode(app.db, code)
-    if (!row) return reply.code(404).send({ error: { code: 'not_found', message: 'This support link is invalid or expired.' } })
+    if (!row) {
+      const enrollment = await app.db.query(
+        `SELECT 1 FROM tenants
+          WHERE enrol_code_hash = $1
+            AND enrol_code_used_at IS NULL
+            AND enrol_code_expires_at > now()
+          LIMIT 1`,
+        [hashToken(code)],
+      )
+      return reply.code(404).send({ error: { code: enrollment.rowCount ? 'wrong_code_type' : 'not_found', message: enrollment.rowCount ? ENROLLMENT_CODE_HINT : 'This support link is invalid or expired.' } })
+    }
     if (claimToken && (row.claim_mode !== 'email_link' || row.claim_token_used_at || hashToken(claimToken) !== row.claim_token_hash)) {
       return reply.code(404).send({ error: { code: 'not_found', message: 'This support link is invalid or expired.' } })
     }
@@ -319,10 +334,19 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
       }
       const code = codeResult.data
       const row = await findAdhocByCode(app.db, code)
-      if (!row || row.state !== 'open' || new Date(row.expires_at).getTime() <= Date.now()) {
-        return reply
-          .code(404)
-          .send({ error: { code: 'not_found', message: 'This support link is invalid or expired.' } })
+      if (!row) {
+        const enrollment = await app.db.query(
+          `SELECT 1 FROM tenants
+            WHERE enrol_code_hash = $1
+              AND enrol_code_used_at IS NULL
+              AND enrol_code_expires_at > now()
+            LIMIT 1`,
+          [hashToken(code)],
+        )
+        return reply.code(404).send({ error: { code: enrollment.rowCount ? 'wrong_code_type' : 'not_found', message: enrollment.rowCount ? ENROLLMENT_CODE_HINT : 'This support link is invalid or expired.' } })
+      }
+      if (row.state !== 'open' || new Date(row.expires_at).getTime() <= Date.now()) {
+        return reply.code(404).send({ error: { code: 'not_found', message: 'This support link is invalid or expired.' } })
       }
       const platform = clientPlatform(request)
       let binaryPath = ''

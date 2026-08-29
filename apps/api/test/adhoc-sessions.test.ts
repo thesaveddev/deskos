@@ -114,6 +114,23 @@ describe('ad-hoc (unmanaged) support sessions', () => {
     expect(res.statusCode).toBe(403)
   })
 
+  it('keeps enrollment codes from opening the remote-session route', async () => {
+    const rotated = await app.inject({
+      method: 'POST',
+      url: '/api/v1/devices/enrol-token/rotate',
+      headers: authHeaders(owner),
+    })
+    expect(rotated.statusCode).toBe(201)
+    const enrollmentCode = rotated.json().code as string
+    const remoteInfo = await app.inject({ method: 'GET', url: `/api/connect/${enrollmentCode}` })
+    expect(remoteInfo.statusCode).toBe(404)
+    expect(remoteInfo.json().error.code).toBe('wrong_code_type')
+    expect(remoteInfo.json().error.message).toContain('/enrol')
+    const enrollmentInfo = await app.inject({ method: 'GET', url: `/api/enrol/${enrollmentCode}` })
+    expect(enrollmentInfo.statusCode).toBe(200)
+    expect(enrollmentInfo.json().valid).toBe(true)
+  })
+
   it('serves public session info and rejects unknown codes', async () => {
     const created = await app.inject({
       method: 'POST',
@@ -130,6 +147,13 @@ describe('ad-hoc (unmanaged) support sessions', () => {
 
     const missing = await app.inject({ method: 'GET', url: '/api/connect/0000000000' })
     expect(missing.statusCode).toBe(404)
+
+    const rotated = await app.inject({ method: 'POST', url: '/api/v1/devices/enrol-token/rotate', headers: authHeaders(owner) })
+    const enrollmentCode = rotated.json().code as string
+    const wrongType = await app.inject({ method: 'GET', url: `/api/connect/${enrollmentCode}` })
+    expect(wrongType.statusCode).toBe(404)
+    expect(wrongType.json().error.code).toBe('wrong_code_type')
+    expect(wrongType.json().error.message).toContain('/enrol')
   })
 
   it('claims the code once, creates an ephemeral device and session, and rejects reuse', async () => {
