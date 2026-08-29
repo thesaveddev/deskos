@@ -1071,7 +1071,7 @@ async fn enroll(
         .await
         .context("enrollment request failed")?
         .error_for_status()
-        .context("enrollment rejected")?
+        .context("enrollment rejected — verify that you entered the current 12-digit code from Devices → Deploy / enrol, not a Remote Session support code")?
         .json::<EnrollResponse>()
         .await
         .context("invalid enrollment response")?;
@@ -1200,7 +1200,8 @@ async fn claim_and_save(
         claim_token.as_deref(),
         fingerprint.as_deref(),
     )
-    .await?;
+    .await
+    .map_err(|error| anyhow!("this is not an enrollment code: {error}"))?;
     validate_endpoint(&claimed.relay_url, true)?;
     let config = AgentConfig {
         api_url,
