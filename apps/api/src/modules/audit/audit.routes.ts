@@ -109,7 +109,7 @@ export async function auditRoutes(app: FastifyInstance): Promise<void> {
         ),
       ]
       reply.header('content-type', 'text/csv; charset=utf-8')
-      reply.header('content-disposition', `attachment; filename="deskos-audit-${Date.now()}.csv"`)
+      reply.header('content-disposition', `attachment; filename="reydesk-audit-${Date.now()}.csv"`)
       return lines.join('\n')
     })
   })

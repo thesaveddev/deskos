@@ -14,7 +14,7 @@ export function useTheme() {
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>(() => {
     if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('deskos-theme') as Theme | null
+      const stored = localStorage.getItem('reydesk-theme') as Theme | null
       if (stored) return stored
       return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
     }
@@ -23,7 +23,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
-    localStorage.setItem('deskos-theme', theme)
+    localStorage.setItem('reydesk-theme', theme)
   }, [theme])
 
   const toggle = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))

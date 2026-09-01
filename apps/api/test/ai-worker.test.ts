@@ -45,7 +45,7 @@ describe('AI workers', () => {
         })
       },
     }
-    app = await createTestApp({ DESKOS_SMTP_JSON: 'true', DESKOS_SMTP_FROM: 'ReyDesk <support@example.com>' }, (instance) => {
+    app = await createTestApp({ REYDESK_SMTP_JSON: 'true', REYDESK_SMTP_FROM: 'ReyDesk <support@example.com>' }, (instance) => {
       instance.decorate('aiProvider', provider)
     })
     owner = await signupOwner(app, { tenantName: 'AI Worker Org' })

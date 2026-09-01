@@ -52,7 +52,7 @@ describe('tracing and synthetic attended-session probe', () => {
     })
 
     const metrics = await app.inject({ method: 'GET', url: '/metrics' })
-    expect(metrics.body).toContain('deskos_synthetic_probe_checks_total{check="attended_session",outcome="ok"} 1')
+    expect(metrics.body).toContain('reydesk_synthetic_probe_checks_total{check="attended_session",outcome="ok"} 1')
   })
 
   it('rejects the probe without remote.attended + remote.control', async () => {

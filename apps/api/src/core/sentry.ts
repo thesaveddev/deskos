@@ -2,7 +2,7 @@ import * as Sentry from '@sentry/node'
 import type { SentryConfig } from '../config.js'
 
 /**
- * Sentry is optional: without `DESKOS_SENTRY_DSN` these functions are no-ops so
+ * Sentry is optional: without `REYDESK_SENTRY_DSN` these functions are no-ops so
  * the API never depends on a Sentry account. Errors are captured only for
  * unexpected (5xx) failures; expected AppError responses are handled by the
  * normal error contract and are not sent to Sentry.

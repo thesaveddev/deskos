@@ -16,8 +16,8 @@ describe('magic-link authentication', () => {
 
   beforeAll(async () => {
     app = await createTestApp({
-      DESKOS_SMTP_JSON: 'true',
-      DESKOS_SMTP_FROM: 'DeskOS <no-reply@example.com>',
+      REYDESK_SMTP_JSON: 'true',
+      REYDESK_SMTP_FROM: 'ReyDesk <no-reply@example.com>',
     })
   })
 

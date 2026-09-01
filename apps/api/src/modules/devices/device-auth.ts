@@ -11,7 +11,7 @@ export function hashToken(token: string): string {
 
 /** Generate an opaque fleet token (plaintext returned to the caller once). */
 export function generateEnrolToken(): string {
-  return `deskos_${randomBytes(24).toString('base64url')}`
+  return `reydesk_${randomBytes(24).toString('base64url')}`
 }
 
 /** Generate a phone-friendly numeric code. New enrollment and support sessions use 12 digits; shorter values remain available for legacy links. */

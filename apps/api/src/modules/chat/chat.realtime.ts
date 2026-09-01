@@ -5,7 +5,7 @@ import type { DbPool } from '../../db/pool.js'
 import { withTenant } from '../../db/pool.js'
 import '../../types.js'
 
-const CHAT_CHANNEL = 'deskos_chat'
+const CHAT_CHANNEL = 'reydesk_chat'
 
 type ChatSubscriber = {
   roomId: string

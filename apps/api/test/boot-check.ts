@@ -10,7 +10,7 @@ async function main() {
   const instance = new PostgresInstance({
     port: 0,
     username: 'postgres',
-    password: 'deskos_test',
+    password: 'reydesk_test',
     persistent: false,
     setupTimeout: 300,
     timeout: 180,
@@ -18,19 +18,19 @@ async function main() {
   await instance.start()
   const info = instance.connectionInfo
 
-  const admin = new pg.Client({ connectionString: `postgresql://postgres:deskos_test@${info.host}:${info.port}/postgres` })
+  const admin = new pg.Client({ connectionString: `postgresql://postgres:reydesk_test@${info.host}:${info.port}/postgres` })
   await admin.connect()
-  await admin.query(`CREATE ROLE deskos LOGIN PASSWORD 'deskos_test'`)
-  await admin.query(`CREATE DATABASE deskos_test OWNER deskos`)
+  await admin.query(`CREATE ROLE reydesk LOGIN PASSWORD 'reydesk_test'`)
+  await admin.query(`CREATE DATABASE reydesk_test OWNER reydesk`)
   await admin.end()
 
-  const databaseUrl = `postgresql://deskos:deskos_test@${info.host}:${info.port}/deskos_test`
+  const databaseUrl = `postgresql://reydesk:reydesk_test@${info.host}:${info.port}/reydesk_test`
   await runMigrations(databaseUrl)
 
   const config = loadConfig({
     NODE_ENV: 'development',
     DATABASE_URL: databaseUrl,
-    DESKOS_JWT_SECRET: 'boot-check-secret-0123456789abcdef0123456789abcdef',
+    REYDESK_JWT_SECRET: 'boot-check-secret-0123456789abcdef0123456789abcdef',
   } as NodeJS.ProcessEnv)
   const app = await buildApp(config)
   await app.listen({ port: PORT, host: '127.0.0.1' })

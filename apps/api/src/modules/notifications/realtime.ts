@@ -1,7 +1,7 @@
 import type { DbClient, DbPool } from '../../db/pool.js'
 import { publishNotification, type RealtimeNotification } from '../../core/notify.js'
 
-const CHANNEL = 'deskos_notifications'
+const CHANNEL = 'reydesk_notifications'
 
 export interface NotificationRealtime {
   stop: () => Promise<void>

@@ -8,7 +8,7 @@ interface OpenApiSpec {
   servers: { url: string; description: string }[]
   paths: Record<string, Record<string, OpenApiMethod>>
   components?: { securitySchemes?: Record<string, unknown> }
-  'x-deskos-scopes'?: { scope: string; description: string }[]
+  'x-reydesk-scopes'?: { scope: string; description: string }[]
 }
 
 interface OpenApiMethod {
@@ -216,12 +216,12 @@ export default function ApiDocsPage() {
           </div>
 
           {/* Scopes */}
-          {spec?.['x-deskos-scopes'] && (
+          {spec?.['x-reydesk-scopes'] && (
             <div className="api-scopes">
               <h2>Scopes</h2>
               <p>Request only the scopes your integration needs. Least-privilege is enforced.</p>
               <div className="api-scopes-grid">
-                {(spec['x-deskos-scopes'] ?? []).map((s) => (
+                {(spec['x-reydesk-scopes'] ?? []).map((s) => (
                   <div key={s.scope} className="api-scope-card">
                     <code className="mono">{s.scope}</code>
                     <span>{s.description}</span>

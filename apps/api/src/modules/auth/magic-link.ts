@@ -12,7 +12,7 @@ export async function createMagicLinkToken(
   db: DbPool,
   input: { userId: string; tenantId: string; ip?: string; userAgent?: string },
 ): Promise<{ token: string; expiresAt: Date }> {
-  const token = `deskos_ml_${randomBytes(32).toString('base64url')}`
+  const token = `reydesk_ml_${randomBytes(32).toString('base64url')}`
   const expiresAt = new Date(Date.now() + MAGIC_LINK_TTL_MS)
 
   // Only the most recent link for this user and tenant remains valid.

@@ -23,7 +23,7 @@ describe('devices & agent v1', () => {
     })
     expect(rotate.statusCode).toBe(201)
     enrolToken = rotate.json().token as string
-    expect(enrolToken.startsWith('deskos_') || enrolToken.startsWith('reydesk_')).toBe(true)
+    expect(enrolToken.startsWith('reydesk_') || enrolToken.startsWith('reydesk_')).toBe(true)
   })
 
   afterAll(async () => {
@@ -110,7 +110,7 @@ describe('devices & agent v1', () => {
       const bad = await app.inject({
         method: 'POST',
         url: '/api/v1/agent/enrol',
-        payload: { token: 'deskos_not-a-real-token', name: 'x' },
+        payload: { token: 'reydesk_not-a-real-token', name: 'x' },
       })
       expect(bad.statusCode).toBe(401)
     })
@@ -173,7 +173,7 @@ describe('devices & agent v1', () => {
       const res = await app.inject({
         method: 'POST',
         url: '/api/v1/agent/heartbeat',
-        headers: { authorization: 'Bearer deskos_dev_bogus' },
+        headers: { authorization: 'Bearer reydesk_dev_bogus' },
         payload: {},
       })
       expect(res.statusCode).toBe(401)

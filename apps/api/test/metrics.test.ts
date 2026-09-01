@@ -19,17 +19,17 @@ describe('API Prometheus metrics', () => {
     const res = await app.inject({ method: 'GET', url: '/metrics' })
     expect(res.statusCode).toBe(200)
     expect(res.headers['content-type']).toContain('text/plain')
-    expect(res.body).toContain('deskos_api_requests_total')
-    expect(res.body).toContain('deskos_api_request_duration_seconds')
-    expect(res.body).toContain('deskos_active_remote_sessions')
-    expect(res.body).toContain('deskos_session_creations_total')
-    expect(res.body).toContain('deskos_postgres_pool_connections')
+    expect(res.body).toContain('reydesk_api_requests_total')
+    expect(res.body).toContain('reydesk_api_request_duration_seconds')
+    expect(res.body).toContain('reydesk_active_remote_sessions')
+    expect(res.body).toContain('reydesk_session_creations_total')
+    expect(res.body).toContain('reydesk_postgres_pool_connections')
   })
 
   it('counts HTTP requests by method and status class', async () => {
     await app.inject({ method: 'GET', url: '/api/v1/meta' })
     const res = await app.inject({ method: 'GET', url: '/metrics' })
-    expect(res.body).toMatch(/deskos_api_requests_total\{method="GET",status_class="2xx"\} \d+/)
+    expect(res.body).toMatch(/reydesk_api_requests_total\{method="GET",status_class="2xx"\} \d+/)
   })
 
   it('increments session creations and reports active sessions', async () => {
@@ -54,7 +54,7 @@ describe('API Prometheus metrics', () => {
 
     const res = await app.inject({ method: 'GET', url: '/metrics' })
     // Both counters are per-instance and isolated to this app.
-    expect(res.body).toContain('deskos_session_creations_total 1')
-    expect(res.body).toContain('deskos_active_remote_sessions 1')
+    expect(res.body).toContain('reydesk_session_creations_total 1')
+    expect(res.body).toContain('reydesk_active_remote_sessions 1')
   })
 })

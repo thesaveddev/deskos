@@ -15,7 +15,7 @@ export function b64urlDecode(input: string): Buffer {
 /**
  * Generate a VAPID key pair (RFC 8292): the public key is the raw uncompressed
  * P-256 point (65 bytes); the private key is the DER PKCS8 encoding. Both are
- * base64url strings ready for DESKOS_VAPID_PUBLIC_KEY / DESKOS_VAPID_PRIVATE_KEY.
+ * base64url strings ready for REYDESK_VAPID_PUBLIC_KEY / REYDESK_VAPID_PRIVATE_KEY.
  */
 export function generateVapidKeyPair(): { publicKey: string; privateKey: string } {
   const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })

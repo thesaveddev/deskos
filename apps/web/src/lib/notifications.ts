@@ -45,7 +45,7 @@ export function openNotificationStream(options: NotificationStreamOptions): () =
       const response = await fetch('/api/v1/notifications/stream', {
         headers: {
           authorization: `Bearer ${token}`,
-          'x-deskos-tenant': options.tenantId,
+          'x-reydesk-tenant': options.tenantId,
           accept: 'text/event-stream',
         },
         signal: controller.signal,

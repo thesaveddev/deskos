@@ -5,11 +5,11 @@ import pg from 'pg'
 import { PostgresInstance } from 'pg-embedded'
 import { runMigrations } from '../src/db/migrate.js'
 
-export const DB_URL_FILE = path.join(tmpdir(), 'deskos-test-db-url.json')
+export const DB_URL_FILE = path.join(tmpdir(), 'reydesk-test-db-url.json')
 
-const APP_USER = 'deskos'
-const APP_PASSWORD = 'deskos_test'
-const APP_DB = 'deskos_test'
+const APP_USER = 'reydesk'
+const APP_PASSWORD = 'reydesk_test'
+const APP_DB = 'reydesk_test'
 
 let instance: PostgresInstance | undefined
 

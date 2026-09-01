@@ -117,8 +117,8 @@ async function deliverOne(
   http: WebhookHttp,
 ): Promise<{ status: 'sent' | 'failed'; attempts: number; lastError: string; deliveredAt: Date | null; statusCode?: number }> {
   const body = formatPayload(endpoint.channel, event, payload)
-  const headers: Record<string, string> = { 'x-deskos-event': event, 'x-deskos-delivery': randomUUID() }
-  if (secret) headers['x-deskos-signature'] = `sha256=${signPayload(secret, body)}`
+  const headers: Record<string, string> = { 'x-reydesk-event': event, 'x-reydesk-delivery': randomUUID() }
+  if (secret) headers['x-reydesk-signature'] = `sha256=${signPayload(secret, body)}`
 
   const maxAttempts = 3
   let lastError = ''

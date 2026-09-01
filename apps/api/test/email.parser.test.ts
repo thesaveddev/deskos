@@ -39,7 +39,7 @@ describe('parseRawEmail', () => {
   it('parses a plain-text email', async () => {
     const raw = [
       'From: Jane Doe <jane@example.com>',
-      'To: support@deskos.app',
+      'To: support@reydesk.com',
       'Subject: Laptop charger not working',
       'Message-ID: <abc123@mail.example.com>',
       'Date: Tue, 12 Aug 2025 10:00:00 +0000',
@@ -52,7 +52,7 @@ describe('parseRawEmail', () => {
     const email = await parseRawEmail(raw)
     expect(email.fromAddress).toBe('jane@example.com')
     expect(email.fromName).toBe('Jane Doe')
-    expect(email.toAddress).toBe('support@deskos.app')
+    expect(email.toAddress).toBe('support@reydesk.com')
     expect(email.subject).toBe('Laptop charger not working')
     expect(email.body).toContain('My charger died this morning.')
     expect(email.messageId).toBe('<abc123@mail.example.com>')
@@ -61,7 +61,7 @@ describe('parseRawEmail', () => {
   it('falls back to HTML body when no text part', async () => {
     const raw = [
       'From: a@example.com',
-      'To: support@deskos.app',
+      'To: support@reydesk.com',
       'Subject: HTML only',
       'Content-Type: text/html',
       '',

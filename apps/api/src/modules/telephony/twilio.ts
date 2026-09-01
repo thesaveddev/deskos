@@ -71,7 +71,7 @@ export async function dispatchTwilioCall(input: TwilioCallRequest, fetcher: Twil
       authorization: `Basic ${basicAuth(input.config.accountSid, input.authToken)}`,
       'content-type': 'application/x-www-form-urlencoded',
       accept: 'application/json',
-      'x-deskos-call-id': input.callId,
+      'x-reydesk-call-id': input.callId,
     },
     body: encodeForm(body),
   })

@@ -77,7 +77,7 @@ function portalAuthHeaders(): Record<string, string> {
   const token = getAccessToken()
   const tenant = getActiveTenant()
   if (token) headers.authorization = `Bearer ${token}`
-  if (tenant) headers['x-deskos-tenant'] = tenant
+  if (tenant) headers['x-reydesk-tenant'] = tenant
   return headers
 }
 

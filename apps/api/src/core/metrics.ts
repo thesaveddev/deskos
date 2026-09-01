@@ -46,43 +46,43 @@ export class MetricsRegistry {
   render(poolStats: { total: number; idle: number; waiting: number }): string {
     const lines: string[] = []
 
-    lines.push('# HELP deskos_api_requests_total Total HTTP requests handled by the API.')
-    lines.push('# TYPE deskos_api_requests_total counter')
+    lines.push('# HELP reydesk_api_requests_total Total HTTP requests handled by the API.')
+    lines.push('# TYPE reydesk_api_requests_total counter')
     for (const [key, count] of [...this.requestCounts.entries()].sort()) {
       const [method, statusClass] = key.split(' ')
-      lines.push(`deskos_api_requests_total{method="${method}",status_class="${statusClass}"} ${count}`)
+      lines.push(`reydesk_api_requests_total{method="${method}",status_class="${statusClass}"} ${count}`)
     }
 
-    lines.push('# HELP deskos_api_request_duration_seconds API request latency.')
-    lines.push('# TYPE deskos_api_request_duration_seconds histogram')
+    lines.push('# HELP reydesk_api_request_duration_seconds API request latency.')
+    lines.push('# TYPE reydesk_api_request_duration_seconds histogram')
     for (let index = 0; index < LATENCY_BUCKETS_MS.length; index += 1) {
       lines.push(
-        `deskos_api_request_duration_seconds_bucket{le="${LATENCY_BUCKETS_MS[index] / 1000}"} ${this.latencyBucketCounts[index]}`,
+        `reydesk_api_request_duration_seconds_bucket{le="${LATENCY_BUCKETS_MS[index] / 1000}"} ${this.latencyBucketCounts[index]}`,
       )
     }
-    lines.push(`deskos_api_request_duration_seconds_bucket{le="+Inf"} ${this.latencyBucketCounts[LATENCY_BUCKETS_MS.length]}`)
-    lines.push(`deskos_api_request_duration_seconds_sum ${this.latencySumMs / 1000}`)
-    lines.push(`deskos_api_request_duration_seconds_count ${this.latencyCount}`)
+    lines.push(`reydesk_api_request_duration_seconds_bucket{le="+Inf"} ${this.latencyBucketCounts[LATENCY_BUCKETS_MS.length]}`)
+    lines.push(`reydesk_api_request_duration_seconds_sum ${this.latencySumMs / 1000}`)
+    lines.push(`reydesk_api_request_duration_seconds_count ${this.latencyCount}`)
 
-    lines.push('# HELP deskos_active_remote_sessions Remote sessions currently in a live state.')
-    lines.push('# TYPE deskos_active_remote_sessions gauge')
-    lines.push(`deskos_active_remote_sessions ${this.activeSessions}`)
+    lines.push('# HELP reydesk_active_remote_sessions Remote sessions currently in a live state.')
+    lines.push('# TYPE reydesk_active_remote_sessions gauge')
+    lines.push(`reydesk_active_remote_sessions ${this.activeSessions}`)
 
-    lines.push('# HELP deskos_session_creations_total Remote sessions created since process start.')
-    lines.push('# TYPE deskos_session_creations_total counter')
-    lines.push(`deskos_session_creations_total ${this.sessionCreations}`)
+    lines.push('# HELP reydesk_session_creations_total Remote sessions created since process start.')
+    lines.push('# TYPE reydesk_session_creations_total counter')
+    lines.push(`reydesk_session_creations_total ${this.sessionCreations}`)
 
-    lines.push('# HELP deskos_postgres_pool_connections Postgres connection pool usage.')
-    lines.push('# TYPE deskos_postgres_pool_connections gauge')
-    lines.push(`deskos_postgres_pool_connections{state="total"} ${poolStats.total}`)
-    lines.push(`deskos_postgres_pool_connections{state="idle"} ${poolStats.idle}`)
-    lines.push(`deskos_postgres_pool_connections{state="waiting"} ${poolStats.waiting}`)
+    lines.push('# HELP reydesk_postgres_pool_connections Postgres connection pool usage.')
+    lines.push('# TYPE reydesk_postgres_pool_connections gauge')
+    lines.push(`reydesk_postgres_pool_connections{state="total"} ${poolStats.total}`)
+    lines.push(`reydesk_postgres_pool_connections{state="idle"} ${poolStats.idle}`)
+    lines.push(`reydesk_postgres_pool_connections{state="waiting"} ${poolStats.waiting}`)
 
-    lines.push('# HELP deskos_synthetic_probe_checks_total Synthetic control-plane health checks.')
-    lines.push('# TYPE deskos_synthetic_probe_checks_total counter')
+    lines.push('# HELP reydesk_synthetic_probe_checks_total Synthetic control-plane health checks.')
+    lines.push('# TYPE reydesk_synthetic_probe_checks_total counter')
     for (const [key, count] of [...this.syntheticProbeCounts.entries()].sort()) {
       const [check, outcome] = key.split(' ')
-      lines.push(`deskos_synthetic_probe_checks_total{check="${check}",outcome="${outcome}"} ${count}`)
+      lines.push(`reydesk_synthetic_probe_checks_total{check="${check}",outcome="${outcome}"} ${count}`)
     }
 
     return `${lines.join('\n')}\n`

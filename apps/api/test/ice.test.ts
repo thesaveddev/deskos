@@ -11,10 +11,10 @@ describe('ICE server configuration', () => {
 
   beforeAll(async () => {
     app = await createTestApp({
-      DESKOS_ICE_STUN_URLS: 'stun:stun.l.google.com:19302',
-      DESKOS_ICE_TURN_URLS: 'turn:turn.example.com:3478,turns:turn.example.com:443',
-      DESKOS_ICE_TURN_SECRET: TURN_SECRET,
-      DESKOS_ICE_TURN_REALM: 'deskos',
+      REYDESK_ICE_STUN_URLS: 'stun:stun.l.google.com:19302',
+      REYDESK_ICE_TURN_URLS: 'turn:turn.example.com:3478,turns:turn.example.com:443',
+      REYDESK_ICE_TURN_SECRET: TURN_SECRET,
+      REYDESK_ICE_TURN_REALM: 'reydesk',
     })
     owner = await signupOwner(app, { tenantName: 'ICE Org' })
   })

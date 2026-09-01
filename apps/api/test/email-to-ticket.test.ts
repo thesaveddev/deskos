@@ -7,7 +7,7 @@ import { withTenant } from '../src/db/pool.js'
 function rawEmail(opts: { from?: string; subject: string; body: string; messageId?: string }): string {
   return [
     `From: ${opts.from ?? 'Jane Doe <jane@example.com>'}`,
-    'To: support@deskos.app',
+    'To: support@reydesk.com',
     `Subject: ${opts.subject}`,
     `Message-ID: ${opts.messageId ?? `<msg-${Math.random().toString(36).slice(2)}@example.com>`}`,
     'Date: Tue, 12 Aug 2025 10:00:00 +0000',

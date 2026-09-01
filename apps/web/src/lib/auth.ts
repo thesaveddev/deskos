@@ -97,7 +97,7 @@ export const useAuth = create<AuthState>()((set) => ({
 
   logout: async () => {
     try {
-      const refreshToken = localStorage.getItem('deskos.refreshToken')
+      const refreshToken = localStorage.getItem('reydesk.refreshToken')
       if (refreshToken) {
         await api('/auth/logout', { method: 'POST', body: { refreshToken }, retryOn401: false })
       }

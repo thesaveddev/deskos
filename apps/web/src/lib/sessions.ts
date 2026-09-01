@@ -7,8 +7,8 @@ export interface SessionDockEntry {
   updatedAt: string
 }
 
-const SESSION_DOCK_KEY = 'deskos.activeSession'
-const SESSION_DOCK_EVENT = 'deskos:session-dock'
+const SESSION_DOCK_KEY = 'reydesk.activeSession'
+const SESSION_DOCK_EVENT = 'reydesk:session-dock'
 
 /** Read the last live session so the shell can offer a recovery link after a reload. */
 export function activeSessionId(): string | null {
@@ -221,7 +221,7 @@ export async function downloadRecording(sessionId: string, recordingId: string):
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `deskos-session-${sessionId}.webm`
+  a.download = `reydesk-session-${sessionId}.webm`
   document.body.appendChild(a)
   a.click()
   a.remove()
@@ -231,7 +231,7 @@ export async function downloadRecording(sessionId: string, recordingId: string):
 /** Upload a captured MediaRecorder blob as a session recording (multipart). */
 export async function uploadRecording(id: string, blob: Blob, durationSec: number): Promise<{ recording: SessionRecording }> {
   const form = new FormData()
-  form.append('recording', blob, `deskos-session-${id}.webm`)
+  form.append('recording', blob, `reydesk-session-${id}.webm`)
   const token = getAccessToken()
   const res = await fetch(`/api/v1/sessions/${id}/recordings?durationSec=${Math.round(durationSec)}`, {
     method: 'POST',

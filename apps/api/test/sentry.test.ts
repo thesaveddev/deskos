@@ -3,7 +3,7 @@ import { captureError, initSentry } from '../src/core/sentry.js'
 
 describe('Sentry error capture', () => {
   it('initialises without crashing when no DSN is configured', () => {
-    expect(() => initSentry({ dsn: '', environment: 'test', release: 'deskos-api@0.0.1' })).not.toThrow()
+    expect(() => initSentry({ dsn: '', environment: 'test', release: 'reydesk-api@0.0.1' })).not.toThrow()
   })
 
   it('captureError is a safe no-op when Sentry is not initialised', () => {

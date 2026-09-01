@@ -32,7 +32,7 @@ describe('telephony CTI workflows', () => {
   it('creates a secure inbound integration and matches one open ticket', async () => {
     const inbound = await app.inject({
       method: 'POST', url: `/api/v1/telephony/webhooks/${integrationId}`,
-      headers: { 'x-deskos-telephony-token': webhookToken },
+      headers: { 'x-reydesk-telephony-token': webhookToken },
       payload: { event: 'call.answered', callId: 'provider-call-1', from: '+442079460123', to: '+44200000000', status: 'answered', duration: 12 },
     })
     expect(inbound.statusCode).toBe(200)
@@ -45,7 +45,7 @@ describe('telephony CTI workflows', () => {
   })
 
   it('updates the same provider call id idempotently and records status activity', async () => {
-    const update = await app.inject({ method: 'POST', url: `/api/v1/telephony/webhooks/${integrationId}`, headers: { 'x-deskos-telephony-token': webhookToken }, payload: { event: 'call.completed', callId: 'provider-call-1', from: '+442079460123', status: 'completed', duration: 44 } })
+    const update = await app.inject({ method: 'POST', url: `/api/v1/telephony/webhooks/${integrationId}`, headers: { 'x-reydesk-telephony-token': webhookToken }, payload: { event: 'call.completed', callId: 'provider-call-1', from: '+442079460123', status: 'completed', duration: 44 } })
     expect(update.statusCode).toBe(200)
     const calls = await app.inject({ method: 'GET', url: '/api/v1/telephony/calls', headers: authHeaders(owner) })
     expect(calls.json().calls).toHaveLength(1)
@@ -79,7 +79,7 @@ describe('telephony CTI workflows', () => {
   })
 
   it('rejects invalid webhook tokens and does not expose the stored token', async () => {
-    const invalid = await app.inject({ method: 'POST', url: `/api/v1/telephony/webhooks/${integrationId}`, headers: { 'x-deskos-telephony-token': 'deskos_cti_invalid_token_value' }, payload: { callId: 'bad' } })
+    const invalid = await app.inject({ method: 'POST', url: `/api/v1/telephony/webhooks/${integrationId}`, headers: { 'x-reydesk-telephony-token': 'reydesk_cti_invalid_token_value' }, payload: { callId: 'bad' } })
     expect(invalid.statusCode).toBe(401)
     const list = await app.inject({ method: 'GET', url: '/api/v1/telephony/integrations', headers: authHeaders(owner) })
     expect(list.statusCode).toBe(200)

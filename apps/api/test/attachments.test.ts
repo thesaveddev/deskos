@@ -42,7 +42,7 @@ describe('attachments', () => {
   let attachmentId: string
 
   it('uploads a file and records it', async () => {
-    const boundary = 'deskosboundary123'
+    const boundary = 'reydeskboundary123'
     const res = await app.inject({
       method: 'POST',
       url: `/api/v1/tickets/${ticketId}/attachments`,
@@ -95,7 +95,7 @@ describe('attachments', () => {
   })
 
   it('denies upload to end_user', async () => {
-    const boundary = 'deskosboundary456'
+    const boundary = 'reydeskboundary456'
     const res = await app.inject({
       method: 'POST',
       url: `/api/v1/tickets/${ticketId}/attachments`,
@@ -109,7 +109,7 @@ describe('attachments', () => {
   })
 
   it('sanitizes dangerous filenames', async () => {
-    const boundary = 'deskosboundary789'
+    const boundary = 'reydeskboundary789'
     const res = await app.inject({
       method: 'POST',
       url: `/api/v1/tickets/${ticketId}/attachments`,

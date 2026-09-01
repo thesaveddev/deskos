@@ -14,9 +14,9 @@ export class ApiError extends Error {
   }
 }
 
-const TOKEN_KEY = 'deskos.accessToken'
-const REFRESH_KEY = 'deskos.refreshToken'
-const TENANT_KEY = 'deskos.activeTenant'
+const TOKEN_KEY = 'reydesk.accessToken'
+const REFRESH_KEY = 'reydesk.refreshToken'
+const TENANT_KEY = 'reydesk.activeTenant'
 
 export function getAccessToken(): string | null {
   return localStorage.getItem(TOKEN_KEY)
@@ -36,7 +36,7 @@ export function clearTokens(): void {
   localStorage.removeItem(REFRESH_KEY)
 }
 
-/** The tenant every tenant-scoped request is scoped to (sent as X-DeskOS-Tenant). */
+/** The tenant every tenant-scoped request is scoped to (sent as X-ReyDesk-Tenant). */
 export function getActiveTenant(): string | null {
   return localStorage.getItem(TENANT_KEY)
 }
@@ -118,10 +118,10 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<T>
   if (auth) {
     const token = getAccessToken()
     if (token) headers.authorization = `Bearer ${token}`
-    if (tenant) headers['x-deskos-tenant'] = tenant
+    if (tenant) headers['x-reydesk-tenant'] = tenant
     else {
       const active = getActiveTenant()
-      if (active) headers['x-deskos-tenant'] = active
+      if (active) headers['x-reydesk-tenant'] = active
     }
   }
 

@@ -436,7 +436,7 @@ export default function AssetsPage() {
       </Modal>
 
       <Modal open={Boolean(qrAsset)} onClose={() => setQrAsset(null)} title={qrAsset ? `Asset label · ${qrAsset.tag}` : 'Asset label'} width={360}>
-        {qrAsset ? <div className="asset-label-preview"><MfaQrCode value={qrAsset.qr_payload ?? `deskos://asset/${qrAsset.id}/${qrAsset.tag}`} /><strong className="mono">{qrAsset.tag}</strong><span>{qrAsset.name}</span><small>Scan to identify this asset in ReyDesk.</small></div> : null}
+        {qrAsset ? <div className="asset-label-preview"><MfaQrCode value={qrAsset.qr_payload ?? `reydesk://asset/${qrAsset.id}/${qrAsset.tag}`} /><strong className="mono">{qrAsset.tag}</strong><span>{qrAsset.name}</span><small>Scan to identify this asset in ReyDesk.</small></div> : null}
       </Modal>
 
       <Modal

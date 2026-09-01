@@ -180,7 +180,7 @@ export interface SmtpConfig {
 function resolveJwtSecret(env: AppConfig['env'], raw: string | undefined): Uint8Array {
   if (raw && raw.length > 0) return new TextEncoder().encode(raw)
   if (env === 'production') {
-    throw new Error('REYDESK_JWT_SECRET must be set in production (legacy DESKOS_JWT_SECRET is still accepted)')
+    throw new Error('REYDESK_JWT_SECRET must be set in production')
   }
   console.warn('[config] REYDESK_JWT_SECRET not set; generated an ephemeral secret (dev/test only)')
   return randomBytes(32)
@@ -189,7 +189,7 @@ function resolveJwtSecret(env: AppConfig['env'], raw: string | undefined): Uint8
 function resolveEmailKey(env: AppConfig['env'], raw: string | undefined): string {
   if (raw && raw.length > 0) return raw
   if (env === 'production') {
-    throw new Error('REYDESK_EMAIL_KEY must be set in production (legacy DESKOS_EMAIL_KEY is still accepted)')
+    throw new Error('REYDESK_EMAIL_KEY must be set in production')
   }
   console.warn('[config] REYDESK_EMAIL_KEY not set; generated an ephemeral key (dev/test only)')
   return randomBytes(32).toString('hex')
@@ -198,13 +198,13 @@ function resolveEmailKey(env: AppConfig['env'], raw: string | undefined): string
 function resolveRelaySecret(env: AppConfig['env'], raw: string | undefined): string {
   if (raw && raw.length > 0) return raw
   if (env === 'production') {
-    throw new Error('REYDESK_RELAY_SECRET must be set in production (legacy DESKOS_RELAY_SECRET is still accepted)')
+    throw new Error('REYDESK_RELAY_SECRET must be set in production')
   }
   return 'reydesk-relay-dev-only'
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
-  const value = (key: string): string | undefined => env[key] ?? env[key.replace(/^REYDESK_/, 'DESKOS_')]
+  const value = (key: string): string | undefined => env[key]
   const nodeEnv = (env.NODE_ENV ?? 'development') as AppConfig['env']
   const configuredPort = Number(env.PORT ?? 4000)
   // Some local shells inject PORT=0. Vite still proxies to 4000, so allowing

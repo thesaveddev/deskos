@@ -21,8 +21,8 @@ export async function createTestApp(
   const config = loadConfig({
     NODE_ENV: 'test',
     DATABASE_URL: getDatabaseUrl(),
-    DESKOS_JWT_SECRET: 'unit-test-secret-0123456789abcdef0123456789abcdef',
-    DESKOS_EMAIL_KEY: 'unit-test-email-key-0123456789abcdef0123456789abcdef',
+    REYDESK_JWT_SECRET: 'unit-test-secret-0123456789abcdef0123456789abcdef',
+    REYDESK_EMAIL_KEY: 'unit-test-email-key-0123456789abcdef0123456789abcdef',
     ...env,
   } as NodeJS.ProcessEnv)
   const app = await buildApp(config)
@@ -73,7 +73,7 @@ export async function signupOwner(
 
 export function authHeaders(session: Session, tenant?: string): Record<string, string> {
   const headers: Record<string, string> = { authorization: `Bearer ${session.accessToken}` }
-  if (tenant) headers['x-deskos-tenant'] = tenant
+  if (tenant) headers['x-reydesk-tenant'] = tenant
   return headers
 }
 

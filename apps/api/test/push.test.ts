@@ -25,9 +25,9 @@ describe('Web Push notifications', () => {
 
   beforeAll(async () => {
     app = await createTestApp({
-      DESKOS_VAPID_PUBLIC_KEY: vapid.publicKey,
-      DESKOS_VAPID_PRIVATE_KEY: vapid.privateKey,
-      DESKOS_VAPID_SUBJECT: 'mailto:test@deskos.local',
+      REYDESK_VAPID_PUBLIC_KEY: vapid.publicKey,
+      REYDESK_VAPID_PRIVATE_KEY: vapid.privateKey,
+      REYDESK_VAPID_SUBJECT: 'mailto:test@reydesk.local',
     })
     disabledApp = await createTestApp()
     owner = await signupOwner(app, { tenantName: 'Push Org' })

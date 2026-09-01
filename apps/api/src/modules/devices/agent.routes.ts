@@ -152,7 +152,7 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
       }
     }
 
-    const deviceToken = `deskos_dev_${randomBytes(24).toString('base64url')}`
+    const deviceToken = `reydesk_dev_${randomBytes(24).toString('base64url')}`
 
     const created = await withTenant(app.db, tenantId, async (client) => {
       // Fleet deployment scripts can be retried by Intune/GPO. Reuse the

@@ -64,7 +64,7 @@ export default function CompliancePage() {
       const token = getAccessToken()
       if (token) headers.authorization = `Bearer ${token}`
       const tenant = getActiveTenant()
-      if (tenant) headers['x-deskos-tenant'] = tenant
+      if (tenant) headers['x-reydesk-tenant'] = tenant
       const res = await fetch(auditExportUrl({ action: action || undefined }), { headers })
       if (!res.ok) throw new Error(`Export failed (${res.status})`)
       const blob = await res.blob()

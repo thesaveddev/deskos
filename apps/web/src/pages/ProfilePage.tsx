@@ -80,7 +80,7 @@ export default function ProfilePage() {
       formData.append('avatar', file)
       const res = await fetch('/api/v1/me/avatar', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${localStorage.getItem('deskos_access_token')}` },
+        headers: { Authorization: `Bearer ${localStorage.getItem('reydesk.accessToken')}` },
         body: formData,
       })
       if (!res.ok) throw new Error('Upload failed')

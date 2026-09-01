@@ -5,14 +5,14 @@ import '../types.js'
 
 /**
  * Resolve the active tenant for the request.
- * Tenant is selected via the X-DeskOS-Tenant header (uuid or slug); when the
+ * Tenant is selected via the X-ReyDesk-Tenant header (uuid or slug); when the
  * user belongs to exactly one tenant the header may be omitted. Membership is
  * verified here — being logged in never implies tenant access.
  */
 export async function requireTenant(request: FastifyRequest, _reply: FastifyReply): Promise<void> {
   if (!request.user) throw AppError.unauthorized()
 
-  const header = request.headers['x-deskos-tenant']
+  const header = request.headers['x-reydesk-tenant']
   const selector = Array.isArray(header) ? header[0] : header
 
   const { rows } = await request.server.db.query(
@@ -39,7 +39,7 @@ export async function requireTenant(request: FastifyRequest, _reply: FastifyRepl
     chosen = active[0]
   } else {
     throw AppError.badRequest(
-      'X-DeskOS-Tenant header is required when you belong to multiple tenants',
+      'X-ReyDesk-Tenant header is required when you belong to multiple tenants',
       'tenant_ambiguous',
     )
   }

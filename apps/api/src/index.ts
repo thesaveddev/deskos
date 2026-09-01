@@ -11,7 +11,7 @@ import { startEscalationScheduler } from './modules/tickets/escalation.scheduler
 import { startReminderScheduler } from './modules/tickets/reminders.routes.js'
 
 function setting(name: string): string | undefined {
-  return process.env[name] ?? process.env[name.replace(/^REYDESK_/, 'DESKOS_')]
+  return process.env[name]
 }
 
 function loadLocalEnvironment(): void {
@@ -28,11 +28,8 @@ function loadLocalEnvironment(): void {
       // A template .env may contain empty VAPID variables; clear those empty
       // values so Node can load the generated local values underneath them.
       if (!setting('REYDESK_VAPID_PUBLIC_KEY')) delete process.env.REYDESK_VAPID_PUBLIC_KEY
-      delete process.env.DESKOS_VAPID_PUBLIC_KEY
       if (!setting('REYDESK_VAPID_PRIVATE_KEY')) delete process.env.REYDESK_VAPID_PRIVATE_KEY
-      delete process.env.DESKOS_VAPID_PRIVATE_KEY
       if (!setting('REYDESK_VAPID_SUBJECT')) delete process.env.REYDESK_VAPID_SUBJECT
-      delete process.env.DESKOS_VAPID_SUBJECT
       process.loadEnvFile(localPushEnv)
     }
     if (!setting('REYDESK_VAPID_PUBLIC_KEY') || !setting('REYDESK_VAPID_PRIVATE_KEY')) {

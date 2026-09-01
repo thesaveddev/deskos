@@ -37,7 +37,7 @@ describe('AI ticket triage', () => {
         return JSON.stringify({ action: 'handoff', message: 'This needs a technician to investigate safely. A member of the support team will take over.', confidence: 0.7 })
       },
     }
-    app = await createTestApp({ DESKOS_SMTP_JSON: 'true', DESKOS_SMTP_FROM: 'ReyDesk <support@example.com>' }, (instance) => {
+    app = await createTestApp({ REYDESK_SMTP_JSON: 'true', REYDESK_SMTP_FROM: 'ReyDesk <support@example.com>' }, (instance) => {
       instance.decorate('aiProvider', provider)
     })
     owner = await signupOwner(app, { tenantName: 'AI Triage Org' })

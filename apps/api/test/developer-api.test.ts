@@ -37,7 +37,7 @@ describe('Developer API ecosystem', () => {
     expect(paths['/api/v1/oauth/authorize']).toBeTruthy()
     expect(paths['/api/v1/public/tickets']).toBeTruthy()
 
-    const scopes = (spec['x-deskos-scopes'] as Array<{ scope: string; permission: string; description: string }>) ?? []
+    const scopes = (spec['x-reydesk-scopes'] as Array<{ scope: string; permission: string; description: string }>) ?? []
     expect(scopes.map((s) => s.scope)).toContain('tickets:read')
     expect(scopes.map((s) => s.scope)).toContain('audit:read')
     expect(scopes.find((s) => s.scope === 'tickets:read')?.permission).toBe('ticket.read')

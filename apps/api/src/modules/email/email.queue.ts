@@ -152,7 +152,7 @@ export class EmailQueue {
     job.lastError = error
     this.stats.failed += 1
     this.lastFailure = `${job.id}: ${error}`
-    const configurationError = error === 'SMTP transport is not configured' || error === 'REYDESK_SMTP_FROM (or legacy DESKOS_SMTP_FROM) is not configured' || error === 'DESKOS_SMTP_FROM is not configured'
+    const configurationError = error === 'SMTP transport is not configured' || error === 'REYDESK_SMTP_FROM is not configured'
     if (configurationError || job.retries >= job.maxRetries) {
       job.status = 'dead'
       this.stats.dead += 1

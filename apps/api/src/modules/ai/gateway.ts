@@ -24,7 +24,7 @@ const disabledProvider: AiProvider = {
     throw new AppError(
       503,
       'ai_disabled',
-      'AI assistant is not configured (set REYDESK_AI_ENABLED=true and REYDESK_AI_BASE_URL; legacy DESKOS_AI_* aliases are accepted during migration)',
+      'AI assistant is not configured (set REYDESK_AI_ENABLED=true and REYDESK_AI_BASE_URL)',
     )
   },
 }

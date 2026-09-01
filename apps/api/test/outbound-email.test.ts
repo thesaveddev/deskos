@@ -9,12 +9,12 @@ describe('outbound email (SMTP reply-by-email)', () => {
   let requester: Awaited<ReturnType<typeof seedActiveMember>>
 
   const SMTP_ENV = {
-    DESKOS_SMTP_HOST: 'smtp.test.local',
-    DESKOS_SMTP_PORT: '587',
-    DESKOS_SMTP_USER: 'relay-user',
-    DESKOS_SMTP_PASS: 'relay-pass',
-    DESKOS_SMTP_FROM: 'support@deskos.test',
-    DESKOS_SMTP_JSON: 'true',
+    REYDESK_SMTP_HOST: 'smtp.test.local',
+    REYDESK_SMTP_PORT: '587',
+    REYDESK_SMTP_USER: 'relay-user',
+    REYDESK_SMTP_PASS: 'relay-pass',
+    REYDESK_SMTP_FROM: 'support@reydesk.test',
+    REYDESK_SMTP_JSON: 'true',
   }
 
   beforeAll(async () => {

@@ -140,7 +140,7 @@ function newClaimToken(): string {
 }
 
 function claimFingerprint(request: { headers: Record<string, string | string[] | undefined> }): string | null {
-  const value = request.headers['x-reydesk-claim-fingerprint'] ?? request.headers['x-deskos-claim-fingerprint']
+  const value = request.headers['x-reydesk-claim-fingerprint']
   if (Array.isArray(value)) return null
   const fingerprint = value?.trim()
   return fingerprint && fingerprint.length <= 300 ? fingerprint : null

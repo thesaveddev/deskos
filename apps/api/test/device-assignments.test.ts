@@ -85,7 +85,7 @@ describe('device assignment lifecycle and asset identity', () => {
     expect(immutable.statusCode).toBe(400)
     expect(immutable.json().error.code).toBe('asset_tag_immutable')
 
-    const licence = await app.inject({ method: 'POST', url: '/api/v1/licences', headers: authHeaders(owner), payload: { name: 'DeskOS Pro', seatsTotal: 5 } })
+    const licence = await app.inject({ method: 'POST', url: '/api/v1/licences', headers: authHeaders(owner), payload: { name: 'ReyDesk Pro', seatsTotal: 5 } })
     expect(licence.statusCode).toBe(201)
     const licenceAssignment = await app.inject({ method: 'POST', url: `/api/v1/licences/${licence.json().licence.id}/assignments`, headers: authHeaders(owner), payload: { userId: staff.userId, reason: 'Finance role' } })
     expect(licenceAssignment.statusCode).toBe(201)

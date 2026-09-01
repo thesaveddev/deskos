@@ -99,14 +99,14 @@ function validateEndpoint(raw: string, production: boolean): string {
   let url: URL
   try { url = new URL(raw) } catch { throw AppError.badRequest('Enter a valid AI provider URL.', 'ai_invalid_base_url') }
   if (!['http:', 'https:'].includes(url.protocol)) throw AppError.badRequest('AI provider URL must use HTTP or HTTPS.', 'ai_invalid_base_url')
-  if (production && url.protocol !== 'https:' && (process.env.REYDESK_AI_ALLOW_PRIVATE_ENDPOINTS ?? process.env.DESKOS_AI_ALLOW_PRIVATE_ENDPOINTS) !== 'true') {
+  if (production && url.protocol !== 'https:' && (process.env.REYDESK_AI_ALLOW_PRIVATE_ENDPOINTS) !== 'true') {
     throw AppError.badRequest('Production AI endpoints must use HTTPS unless private endpoint access is explicitly enabled.', 'ai_invalid_base_url')
   }
   const privateHost = /^(localhost|127\.0\.0\.1|0\.0\.0\.0|::1)$/i.test(url.hostname)
     || /^10\./.test(url.hostname)
     || /^192\.168\./.test(url.hostname)
     || /^172\.(1[6-9]|2\d|3[0-1])\./.test(url.hostname)
-  if (production && privateHost && (process.env.REYDESK_AI_ALLOW_PRIVATE_ENDPOINTS ?? process.env.DESKOS_AI_ALLOW_PRIVATE_ENDPOINTS) !== 'true') {
+  if (production && privateHost && (process.env.REYDESK_AI_ALLOW_PRIVATE_ENDPOINTS) !== 'true') {
     throw AppError.badRequest('Private AI endpoints are disabled for this deployment.', 'ai_private_endpoint_disabled')
   }
   return url.toString().replace(/\/$/, '')

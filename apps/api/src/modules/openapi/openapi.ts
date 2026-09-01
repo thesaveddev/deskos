@@ -116,6 +116,6 @@ export function buildOpenApiSpec(baseUrl: string): Record<string, unknown> {
       },
     },
     // ReyDesk extension: the canonical scope catalog, rendered by the developer portal.
-    'x-deskos-scopes': API_SCOPES,
+    'x-reydesk-scopes': API_SCOPES,
   }
 }

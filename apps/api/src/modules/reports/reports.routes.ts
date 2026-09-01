@@ -416,7 +416,7 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
         )].join('\n')
 
         reply.header('Content-Type', 'text/csv')
-        reply.header('Content-Disposition', `attachment; filename="deskos-tickets-${new Date().toISOString().slice(0, 10)}.csv"`)
+        reply.header('Content-Disposition', `attachment; filename="reydesk-tickets-${new Date().toISOString().slice(0, 10)}.csv"`)
         return reply.send(csv)
       })
     },

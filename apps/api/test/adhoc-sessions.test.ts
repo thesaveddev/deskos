@@ -47,7 +47,7 @@ describe('ad-hoc (unmanaged) support sessions', () => {
   })
 
   it('sends one-time email links and requires a claim fingerprint', async () => {
-    const emailApp = await createTestApp({ DESKOS_SMTP_JSON: 'true', DESKOS_SMTP_FROM: 'ReyDesk <support@example.com>' })
+    const emailApp = await createTestApp({ REYDESK_SMTP_JSON: 'true', REYDESK_SMTP_FROM: 'ReyDesk <support@example.com>' })
     try {
       const emailOwner = await signupOwner(emailApp, { tenantName: 'Secure Link Org' })
       const created = await emailApp.inject({
@@ -67,7 +67,7 @@ describe('ad-hoc (unmanaged) support sessions', () => {
       await emailApp.emailQueue.drain()
       const mail = emailApp.mailer.sent[0]
       expect(mail.text).not.toContain(`Support code: ${code}`)
-      const match = mail.text.match(/\/connect\/(\d{12})\?claimToken=((?:reydesk|deskos)_link_[A-Za-z0-9_-]+)/)
+      const match = mail.text.match(/\/connect\/(\d{12})\?claimToken=((?:reydesk)_link_[A-Za-z0-9_-]+)/)
       expect(match).toBeTruthy()
       const secureCode = match![1]
       const claimToken = match![2]
@@ -86,7 +86,7 @@ describe('ad-hoc (unmanaged) support sessions', () => {
       const claim = await emailApp.inject({
         method: 'POST',
         url: `/api/connect/${secureCode}/claim?claimToken=${claimToken}`,
-        headers: { 'x-deskos-claim-fingerprint': 'helper-fingerprint-a' },
+        headers: { 'x-reydesk-claim-fingerprint': 'helper-fingerprint-a' },
         payload: { name: 'secure-link-device' },
       })
       expect(claim.statusCode).toBe(201)
@@ -94,7 +94,7 @@ describe('ad-hoc (unmanaged) support sessions', () => {
       const reuse = await emailApp.inject({
         method: 'POST',
         url: `/api/connect/${secureCode}/claim?claimToken=${claimToken}`,
-        headers: { 'x-deskos-claim-fingerprint': 'helper-fingerprint-b' },
+        headers: { 'x-reydesk-claim-fingerprint': 'helper-fingerprint-b' },
         payload: { name: 'another-device' },
       })
       expect(reuse.statusCode).toBe(404)
@@ -173,7 +173,7 @@ describe('ad-hoc (unmanaged) support sessions', () => {
     expect(claim.statusCode).toBe(201)
     expect(claim.json().device.id).toBeTruthy()
     expect(claim.json().device.name).toBe('customer-laptop')
-    expect(claim.json().deviceToken).toMatch(/^(?:reydesk|deskos)_dev_/)
+    expect(claim.json().deviceToken).toMatch(/^(?:reydesk)_dev_/)
     expect(claim.json().session.id).toBeTruthy()
     expect(claim.json().relayUrl).toMatch(/^ws:/)
 
@@ -384,7 +384,7 @@ describe('ad-hoc (unmanaged) support sessions', () => {
   })
 
   it('rejects helper download when no binary is configured', async () => {
-    const noHelperApp = await createTestApp({ DESKOS_HELPER_BINARY: '' })
+    const noHelperApp = await createTestApp({ REYDESK_HELPER_BINARY: '' })
     try {
       const noHelperOwner = await signupOwner(noHelperApp, { tenantName: 'No Helper Org' })
       const created = await noHelperApp.inject({
@@ -410,9 +410,9 @@ describe('ad-hoc (unmanaged) support sessions', () => {
   })
 
   it('streams the configured helper binary for a valid open code', async () => {
-    const binary = path.join(os.tmpdir(), `deskos-helper-${randomBytes(4).toString('hex')}.exe`)
+    const binary = path.join(os.tmpdir(), `reydesk-helper-${randomBytes(4).toString('hex')}.exe`)
     writeFileSync(binary, 'MZ-fake-helper-binary')
-    const helperApp = await createTestApp({ DESKOS_HELPER_BINARY: binary })
+    const helperApp = await createTestApp({ REYDESK_HELPER_BINARY: binary })
     try {
       const helperOwner = await signupOwner(helperApp, { tenantName: 'Helper Org' })
       const created = await helperApp.inject({

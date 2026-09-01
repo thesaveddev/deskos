@@ -173,7 +173,7 @@ export class Mailer {
 
   async verifyConnection(): Promise<{ ok: boolean; error?: string }> {
     if (!this.transport) return { ok: false, error: 'SMTP transport is not configured' }
-    if (!this.config.from) return { ok: false, error: 'REYDESK_SMTP_FROM (or legacy DESKOS_SMTP_FROM) is not configured' }
+    if (!this.config.from) return { ok: false, error: 'REYDESK_SMTP_FROM is not configured' }
     try {
       await this.transport.verify()
       this.lastError = null
@@ -196,8 +196,8 @@ export class Mailer {
     }
     if (!this.config.from) {
       this.lastFailureAt = new Date()
-      this.lastError = 'REYDESK_SMTP_FROM (or legacy DESKOS_SMTP_FROM) is not configured'
-      console.warn('[mailer] REYDESK_SMTP_FROM (or legacy DESKOS_SMTP_FROM) is not configured; cannot send mail')
+      this.lastError = 'REYDESK_SMTP_FROM is not configured'
+      console.warn('[mailer] REYDESK_SMTP_FROM is not configured; cannot send mail')
       return false
     }
     try {

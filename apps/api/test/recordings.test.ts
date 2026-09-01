@@ -58,7 +58,7 @@ describe('session recordings', () => {
   })
 
   it('uploads, lists, and downloads a recording for a video session', async () => {
-    const boundary = 'deskos-recording-boundary'
+    const boundary = 'reydesk-recording-boundary'
     const upload = await app.inject({
       method: 'POST',
       url: `/api/v1/sessions/${videoSessionId}/recordings?durationSec=42`,
@@ -88,7 +88,7 @@ describe('session recordings', () => {
   })
 
   it('rejects recording upload when the session does not permit video recording', async () => {
-    const boundary = 'deskos-recording-denied'
+    const boundary = 'reydesk-recording-denied'
     const res = await app.inject({
       method: 'POST',
       url: `/api/v1/sessions/${metaSessionId}/recordings`,
@@ -100,7 +100,7 @@ describe('session recordings', () => {
   })
 
   it('purges expired recordings and blocks their download', async () => {
-    const boundary = 'deskos-recording-expiry'
+    const boundary = 'reydesk-recording-expiry'
     const upload = await app.inject({
       method: 'POST',
       url: `/api/v1/sessions/${videoSessionId}/recordings`,

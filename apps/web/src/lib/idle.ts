@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 
-const STORAGE_KEY = 'deskos.idleTimeoutMinutes'
-const TIMEOUT_CHANGED_EVENT = 'deskos:idle-timeout-changed'
+const STORAGE_KEY = 'reydesk.idleTimeoutMinutes'
+const TIMEOUT_CHANGED_EVENT = 'reydesk:idle-timeout-changed'
 const DEFAULT_MINUTES = 10
 
 /** Read the stored idle timeout (in minutes). Falls back to 10. */

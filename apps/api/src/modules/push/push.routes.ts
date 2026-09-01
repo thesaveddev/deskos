@@ -33,7 +33,7 @@ export async function pushRoutes(app: FastifyInstance): Promise<void> {
   // Public: the application-server key browsers need before subscribing.
   app.get('/push/vapid-public-key', async (_request, _reply) => {
     if (!app.config.push.enabled) {
-      throw new AppError(503, 'push_disabled', 'Web Push is not configured (set DESKOS_VAPID_PUBLIC_KEY, DESKOS_VAPID_PRIVATE_KEY, DESKOS_VAPID_SUBJECT)')
+      throw new AppError(503, 'push_disabled', 'Web Push is not configured (set REYDESK_VAPID_PUBLIC_KEY, REYDESK_VAPID_PRIVATE_KEY, REYDESK_VAPID_SUBJECT)')
     }
     return { publicKey: app.config.push.publicKey }
   })
@@ -62,7 +62,7 @@ export async function pushRoutes(app: FastifyInstance): Promise<void> {
   app.post('/push/subscriptions/test', { preHandler: guards }, async (request, reply) => {
     const ctx = request.tenantCtx!
     if (!app.config.push.enabled) {
-      throw new AppError(503, 'push_disabled', 'Web Push is not configured (set DESKOS_VAPID_*)')
+      throw new AppError(503, 'push_disabled', 'Web Push is not configured (set REYDESK_VAPID_*)')
     }
     const result = await sendPushToUser(app.db, app.config.push, ctx.tenantId, request.user!.id, 'test', 'Push notifications are working.', app.config.emailKey, httpFor())
     return reply.code(result.delivered > 0 ? 200 : 202).send(result)

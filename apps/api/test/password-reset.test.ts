@@ -8,12 +8,12 @@ describe('password reset email flow', () => {
 
   beforeAll(async () => {
     app = await createTestApp({
-      DESKOS_SMTP_HOST: 'smtp.test.local',
-      DESKOS_SMTP_PORT: '587',
-      DESKOS_SMTP_USER: 'notifications@example.test',
-      DESKOS_SMTP_PASS: 'test-password',
-      DESKOS_SMTP_FROM: 'ReyDesk <notifications@example.test>',
-      DESKOS_SMTP_JSON: 'true',
+      REYDESK_SMTP_HOST: 'smtp.test.local',
+      REYDESK_SMTP_PORT: '587',
+      REYDESK_SMTP_USER: 'notifications@example.test',
+      REYDESK_SMTP_PASS: 'test-password',
+      REYDESK_SMTP_FROM: 'ReyDesk <notifications@example.test>',
+      REYDESK_SMTP_JSON: 'true',
     })
     owner = await signupOwner(app, { tenantName: 'Password Reset Org' })
   })

@@ -125,7 +125,7 @@ export async function telephonyRoutes(app: FastifyInstance): Promise<void> {
       if (!validSignature) throw AppError.unauthorized('Invalid Twilio webhook signature', 'twilio_signature_invalid')
     } else {
       const queryToken = (request.query as { token?: string }).token
-      const headerToken = request.headers['x-deskos-telephony-token']
+      const headerToken = request.headers['x-reydesk-telephony-token']
       const supplied = (Array.isArray(headerToken) ? headerToken[0] : headerToken) ?? queryToken
       if (!supplied || supplied.length < 20 || supplied.length > 200) throw AppError.unauthorized('Missing telephony webhook token')
       if (!equalHash(String(integration.webhook_token_hash), hashWebhookToken(supplied))) throw AppError.unauthorized('Invalid telephony webhook token')
@@ -166,7 +166,7 @@ export async function telephonyRoutes(app: FastifyInstance): Promise<void> {
       twilioConfigFrom(body.providerConfig)
       if (!body.providerSecret?.trim()) throw AppError.badRequest('Twilio requires an Auth Token', 'twilio_auth_token_missing')
     }
-    const token = `deskos_cti_${randomBytes(32).toString('base64url')}`
+    const token = `reydesk_cti_${randomBytes(32).toString('base64url')}`
     const created = await withTenant(app.db, ctx.tenantId, async (client) => {
       try {
         const result = await client.query(
@@ -290,7 +290,7 @@ export async function telephonyRoutes(app: FastifyInstance): Promise<void> {
         throw AppError.badRequest(err instanceof Error ? err.message : 'Twilio rejected the call', 'twilio_call_failed')
       }
     } else if (provider?.click_to_call_url) {
-      const headers: Record<string, string> = { 'content-type': 'application/json', 'x-deskos-call-id': call.id }
+      const headers: Record<string, string> = { 'content-type': 'application/json', 'x-reydesk-call-id': call.id }
       if (provider.provider_secret_enc) headers.authorization = `Bearer ${decryptSecret(provider.provider_secret_enc, app.config.emailKey)}`
       let providerResponse: Response
       try {

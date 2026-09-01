@@ -65,7 +65,7 @@ export interface RealtimeNotification {
   createdAt: string
 }
 
-const NOTIFICATION_REALTIME_CHANNEL = 'deskos_notifications'
+const NOTIFICATION_REALTIME_CHANNEL = 'reydesk_notifications'
 const notificationSubscribers = new Map<string, Set<(notification: RealtimeNotification) => void>>()
 
 export function subscribeNotifications(

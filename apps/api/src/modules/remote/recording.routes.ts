@@ -126,7 +126,7 @@ export async function recordingRoutes(app: FastifyInstance): Promise<void> {
     const stream = await app.storage.downloadStream(recording.storage_key)
     return reply
       .header('content-type', recording.mime || 'video/webm')
-      .header('content-disposition', `attachment; filename="deskos-session-${sessionId}.webm"`)
+      .header('content-disposition', `attachment; filename="reydesk-session-${sessionId}.webm"`)
       .send(stream)
   })
 }

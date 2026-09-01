@@ -1,10 +1,10 @@
-const LOCKED_USER_KEY = 'deskos.lockedUser'
-const LOCK_STATE_KEY = 'deskos.locked'
-const LOCK_SIGNAL_KEY = 'deskos.lockSignal'
+const LOCKED_USER_KEY = 'reydesk.lockedUser'
+const LOCK_STATE_KEY = 'reydesk.locked'
+const LOCK_SIGNAL_KEY = 'reydesk.lockSignal'
 
 /** Dispatch a custom event to instantly lock the current authenticated screen. */
 export function lockScreen() {
-  window.dispatchEvent(new CustomEvent('deskos:lock'))
+  window.dispatchEvent(new CustomEvent('reydesk:lock'))
 }
 
 /** Preserve only the identity needed to render the post-sign-out lock screen. */
@@ -73,6 +73,6 @@ export function onLockStateChange(handler: (locked: boolean) => void): () => voi
 /** Subscribe to the lock event. Returns an unsubscribe function. */
 export function onLockRequest(handler: () => void): () => void {
   const fn = () => handler()
-  window.addEventListener('deskos:lock', fn)
-  return () => window.removeEventListener('deskos:lock', fn)
+  window.addEventListener('reydesk:lock', fn)
+  return () => window.removeEventListener('reydesk:lock', fn)
 }

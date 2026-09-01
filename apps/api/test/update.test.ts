@@ -24,10 +24,10 @@ describe('agent update manifest', () => {
 
   beforeAll(async () => {
     app = await createTestApp({
-      DESKOS_UPDATE_VERSION: '0.1.1',
-      DESKOS_UPDATE_URL: 'https://downloads.example.com/deskos-agent-0.1.1.exe',
-      DESKOS_UPDATE_SHA256: 'a'.repeat(64),
-      DESKOS_UPDATE_ROLLOUT_PERCENT: '100',
+      REYDESK_UPDATE_VERSION: '0.1.1',
+      REYDESK_UPDATE_URL: 'https://downloads.example.com/reydesk-agent-0.1.1.exe',
+      REYDESK_UPDATE_SHA256: 'a'.repeat(64),
+      REYDESK_UPDATE_ROLLOUT_PERCENT: '100',
     })
     owner = await signupOwner(app, { tenantName: 'Update Org' })
     device = await enrolDevice(app, owner, 'update-box')
@@ -48,7 +48,7 @@ describe('agent update manifest', () => {
       status: 'available',
       update: {
         version: '0.1.1',
-        url: 'https://downloads.example.com/deskos-agent-0.1.1.exe',
+        url: 'https://downloads.example.com/reydesk-agent-0.1.1.exe',
         sha256: 'a'.repeat(64),
         rolloutPercent: 100,
       },
@@ -66,10 +66,10 @@ describe('agent update manifest', () => {
 
   it('defers devices outside the rollout ring', async () => {
     const deferredApp = await createTestApp({
-      DESKOS_UPDATE_VERSION: '0.1.1',
-      DESKOS_UPDATE_URL: 'https://downloads.example.com/deskos-agent-0.1.1.exe',
-      DESKOS_UPDATE_SHA256: 'a'.repeat(64),
-      DESKOS_UPDATE_ROLLOUT_PERCENT: '0',
+      REYDESK_UPDATE_VERSION: '0.1.1',
+      REYDESK_UPDATE_URL: 'https://downloads.example.com/reydesk-agent-0.1.1.exe',
+      REYDESK_UPDATE_SHA256: 'a'.repeat(64),
+      REYDESK_UPDATE_ROLLOUT_PERCENT: '0',
     })
     try {
       const deferredOwner = await signupOwner(deferredApp, { tenantName: 'Deferred Org' })

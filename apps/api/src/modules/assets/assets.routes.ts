@@ -169,7 +169,7 @@ export async function assetRoutes(app: FastifyInstance): Promise<void> {
           ctx.tenantId, body.tag, body.type, body.name, body.status, body.ownerId ?? null,
           body.location ?? null, body.supplier ?? null, body.warrantyUntil ?? null,
           JSON.stringify(body.purchase), body.deviceId ?? null, JSON.stringify(body.ext),
-          `deskos://asset/${ctx.tenantId}/${body.tag}`, body.tag,
+          `reydesk://asset/${ctx.tenantId}/${body.tag}`, body.tag,
         ],
       )
       await recordAudit(client, ctx.tenantId, {

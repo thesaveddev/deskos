@@ -64,8 +64,8 @@ describe('webhook integrations (Teams/Slack)', () => {
     expect(calls).toHaveLength(1)
     const call = calls[0]
     expect(call.url).toBe('https://hooks.slack.com/services/T/B/X')
-    expect(call.headers['x-deskos-event']).toBe('webhook.test')
-    expect(call.headers['x-deskos-signature']).toMatch(/^sha256=[0-9a-f]{64}$/)
+    expect(call.headers['x-reydesk-event']).toBe('webhook.test')
+    expect(call.headers['x-reydesk-signature']).toMatch(/^sha256=[0-9a-f]{64}$/)
     const body = JSON.parse(call.body)
     expect(body.text).toContain('webhook.test')
 
@@ -84,7 +84,7 @@ describe('webhook integrations (Teams/Slack)', () => {
 
     expect(calls.length).toBeGreaterThan(before)
     const latest = calls[calls.length - 1]
-    expect(latest.headers['x-deskos-event']).toBe('ticket.created')
+    expect(latest.headers['x-reydesk-event']).toBe('ticket.created')
     expect(JSON.parse(latest.body).text).toContain('ticket.created')
 
     const deliveries = await app.inject({ method: 'GET', url: `/api/v1/webhooks/${endpointId}/deliveries`, headers: authHeaders(owner) })

@@ -68,7 +68,7 @@ describe('Marketplace', () => {
       method: 'POST',
       url: '/api/v1/marketplace/apps',
       headers: h(owner),
-      payload: { name: 'Slack Integration', slug: 'slack-integration', description: 'Send tickets to Slack', developer: 'DeskOS', version: '1.0.0', capabilities: ['tickets:read', 'tickets:write'] },
+      payload: { name: 'Slack Integration', slug: 'slack-integration', description: 'Send tickets to Slack', developer: 'ReyDesk', version: '1.0.0', capabilities: ['tickets:read', 'tickets:write'] },
     })
     expect(res.statusCode).toBe(201)
     const body = res.json()

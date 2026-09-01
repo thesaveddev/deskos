@@ -21,7 +21,7 @@ function span(overrides: Partial<SpanRecord> = {}): SpanRecord {
 
 describe('OTLP/HTTP JSON trace exporter', () => {
   it('builds a spec-shaped resourceSpans payload', () => {
-    const payload = buildOtlpJson([span()], 'deskos-api', '0.0.1') as {
+    const payload = buildOtlpJson([span()], 'reydesk-api', '0.0.1') as {
       resourceSpans: Array<{ resource: { attributes: Array<{ key: string }> }; scopeSpans: Array<{ scope: { name: string }; spans: Array<Record<string, unknown>> }> }>
     }
 
@@ -38,7 +38,7 @@ describe('OTLP/HTTP JSON trace exporter', () => {
   })
 
   it('marks 5xx spans as errors', () => {
-    const payload = buildOtlpJson([span({ statusCode: 2 })], 'deskos-api', '0.0.1') as {
+    const payload = buildOtlpJson([span({ statusCode: 2 })], 'reydesk-api', '0.0.1') as {
       resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ status: { code: number } }> }> }>
     }
     expect(payload.resourceSpans[0].scopeSpans[0].spans[0].status).toEqual({ code: 2 })
@@ -51,7 +51,7 @@ describe('OTLP/HTTP JSON trace exporter', () => {
   })
 
   it('no-ops cleanly when no endpoint is configured', async () => {
-    const exporter = new OtelTraceExporter({ enabled: false, endpoint: '', serviceName: 'deskos-api', serviceVersion: '0.0.1' })
+    const exporter = new OtelTraceExporter({ enabled: false, endpoint: '', serviceName: 'reydesk-api', serviceVersion: '0.0.1' })
     exporter.record(span())
     await exporter.flush()
     await exporter.stop()
