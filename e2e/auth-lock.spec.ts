@@ -91,16 +91,16 @@ async function mockDeskOsApi(page: Page, options: { mfa?: boolean; authenticated
 
   if (options.authenticated !== false) {
     await page.addInitScript(({ token, tenantId }) => {
-      localStorage.setItem('deskos.accessToken', token)
-      localStorage.setItem('deskos.refreshToken', 'refresh-token')
-      localStorage.setItem('deskos.activeTenant', tenantId)
+      localStorage.setItem('reydesk.accessToken', token)
+      localStorage.setItem('reydesk.refreshToken', 'refresh-token')
+      localStorage.setItem('reydesk.activeTenant', tenantId)
     }, { token: session.accessToken, tenantId: membership.tenant.id })
   }
 }
 
 async function seedLockIdentity(page: Page) {
   await page.addInitScript((lockedUser) => {
-    sessionStorage.setItem('deskos.lockedUser', JSON.stringify(lockedUser))
+    sessionStorage.setItem('reydesk.lockedUser', JSON.stringify(lockedUser))
   }, user)
 }
 
@@ -159,7 +159,7 @@ test.describe('authentication and lock screen', () => {
     // persisted lock flag. The new tab must show the lock screen, not the
     // dashboard, even though the token is still valid.
     await page.addInitScript(() => {
-      localStorage.setItem('deskos.locked', '1')
+      localStorage.setItem('reydesk.locked', '1')
     })
     await page.goto('/')
 
@@ -171,7 +171,7 @@ test.describe('authentication and lock screen', () => {
     await page.getByPlaceholder('Password').fill('correct-horse-battery-9')
     await page.getByRole('button', { name: 'Unlock' }).click()
     await expect(page.getByText(/Good (morning|afternoon|evening), James\./)).toBeVisible()
-    expect(await page.evaluate(() => localStorage.getItem('deskos.locked'))).toBeNull()
+    expect(await page.evaluate(() => localStorage.getItem('reydesk.locked'))).toBeNull()
   })
 
   test('keeps the lock screen usable at a narrow viewport', async ({ page }) => {

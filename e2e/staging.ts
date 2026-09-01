@@ -46,8 +46,8 @@ export async function signIn(page: Page): Promise<void> {
 
 export async function pageApi<T>(page: Page, path: string, options: { method?: string; body?: unknown } = {}): Promise<T> {
   return page.evaluate(async ({ path, method, body }) => {
-    const token = localStorage.getItem('deskos.accessToken')
-    const tenant = localStorage.getItem('deskos.activeTenant')
+    const token = localStorage.getItem('reydesk.accessToken')
+    const tenant = localStorage.getItem('reydesk.activeTenant')
     const response = await fetch(`/api/v1${path}`, {
       method,
       headers: {

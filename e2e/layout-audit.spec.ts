@@ -70,9 +70,9 @@ async function mockConsoleApi(page: Page): Promise<void> {
   })
 
   await page.addInitScript(({ token, tenantId }) => {
-    localStorage.setItem('deskos.accessToken', token)
-    localStorage.setItem('deskos.refreshToken', 'refresh-token')
-    localStorage.setItem('deskos.activeTenant', tenantId)
+    localStorage.setItem('reydesk.accessToken', token)
+    localStorage.setItem('reydesk.refreshToken', 'refresh-token')
+    localStorage.setItem('reydesk.activeTenant', tenantId)
   }, { token: 'access-token', tenantId: membership.tenant.id })
 }
 
