@@ -4,6 +4,7 @@ import { withTenant } from '../../db/pool.js'
 import { authenticate } from '../../middleware/authenticate.js'
 import { requirePermission } from '../../middleware/requirePermission.js'
 import { requireTenant } from '../../middleware/requireTenant.js'
+import { getWorkerRunTimeSeries } from '../ai-worker/engine.js'
 import '../../types.js'
 
 function dateFilter(from?: string, to?: string, qualifier = ''): { clause: string; params: unknown[] } {
@@ -163,6 +164,7 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
           ? Math.round(((sla.rows[0].resolved - sla.rows[0].response_breached - sla.rows[0].resolution_breached) / sla.rows[0].resolved) * 1000) / 10
           : 100
 
+        const aiWorkerTimeSeries = await getWorkerRunTimeSeries(app.db, ctx.tenantId, 30)
         return {
           totals: totals.rows[0],
           resolution: resolution.rows[0],
@@ -184,6 +186,7 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
             ...aiWorkers.rows[0],
             resolutionRate: Number(aiWorkers.rows[0]?.total ?? 0) ? Math.round((Number(aiWorkers.rows[0]?.resolved ?? 0) / Number(aiWorkers.rows[0]?.total ?? 0)) * 1000) / 10 : 0,
           },
+          aiWorkerTimeSeries,
         }
       })
     },

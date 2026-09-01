@@ -27,6 +27,7 @@ export interface OverviewReport {
     timeSavedMinutes: number
     avgActualMinutes: number
   }
+  aiWorkerTimeSeries: Array<{ day: string; total: number; resolved: number; handoff: number; failed: number }>
   updateHealth: {
     healthChecks: number
     offersChecked: number
@@ -92,6 +93,36 @@ export function getAnalyticsReport(): Promise<AnalyticsReport> {
 
 export function getComplianceReport(): Promise<ComplianceReport> {
   return api('/reports/compliance')
+}
+
+export interface AiWorkerTimeSeries {
+  day: string; total: number; resolved: number; handoff: number; failed: number
+}
+
+export function getAiWorkerTimeSeries(days = 30): Promise<{ timeseries: AiWorkerTimeSeries[] }> {
+  return api(`/ai-worker/timeseries?days=${days}`)
+}
+
+export interface AiWorkerRun {
+  id: string; tenant_id: string; ticket_id: string | null; device_id: string | null
+  worker: string; status: string; summary: string; steps: unknown[]
+  outcome: Record<string, unknown>; started_at: string | null; finished_at: string | null
+  created_at: string; updated_at: string
+  ticket_number?: number; ticket_subject?: string; device_name?: string
+}
+
+export interface AiWorkerRunList {
+  runs: AiWorkerRun[]; nextCursor: string | null; total: number
+}
+
+export function getAiWorkerRuns(params?: { status?: string; limit?: number; cursor?: string; ticketId?: string }): Promise<AiWorkerRunList> {
+  const qs = new URLSearchParams()
+  if (params?.status) qs.set('status', params.status)
+  if (params?.limit) qs.set('limit', String(params.limit))
+  if (params?.cursor) qs.set('cursor', params.cursor)
+  if (params?.ticketId) qs.set('ticketId', params.ticketId)
+  const q = qs.toString()
+  return api(`/ai-worker/runs${q ? `?${q}` : ''}`)
 }
 
 export function formatMinutes(min: number): string {

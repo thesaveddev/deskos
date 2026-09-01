@@ -7,7 +7,7 @@ import { requirePermission } from '../../middleware/requirePermission.js'
 import { requireTenant } from '../../middleware/requireTenant.js'
 import { createTenantAiProvider } from '../ai/settings.js'
 import { createAiProvider } from '../ai/gateway.js'
-import { createWorkerRun, listWorkerRuns, getWorkerRun, cancelWorkerRun, approveWorkerStep, denyWorkerStep, WORKER_RUN_STATUSES } from './engine.js'
+import { createWorkerRun, listWorkerRuns, getWorkerRun, cancelWorkerRun, approveWorkerStep, denyWorkerStep, getWorkerRunTimeSeries, WORKER_RUN_STATUSES } from './engine.js'
 import '../../types.js'
 
 const createSchema = z.object({
@@ -16,6 +16,9 @@ const createSchema = z.object({
 
 const listQuerySchema = z.object({
   status: z.enum(WORKER_RUN_STATUSES).optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+  cursor: z.string().optional(),
+  ticketId: z.string().uuid().optional(),
 })
 
 export async function aiWorkerRoutes(app: FastifyInstance): Promise<void> {
@@ -40,13 +43,20 @@ export async function aiWorkerRoutes(app: FastifyInstance): Promise<void> {
   app.get('/ai-worker/runs', { preHandler: read }, async (request) => {
     const ctx = request.tenantCtx!
     const query = listQuerySchema.parse(request.query)
-    return { runs: await listWorkerRuns(app.db, ctx.tenantId, { status: query.status }) }
+    return listWorkerRuns(app.db, ctx.tenantId, { status: query.status, limit: query.limit, cursor: query.cursor, ticketId: query.ticketId })
   })
 
   app.get('/ai-worker/runs/:id', { preHandler: read }, async (request) => {
     const ctx = request.tenantCtx!
     const { id } = request.params as { id: string }
     return { run: await getWorkerRun(app.db, ctx.tenantId, id) }
+  })
+
+  app.get('/ai-worker/timeseries', { preHandler: read }, async (request) => {
+    const ctx = request.tenantCtx!
+    const q = (request.query ?? {}) as { days?: string }
+    const days = Math.min(Math.max(1, Number(q.days) || 30), 365)
+    return { timeseries: await getWorkerRunTimeSeries(app.db, ctx.tenantId, days) }
   })
 
   app.post('/ai-worker/runs', { preHandler: manage }, async (request, reply) => {
@@ -62,6 +72,8 @@ export async function aiWorkerRoutes(app: FastifyInstance): Promise<void> {
       pool: app.db,
       provider: tenantAi.provider,
       model: tenantAi.model,
+      webhookKey: app.config.emailKey,
+      config: app.config,
     }, { triggerType: 'manual' })
     if (!run) throw new Error('worker run not created')
     await withTenant(app.db, ctx.tenantId, async (client) => {

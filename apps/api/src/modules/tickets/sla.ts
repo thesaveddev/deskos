@@ -158,6 +158,10 @@ export async function checkBreachesForTenant(pool: DbPool, tenantId: string): Pr
           AND due_resolution_at < now()
           AND resolved_at IS NULL
           AND status NOT IN ('resolved', 'closed')
+          AND id NOT IN (
+            SELECT ticket_id FROM ai_worker_runs
+            WHERE tenant_id = $1 AND status = 'resolved' AND ticket_id IS NOT NULL
+          )
         RETURNING id, number`,
       [tenantId],
     )

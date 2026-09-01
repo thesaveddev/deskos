@@ -5,6 +5,8 @@ import { notify } from '../../core/notify.js'
 import type { AiProvider } from '../ai/gateway.js'
 import { getWorkerTool, workerToolCatalogForPrompt, type WorkerStep } from './tools.js'
 import { buildWorkerContext } from './context.js'
+import { emitWebhookEvent } from '../webhooks/webhooks.js'
+import type { AppConfig } from '../../config.js'
 
 export const WORKER_RUN_STATUSES = ['queued', 'running', 'waiting_approval', 'waiting_action', 'resolved', 'handoff', 'failed', 'cancelled'] as const
 export type WorkerRunStatus = (typeof WORKER_RUN_STATUSES)[number]
@@ -30,6 +32,8 @@ export interface WorkerDeps {
   pool: DbPool
   provider: AiProvider
   model: string
+  webhookKey?: string
+  config?: AppConfig
 }
 
 export interface WorkerRunRow {
@@ -105,6 +109,32 @@ function parseJsonObject(raw: string): Record<string, unknown> | null {
     }
   }
   return null
+}
+
+async function generateWithRetry(provider: AiProvider, prompt: string, opts: { maxTokens: number; operation: string; maxAttempts?: number }): Promise<string> {
+  const maxAttempts = opts.maxAttempts ?? 3
+  let lastError: unknown
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await provider.generate(prompt, { maxTokens: opts.maxTokens, operation: opts.operation })
+    } catch (err) {
+      lastError = err
+      if (attempt < maxAttempts) {
+        const delayMs = Math.min(2000, 200 * Math.pow(2, attempt - 1))
+        await new Promise((r) => setTimeout(r, delayMs))
+      }
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('AI provider failed after retries')
+}
+
+async function fireWorkerWebhook(pool: DbPool, tenantId: string, event: string, payload: Record<string, unknown>, deps: WorkerDeps): Promise<void> {
+  if (!deps.webhookKey || !deps.config) return
+  try {
+    await emitWebhookEvent(pool, tenantId, event, payload, deps.webhookKey)
+  } catch {
+    // Webhook delivery is best-effort; never block the worker run.
+  }
 }
 
 export function parseWorkerPlan(raw: string): WorkerPlan | null {
@@ -379,7 +409,7 @@ async function planRun(
 ): Promise<void> {
   const ticket = run.ticket_id ? await loadTicketContext(pool, tenantId, run.ticket_id) : null
   if (!ticket) {
-    await failRun(pool, tenantId, run.id, 'Ticket no longer exists')
+    await failRun(pool, tenantId, run.id, 'Ticket no longer exists', deps)
     return
   }
   const device = run.device_id ? await loadDeviceContext(pool, tenantId, run.device_id) : null
@@ -396,7 +426,7 @@ async function planRun(
   let plan: WorkerPlan | null = null
   let error: string | null = null
   try {
-    plan = parseWorkerPlan(await deps.provider.generate(prompt, { maxTokens: 1200, operation: 'ai_worker.plan' }))
+    plan = parseWorkerPlan(await generateWithRetry(deps.provider, prompt, { maxTokens: 1200, operation: 'ai_worker.plan' }))
   } catch (err) {
     error = err instanceof Error ? err.message : 'AI worker planning failed'
   }
@@ -432,7 +462,7 @@ async function planRun(
     })
   }
   if (steps.length === 0) {
-    await handRun(pool, tenantId, run.id, 'AI worker produced no usable steps.')
+    await handRun(pool, tenantId, run.id, 'AI worker produced no usable steps.', deps)
     return
   }
 
@@ -487,7 +517,7 @@ async function execStep(
     steps[index] = { ...steps[index], status: 'failed', error: err instanceof Error ? err.message : 'tool failed', finishedAt: new Date().toISOString() }
     await writeRunSteps(pool, tenantId, run.id, steps, 'running')
     // A failed or denied step means we should not auto-resolve.
-    await handRun(pool, tenantId, run.id, `A worker step (${step.tool}) failed: ${err instanceof Error ? err.message : 'unknown error'}`)
+    await handRun(pool, tenantId, run.id, `A worker step (${step.tool}) failed: ${err instanceof Error ? err.message : 'unknown error'}`, deps)
     return
   }
 
@@ -515,11 +545,11 @@ async function finalizeRun(
 
   if (terminalStep && terminalStep.tool === 'ticket.resolve' && allSucceeded) {
     // The plan already contained the resolve step.
-    await applyResolve(pool, tenantId, run, terminalStep.toolArgs)
+    await applyResolve(pool, tenantId, run, terminalStep.toolArgs, deps)
     return
   }
   if (terminalStep && terminalStep.tool === 'ticket.handoff') {
-    await applyHandoff(pool, tenantId, run, terminalStep.toolArgs)
+    await applyHandoff(pool, tenantId, run, terminalStep.toolArgs, deps)
     return
   }
   if (allSucceeded) {
@@ -529,11 +559,11 @@ async function finalizeRun(
     const declaredAction = run.context?.finalAction
     const declaredMessage = run.context?.finalMessage
     if (declaredAction === 'resolve' && typeof declaredMessage === 'string' && declaredMessage.length > 0 && !policy.requireApprovalForResolve) {
-      await applyResolve(pool, tenantId, run, { message: declaredMessage })
+      await applyResolve(pool, tenantId, run, { message: declaredMessage }, deps)
       return
     }
     if (declaredAction === 'handoff') {
-      await applyHandoff(pool, tenantId, run, { reason: typeof declaredMessage === 'string' && declaredMessage ? declaredMessage : 'AI worker requires technician review.' })
+      await applyHandoff(pool, tenantId, run, { reason: typeof declaredMessage === 'string' && declaredMessage ? declaredMessage : 'AI worker requires technician review.' }, deps)
       return
     }
     // Ask the model to verify the outcome and decide resolve vs handoff.
@@ -548,25 +578,25 @@ async function finalizeRun(
     ].join('\n')
     let decision: { action: 'resolve' | 'handoff'; message?: string; reason?: string } | null = null
     try {
-      const raw = await deps.provider.generate(outcomePrompt, { maxTokens: 300, operation: 'ai_worker.finalize' })
+      const raw = await generateWithRetry(deps.provider, outcomePrompt, { maxTokens: 300, operation: 'ai_worker.finalize' })
       const parsed = parseJsonObject(raw)
       if (parsed && (parsed.action === 'resolve' || parsed.action === 'handoff')) {
         decision = { action: parsed.action, message: typeof parsed.message === 'string' ? parsed.message : undefined, reason: typeof parsed.reason === 'string' ? parsed.reason : undefined }
       }
     } catch { /* fall back to handoff */ }
     if (decision?.action === 'resolve' && decision.message) {
-      await applyResolve(pool, tenantId, run, { message: decision.message })
+      await applyResolve(pool, tenantId, run, { message: decision.message }, deps)
     } else {
-      await applyHandoff(pool, tenantId, run, { reason: decision?.reason ?? 'AI worker completed its steps but could not confirm resolution.' })
+      await applyHandoff(pool, tenantId, run, { reason: decision?.reason ?? 'AI worker completed its steps but could not confirm resolution.' }, deps)
     }
     return
   }
   const failed = steps.find((s) => s.status === 'failed' || s.status === 'denied')
-  await applyHandoff(pool, tenantId, run, { reason: failed ? `Step ${failed.tool} did not succeed.` : 'AI worker could not resolve the ticket.' })
+  await applyHandoff(pool, tenantId, run, { reason: failed ? `Step ${failed.tool} did not succeed.` : 'AI worker could not resolve the ticket.' }, deps)
 }
 
-function applyResolve(pool: DbPool, tenantId: string, run: LoadRunRow, args: Record<string, unknown>): Promise<void> {
-  return withTenant(pool, tenantId, async (client) => {
+async function applyResolve(pool: DbPool, tenantId: string, run: LoadRunRow, args: Record<string, unknown>, deps?: WorkerDeps): Promise<void> {
+  await withTenant(pool, tenantId, async (client) => {
     const tool = getWorkerTool('ticket.resolve')
     const result = await tool.run({ client, tenantId, ticketId: run.ticket_id, deviceId: run.device_id, runId: run.id }, args)
     await client.query(
@@ -574,10 +604,14 @@ function applyResolve(pool: DbPool, tenantId: string, run: LoadRunRow, args: Rec
       [run.id, JSON.stringify({ resolution: result })],
     )
   })
+  void fireWorkerWebhook(pool, tenantId, 'ai_worker.resolved', {
+    runId: run.id, ticketId: run.ticket_id, summary: run.summary,
+    steps: run.steps.length, outcome: args.message ?? '',
+  }, deps ?? { pool, provider: null as unknown as AiProvider, model: '' })
 }
 
-function applyHandoff(pool: DbPool, tenantId: string, run: LoadRunRow, args: Record<string, unknown>): Promise<void> {
-  return withTenant(pool, tenantId, async (client) => {
+async function applyHandoff(pool: DbPool, tenantId: string, run: LoadRunRow, args: Record<string, unknown>, deps?: WorkerDeps): Promise<void> {
+  await withTenant(pool, tenantId, async (client) => {
     const tool = getWorkerTool('ticket.handoff')
     const result = await tool.run({ client, tenantId, ticketId: run.ticket_id, deviceId: run.device_id, runId: run.id }, args)
     await client.query(
@@ -585,24 +619,34 @@ function applyHandoff(pool: DbPool, tenantId: string, run: LoadRunRow, args: Rec
       [run.id, JSON.stringify({ handoff: result }), typeof args.reason === 'string' ? args.reason : null],
     )
   })
+  void fireWorkerWebhook(pool, tenantId, 'ai_worker.handoff', {
+    runId: run.id, ticketId: run.ticket_id, summary: run.summary,
+    reason: typeof args.reason === 'string' ? args.reason : '',
+  }, deps ?? { pool, provider: null as unknown as AiProvider, model: '' })
 }
 
-async function handRun(pool: DbPool, tenantId: string, runId: string, reason: string): Promise<void> {
+async function handRun(pool: DbPool, tenantId: string, runId: string, reason: string, deps?: WorkerDeps): Promise<void> {
   await withTenant(pool, tenantId, async (client) => {
     await client.query(
       `UPDATE ai_worker_runs SET status = 'handoff', escalation_reason = $3, outcome = $2::jsonb, finished_at = now(), updated_at = now() WHERE id = $1`,
       [runId, JSON.stringify({ reason }), reason],
     )
   })
+  void fireWorkerWebhook(pool, tenantId, 'ai_worker.handoff', {
+    runId, reason,
+  }, deps ?? { pool, provider: null as unknown as AiProvider, model: '' })
 }
 
-async function failRun(pool: DbPool, tenantId: string, runId: string, error: string): Promise<void> {
+async function failRun(pool: DbPool, tenantId: string, runId: string, error: string, deps?: WorkerDeps): Promise<void> {
   await withTenant(pool, tenantId, async (client) => {
     await client.query(
       `UPDATE ai_worker_runs SET status = 'failed', outcome = $2::jsonb, finished_at = now(), updated_at = now() WHERE id = $1`,
       [runId, JSON.stringify({ error })],
     )
   })
+  void fireWorkerWebhook(pool, tenantId, 'ai_worker.failed', {
+    runId, error,
+  }, deps ?? { pool, provider: null as unknown as AiProvider, model: '' })
 }
 
 async function writeRunSteps(pool: DbPool, tenantId: string, runId: string, steps: WorkerStep[], status: WorkerRunStatus): Promise<void> {
@@ -703,11 +747,18 @@ export async function resumeWorkerRun(
   await execStep(pool, tenantId, { ...run, steps, status: 'running' }, await loadPolicy(pool, tenantId), deps)
 }
 
+export interface WorkerRunListFilters {
+  status?: WorkerRunStatus
+  limit?: number
+  cursor?: string
+  ticketId?: string
+}
+
 export async function listWorkerRuns(
   pool: DbPool,
   tenantId: string,
-  filters: { status?: WorkerRunStatus } = {},
-): Promise<Record<string, unknown>[]> {
+  filters: WorkerRunListFilters = {},
+): Promise<{ runs: Record<string, unknown>[]; nextCursor: string | null; total: number }> {
   return withTenant(pool, tenantId, async (client) => {
     const params: unknown[] = []
     const where: string[] = []
@@ -715,7 +766,16 @@ export async function listWorkerRuns(
       params.push(filters.status)
       where.push(`r.status = $${params.length}`)
     }
+    if (filters.ticketId) {
+      params.push(filters.ticketId)
+      where.push(`r.ticket_id = $${params.length}`)
+    }
+    if (filters.cursor) {
+      params.push(filters.cursor)
+      where.push(`r.created_at < $${params.length}::timestamptz`)
+    }
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+    const limit = Math.min(Math.max(1, filters.limit ?? 50), 200)
     const { rows } = await client.query(
       `SELECT r.*, t.number AS ticket_number, t.subject AS ticket_subject, d.name AS device_name
          FROM ai_worker_runs r
@@ -723,10 +783,17 @@ export async function listWorkerRuns(
          LEFT JOIN devices d ON d.id = r.device_id
          ${whereSql}
         ORDER BY r.created_at DESC
-        LIMIT 200`,
-      params,
+        LIMIT $${params.length + 1}`,
+      [...params, limit + 1],
     )
-    return rows
+    const hasMore = rows.length > limit
+    const runs = hasMore ? rows.slice(0, limit) : rows
+    const nextCursor = hasMore && runs.length > 0 ? String(runs[runs.length - 1].created_at) : null
+    const countResult = await client.query(
+      `SELECT count(*)::int AS total FROM ai_worker_runs r ${whereSql}`,
+      params.slice(0, params.length - (filters.cursor ? 1 : 0)),
+    )
+    return { runs, nextCursor, total: countResult.rows[0]?.total ?? 0 }
   })
 }
 
@@ -755,5 +822,41 @@ export async function cancelWorkerRun(pool: DbPool, tenantId: string, runId: str
     )
     if (!rows[0]) throw AppError.notFound('Active worker run not found')
     return rows[0]
+  })
+}
+
+/** Time-series: daily run counts grouped by status for the AI Workers Reports tab. */
+export async function getWorkerRunTimeSeries(
+  pool: DbPool,
+  tenantId: string,
+  days = 30,
+): Promise<Array<{ day: string; total: number; resolved: number; handoff: number; failed: number }>> {
+  return withTenant(pool, tenantId, async (client) => {
+    const { rows } = await client.query(
+      `SELECT to_char(date_trunc('day', created_at), 'YYYY-MM-DD') AS day,
+              count(*)::int AS total,
+              count(*) FILTER (WHERE status = 'resolved')::int AS resolved,
+              count(*) FILTER (WHERE status = 'handoff')::int AS handoff,
+              count(*) FILTER (WHERE status = 'failed')::int AS failed
+       FROM ai_worker_runs
+       WHERE created_at > now() - ($1 || ' days')::interval
+       GROUP BY 1 ORDER BY 1`,
+      [days],
+    )
+    return rows
+  })
+}
+
+/**
+ * Mark a ticket as worker-resolved so the SLA breach scheduler can optionally
+ * skip it. Called from the resolve tool.
+ */
+export async function markTicketWorkerResolved(pool: DbPool, tenantId: string, ticketId: string): Promise<void> {
+  await withTenant(pool, tenantId, async (client) => {
+    await client.query(
+      `UPDATE tickets SET sla_resolution_breached = false, due_resolution_at = NULL, updated_at = now()
+       WHERE id = $1 AND sla_resolution_breached = false`,
+      [ticketId],
+    )
   })
 }
