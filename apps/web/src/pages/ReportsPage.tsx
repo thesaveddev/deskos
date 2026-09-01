@@ -21,7 +21,7 @@ const STATUS_COLORS: Record<string, string> = {
 const PRIORITY_COLORS: Record<string, string> = { p1: '#ef4444', p2: '#f59e0b', p3: '#3b82f6', p4: '#10b981' }
 const PRIORITY_LABELS: Record<string, string> = { p1: 'Critical', p2: 'High', p3: 'Medium', p4: 'Low' }
 
-type Tab = 'overview' | 'tickets' | 'agents' | 'sessions' | 'csat' | 'compliance'
+type Tab = 'overview' | 'tickets' | 'agents' | 'sessions' | 'csat' | 'compliance' | 'ai-workers'
 type DatePreset = 'today' | '7d' | '30d' | '90d' | 'all' | 'custom'
 
 function dateRange(preset: DatePreset, customFrom?: string, customTo?: string): { from?: string; to?: string } {
@@ -425,6 +425,8 @@ export default function ReportsPage() {
           { id: 'sessions', label: 'Sessions', icon: 'monitor' },
           { id: 'csat', label: 'Satisfaction', icon: 'star' },
           { id: 'compliance', label: 'Compliance', icon: 'shield' },
+        { id: 'ai-workers', label: 'AI Workers', icon: 'activity' },
+          { id: 'ai-workers', label: 'AI Workers', icon: 'activity' },
         ] as { id: Tab; label: string; icon: 'chart' | 'ticket' | 'user' | 'monitor' | 'star' | 'shield' }[]).map(t => (
           <button key={t.id} className={`rpt-tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>
             <span className="rpt-tab-icon"><Icon name={t.icon} size={14} /></span> {t.label}
@@ -816,6 +818,172 @@ export default function ReportsPage() {
               <span className="rpt-summary-label">Video Recordings</span>
               <span className="rpt-summary-value">{compliance.recordings.video}</span>
               <span className="rpt-summary-sub">{compliance.recordings.sessions} total sessions recorded</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════
+         AI WORKERS TAB
+         ═══════════════════════════════════════════════════════════ */}
+      {overview && tab === 'ai-workers' && (
+        <div className="rpt-sections">
+          <div className="rpt-section-head">
+            <h2 className="rpt-section-title">AI Worker Performance</h2>
+          </div>
+
+          <div className="rpt-kpi-row">
+            <StatCard label="Total Runs" value={overview.aiWorkers.total}
+              icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/></svg>} />
+            <StatCard label="Resolved" value={overview.aiWorkers.resolved} tone="ok"
+              icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>} />
+            <StatCard label="Handed Off" value={overview.aiWorkers.escalated} tone="warn"
+              icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>} />
+            <StatCard label="Resolution Rate" value={`${overview.aiWorkers.resolutionRate}%`}
+              tone={overview.aiWorkers.resolutionRate >= 70 ? 'ok' : overview.aiWorkers.resolutionRate >= 40 ? 'warn' : 'crit'}
+              icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>} />
+            <StatCard label="Time Saved" value={formatMinutes(overview.aiWorkers.timeSavedMinutes)}
+              sub="vs estimated manual time"
+              icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>} />
+            <StatCard label="Avg Actual Time" value={formatMinutes(overview.aiWorkers.avgActualMinutes)}
+              sub="per resolved run"
+              icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>} />
+          </div>
+
+          <div className="rpt-charts-row">
+            <div className="rpt-chart-card">
+              <h3 className="rpt-card-title">Outcome Distribution</h3>
+              <DonutChart
+                segments={[
+                  { value: overview.aiWorkers.resolved, color: '#10b981', label: 'Resolved' },
+                  { value: overview.aiWorkers.escalated, color: '#f59e0b', label: 'Handed Off' },
+                  { value: Math.max(0, overview.aiWorkers.total - overview.aiWorkers.resolved - overview.aiWorkers.escalated), color: '#ef4444', label: 'Failed / Cancelled' },
+                ]}
+                size={180}
+                label="Worker Outcomes"
+              />
+            </div>
+            <div className="rpt-chart-card">
+              <h3 className="rpt-card-title">Agent Update Health</h3>
+              {overview.updateHealth ? (
+                <BarChart
+                  data={[
+                    { label: 'Health Checks', value: overview.updateHealth.healthChecks, color: '#3b82f6' },
+                    { label: 'Updates Offered', value: overview.updateHealth.offersChecked, color: '#8b5cf6' },
+                    { label: 'Successful', value: overview.updateHealth.successfulUpdates, color: '#10b981' },
+                    { label: 'Failed', value: overview.updateHealth.failedUpdates, color: '#ef4444' },
+                  ]}
+                  horizontal
+                />
+              ) : (
+                <div className="rpt-empty">No update data</div>
+              )}
+            </div>
+          </div>
+
+          <div className="rpt-summary-grid">
+            <div className="rpt-summary-card">
+              <span className="rpt-summary-label">Total AI Runs</span>
+              <span className="rpt-summary-value">{overview.aiWorkers.total}</span>
+              <span className="rpt-summary-sub">Across all tickets</span>
+            </div>
+            <div className="rpt-summary-card">
+              <span className="rpt-summary-label">Resolution Rate</span>
+              <span className={`rpt-summary-value ${overview.aiWorkers.resolutionRate >= 70 ? 'rpt-ok' : 'rpt-crit'}`}>{overview.aiWorkers.resolutionRate}%</span>
+              <span className="rpt-summary-sub">Auto-resolved vs total</span>
+            </div>
+            <div className="rpt-summary-card">
+              <span className="rpt-summary-label">Time Saved</span>
+              <span className="rpt-summary-value rpt-ok">{formatMinutes(overview.aiWorkers.timeSavedMinutes)}</span>
+              <span className="rpt-summary-sub">Estimated manual effort avoided</span>
+            </div>
+            <div className="rpt-summary-card">
+              <span className="rpt-summary-label">Last Agent Check</span>
+              <span className="rpt-summary-value">{overview.updateHealth?.lastCheck ? new Date(overview.updateHealth.lastCheck).toLocaleDateString() : '—'}</span>
+              <span className="rpt-summary-sub">Device agent update verification</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════
+         AI WORKERS TAB
+         ═══════════════════════════════════════════════════════════ */}
+      {overview && tab === 'ai-workers' && (
+        <div className="rpt-sections">
+          <div className="rpt-section-head">
+            <h2 className="rpt-section-title">AI Worker Performance</h2>
+          </div>
+
+          <div className="rpt-kpi-row">
+            <StatCard label="Total Runs" value={overview.aiWorkers.total}
+              icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/></svg>} />
+            <StatCard label="Resolved" value={overview.aiWorkers.resolved} tone="ok"
+              icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>} />
+            <StatCard label="Handed Off" value={overview.aiWorkers.escalated} tone="warn"
+              icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>} />
+            <StatCard label="Resolution Rate" value={`${overview.aiWorkers.resolutionRate}%`}
+              tone={overview.aiWorkers.resolutionRate >= 70 ? 'ok' : overview.aiWorkers.resolutionRate >= 40 ? 'warn' : 'crit'}
+              icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>} />
+            <StatCard label="Time Saved" value={formatMinutes(overview.aiWorkers.timeSavedMinutes)}
+              sub="vs estimated manual time"
+              icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>} />
+            <StatCard label="Avg Actual Time" value={formatMinutes(overview.aiWorkers.avgActualMinutes)}
+              sub="per resolved run"
+              icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>} />
+          </div>
+
+          <div className="rpt-charts-row">
+            <div className="rpt-chart-card">
+              <h3 className="rpt-card-title">Outcome Distribution</h3>
+              <DonutChart
+                segments={[
+                  { value: overview.aiWorkers.resolved, color: '#10b981', label: 'Resolved' },
+                  { value: overview.aiWorkers.escalated, color: '#f59e0b', label: 'Handed Off' },
+                  { value: Math.max(0, overview.aiWorkers.total - overview.aiWorkers.resolved - overview.aiWorkers.escalated), color: '#ef4444', label: 'Failed / Cancelled' },
+                ]}
+                size={180}
+                label="Worker Outcomes"
+              />
+            </div>
+            <div className="rpt-chart-card">
+              <h3 className="rpt-card-title">Agent Update Health</h3>
+              {overview.updateHealth ? (
+                <BarChart
+                  data={[
+                    { label: 'Health Checks', value: overview.updateHealth.healthChecks, color: '#3b82f6' },
+                    { label: 'Updates Offered', value: overview.updateHealth.offersChecked, color: '#8b5cf6' },
+                    { label: 'Successful', value: overview.updateHealth.successfulUpdates, color: '#10b981' },
+                    { label: 'Failed', value: overview.updateHealth.failedUpdates, color: '#ef4444' },
+                  ]}
+                  horizontal
+                />
+              ) : (
+                <div className="rpt-empty">No update data</div>
+              )}
+            </div>
+          </div>
+
+          <div className="rpt-summary-grid">
+            <div className="rpt-summary-card">
+              <span className="rpt-summary-label">Total AI Runs</span>
+              <span className="rpt-summary-value">{overview.aiWorkers.total}</span>
+              <span className="rpt-summary-sub">Across all tickets</span>
+            </div>
+            <div className="rpt-summary-card">
+              <span className="rpt-summary-label">Resolution Rate</span>
+              <span className={`rpt-summary-value ${overview.aiWorkers.resolutionRate >= 70 ? 'rpt-ok' : 'rpt-crit'}`}>{overview.aiWorkers.resolutionRate}%</span>
+              <span className="rpt-summary-sub">Auto-resolved vs total</span>
+            </div>
+            <div className="rpt-summary-card">
+              <span className="rpt-summary-label">Time Saved</span>
+              <span className="rpt-summary-value rpt-ok">{formatMinutes(overview.aiWorkers.timeSavedMinutes)}</span>
+              <span className="rpt-summary-sub">Estimated manual effort avoided</span>
+            </div>
+            <div className="rpt-summary-card">
+              <span className="rpt-summary-label">Last Agent Check</span>
+              <span className="rpt-summary-value">{overview.updateHealth?.lastCheck ? new Date(overview.updateHealth.lastCheck).toLocaleDateString() : '—'}</span>
+              <span className="rpt-summary-sub">Device agent update verification</span>
             </div>
           </div>
         </div>

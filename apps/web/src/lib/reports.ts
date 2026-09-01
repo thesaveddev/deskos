@@ -19,6 +19,21 @@ export interface OverviewReport {
   }>
   sessions: { total: number; live: number; avg_duration_min: number }
   auditTotal: number
+  aiWorkers: {
+    total: number
+    resolved: number
+    escalated: number
+    resolutionRate: number
+    timeSavedMinutes: number
+    avgActualMinutes: number
+  }
+  updateHealth: {
+    healthChecks: number
+    offersChecked: number
+    successfulUpdates: number
+    failedUpdates: number
+    lastCheck: string | null
+  }
 }
 
 export interface TicketReport {
