@@ -35,6 +35,37 @@ export function createAiProvider(config: AiConfig): AiProvider {
   return new OpenAiCompatibleProvider(config)
 }
 
+/** Strip markdown formatting from AI-generated text so it reads as plain text. */
+function stripMarkdown(text: string): string {
+  return text
+    // Bold and italic markers
+    .replace(/\*{1,3}/g, '')
+    .replace(/_{1,3}/g, '')
+    // Strikethrough
+    .replace(/~~(.*?)~~/g, '$1')
+    // Headings
+    .replace(/^#{1,6}\s+/gm, '')
+    // Inline code
+    .replace(/`([^`]+)`/g, '$1')
+    // Code blocks
+    .replace(/```[\s\S]*?```/g, (match) => match.replace(/```\w*\n?/g, '').replace(/```/g, '').trim())
+    // Links - keep the text, drop the URL
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    // Images - keep alt text
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
+    // Blockquotes
+    .replace(/^>\s+/gm, '')
+    // Horizontal rules
+    .replace(/^[-*_]{3,}$/gm, '')
+    // Unordered list markers
+    .replace(/^\s*[-*+]\s+/gm, '')
+    // Ordered list markers
+    .replace(/^\s*\d+\.\s+/gm, '')
+    // Excessive blank lines
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
 class OpenAiCompatibleProvider implements AiProvider {
   constructor(private readonly config: AiConfig) {}
 
@@ -74,7 +105,7 @@ class OpenAiCompatibleProvider implements AiProvider {
         choices?: Array<{ message?: { content?: string } }>
         content?: string
       }
-      const content = (json.choices?.[0]?.message?.content ?? json.content ?? '').trim()
+      const content = stripMarkdown((json.choices?.[0]?.message?.content ?? json.content ?? '').trim())
       if (!content) throw new AppError(502, 'ai_provider_error', 'AI provider returned an empty response')
       return content
     } catch (err) {
