@@ -100,7 +100,7 @@ export default function ContactPage() {
               <div className="contact-info-icon"><Icon name="building" size={18} /></div>
               <div className="contact-info-text">
                 <h3>Office</h3>
-                <p>Clean IT Ltd<br />United Kingdom<br />
+                <p><a href="https://34orients.com" target="_blank" rel="noreferrer">34orients Ltd</a><br />United Kingdom<br />
                 Registered in England &amp; Wales</p>
               </div>
             </div>

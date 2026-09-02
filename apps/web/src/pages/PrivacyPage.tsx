@@ -13,7 +13,7 @@ export default function PrivacyPage() {
 
           <h2>1. Introduction</h2>
           <p>
-            ReyDesk ("we", "us", "our") is an IT support platform operated by Clean IT Ltd. This Privacy Policy explains how we collect, use, protect, and share information when you use our website, console, and services ("Service").
+            ReyDesk ("we", "us", "our") is an IT support platform operated by 34orients Ltd (https://34orients.com). This Privacy Policy explains how we collect, use, protect, and share information when you use our website, console, and services ("Service").
           </p>
           <p>
             By using the Service you agree to this policy. If you do not agree, please do not use the Service.
@@ -91,7 +91,8 @@ export default function PrivacyPage() {
           <h2>11. Contact</h2>
           <p>
             Data Protection Officer<br />
-            Clean IT Ltd<br />
+            34orients Ltd<br />
+            <a href="https://34orients.com" target="_blank" rel="noreferrer">https://34orients.com</a><br />
             <a href="mailto:privacy@reydesk.com">privacy@reydesk.com</a>
           </p>
         </div>

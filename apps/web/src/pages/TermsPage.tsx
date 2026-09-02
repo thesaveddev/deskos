@@ -51,7 +51,7 @@ export default function TermsPage() {
 
           <h2>7. Intellectual property</h2>
           <p>
-            The Service, including its software, design, documentation, and branding, is owned by Clean IT Ltd and protected by copyright and trademark laws. You are granted a limited, non-exclusive, non-transferable licence to use the Service.
+            The Service, including its software, design, documentation, and branding, is owned by 34orients Ltd and protected by copyright and trademark laws. You are granted a limited, non-exclusive, non-transferable licence to use the Service.
           </p>
 
           <h2>8. Fees and billing</h2>
@@ -70,12 +70,12 @@ export default function TermsPage() {
 
           <h2>10. Limitation of liability</h2>
           <p>
-            To the maximum extent permitted by law, ReyDesk and Clean IT Ltd shall not be liable for any indirect, incidental, special, consequential, or punitive damages, or any loss of profits or revenues, whether incurred directly or indirectly. Our total liability shall not exceed the fees you paid in the twelve months preceding the claim.
+            To the maximum extent permitted by law, ReyDesk and 34orients Ltd shall not be liable for any indirect, incidental, special, consequential, or punitive damages, or any loss of profits or revenues, whether incurred directly or indirectly. Our total liability shall not exceed the fees you paid in the twelve months preceding the claim.
           </p>
 
           <h2>11. Indemnification</h2>
           <p>
-            You agree to indemnify and hold harmless ReyDesk and Clean IT Ltd from any claims, losses, or damages arising from your use of the Service or violation of these Terms.
+            You agree to indemnify and hold harmless ReyDesk and 34orients Ltd from any claims, losses, or damages arising from your use of the Service or violation of these Terms.
           </p>
 
           <h2>12. Termination</h2>
@@ -95,7 +95,8 @@ export default function TermsPage() {
 
           <h2>15. Contact</h2>
           <p>
-            Clean IT Ltd<br />
+            34orients Ltd<br />
+            <a href="https://34orients.com" target="_blank" rel="noreferrer">https://34orients.com</a><br />
             <a href="mailto:legal@reydesk.com">legal@reydesk.com</a>
           </p>
         </div>

@@ -5,7 +5,7 @@ export default function AboutPage() {
   return (
     <LandingLayout
       title="About — ReyDesk"
-      description="ReyDesk is built by Clean IT Ltd. One app for remote support, device management, and IT tickets."
+      description="ReyDesk is built by 34orients Ltd. One app for remote support, device management, and IT tickets."
     >
       <section className="landing-hero">
         <div className="landing-hero-inner">
@@ -80,7 +80,7 @@ export default function AboutPage() {
         </div>
         <div className="legal-content">
           <p>
-            ReyDesk is built by <strong>Clean IT Ltd</strong>, a small UK-based company. We build IT tools because we've used bad IT tools and we think things can be better.
+            ReyDesk is built by <strong><a href="https://34orients.com" target="_blank" rel="noreferrer">34orients Ltd</a></strong>, a small UK-based company. We build IT tools because we've used bad IT tools and we think things can be better.
           </p>
           <p>
             We're not a 500-person company. We're a small team writing code we'd want to use ourselves. If you have feedback, email us at <a href="mailto:hello@reydesk.com">hello@reydesk.com</a> — we read every message.

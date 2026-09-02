@@ -67,7 +67,7 @@ export default function LandingLayout({ children, title, description, structured
     // Primary
     setMeta('description', pageDescription)
     setMeta('keywords', 'remote support, ITSM, RMM, endpoint management, remote desktop, ticketing, IT helpdesk, consent-first, AI assistant, patch management, IT support platform')
-    setMeta('author', 'Clean IT Ltd')
+    setMeta('author', '34orients Ltd')
     setMeta('robots', 'index, follow')
     setMeta('theme-color', theme === 'dark' ? '#0e1114' : '#f8f9fb')
 
@@ -216,7 +216,7 @@ export default function LandingLayout({ children, title, description, structured
           </div>
         </div>
         <div className="landing-footer-bottom">
-          <span className="muted">&copy; {new Date().getFullYear()} ReyDesk by Clean IT Ltd. All rights reserved.</span>
+          <span className="muted">&copy; {new Date().getFullYear()} ReyDesk by <a href="https://34orients.com" target="_blank" rel="noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>34orients Ltd</a>. All rights reserved.</span>
         </div>
       </footer>
     </div>
