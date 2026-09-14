@@ -236,19 +236,19 @@ export async function recordPlaybookUsage(
   pool: DbPool,
   tenantId: string,
   playbookId: string,
-  success: boolean,
+  succeeded: boolean,
 ): Promise<void> {
   await withTenant(pool, tenantId, async (client) => {
     await client.query(
       `UPDATE ai_playbooks
        SET usage_count = usage_count + 1,
            success_rate = CASE
-             WHEN success THEN (success_rate * usage_count + 1) / (usage_count + 1)
+             WHEN $2 THEN (success_rate * usage_count + 1) / (usage_count + 1)
              ELSE (success_rate * usage_count) / (usage_count + 1)
            END,
            updated_at = now()
        WHERE id = $1`,
-      [playbookId],
+      [playbookId, succeeded],
     )
   })
 }
