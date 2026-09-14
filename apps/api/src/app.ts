@@ -38,6 +38,9 @@ import { createTenantAiProvider, purgeExpiredAiUsage } from './modules/ai/settin
 import { runTicketTriage, setTriageDispatcher } from './modules/ai/triage.js'
 import { aiAgentRoutes } from './modules/ai-agent/ai-agent.routes.js'
 import { aiWorkerRoutes } from './modules/ai-worker/ai-worker.routes.js'
+import { playbookRoutes } from './modules/ai-worker/playbook.routes.js'
+import { governanceRoutes } from './modules/ai-worker/governance.routes.js'
+import { mcpRoutes } from './modules/ai-worker/mcp.js'
 import { chatRoutes } from './modules/chat/chat.routes.js'
 import { chatRealtimeRoutes } from './modules/chat/chat.realtime.js'
 import { adRoutes } from './modules/ad/ad.routes.js'
@@ -394,6 +397,9 @@ export async function buildApp(config: AppConfig): Promise<FastifyInstance> {
     await v1.register(aiRoutes)
     await v1.register(aiAgentRoutes)
     await v1.register(aiWorkerRoutes)
+    await v1.register(playbookRoutes)
+    await v1.register(governanceRoutes)
+    await v1.register(mcpRoutes)
     await v1.register(chatRoutes)
     await v1.register(chatRealtimeRoutes)
     await v1.register(telephonyRoutes)

@@ -165,6 +165,14 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       }),
     )
 
+    // Seed built-in AI playbooks for the new tenant
+    void import('../ai-worker/playbooks.js').then(({ seedBuiltInPlaybooks }) =>
+      seedBuiltInPlaybooks(app.db, tenantId!).catch(() => undefined)
+    )
+    void import('../ai-worker/governance.js').then(({ ensureToolPermissions }) =>
+      ensureToolPermissions(app.db, tenantId!).catch(() => undefined)
+    )
+
     const tokens = await issueTokens(app, user.id)
     return reply
       .code(201)
