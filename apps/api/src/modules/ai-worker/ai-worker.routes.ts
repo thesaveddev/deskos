@@ -32,11 +32,30 @@ export async function aiWorkerRoutes(app: FastifyInstance): Promise<void> {
         count(*)::int AS total,
         count(*) FILTER (WHERE status = 'resolved')::int AS resolved,
         count(*) FILTER (WHERE status = 'handoff')::int AS escalated,
+        count(*) FILTER (WHERE status = 'failed')::int AS failed,
         COALESCE(avg(estimated_manual_minutes) FILTER (WHERE status IN ('resolved','handoff')), 0)::float8 AS estimated_manual_minutes,
-        COALESCE(sum(GREATEST(0, estimated_manual_minutes - COALESCE(actual_minutes, estimated_manual_minutes))) FILTER (WHERE status = 'resolved'), 0)::int AS time_saved_minutes
+        COALESCE(sum(GREATEST(0, estimated_manual_minutes - COALESCE(actual_minutes, estimated_manual_minutes))) FILTER (WHERE status = 'resolved'), 0)::int AS time_saved_minutes,
+        COALESCE(sum(estimated_cost_usd), 0)::numeric AS total_cost_usd,
+        COALESCE(avg(estimated_cost_usd) FILTER (WHERE status = 'resolved'), 0)::numeric AS avg_cost_per_resolution,
+        COALESCE(avg(confidence_score) FILTER (WHERE confidence_score IS NOT NULL), 0)::float8 AS avg_confidence,
+        COALESCE(sum(input_tokens), 0)::int AS total_input_tokens,
+        COALESCE(sum(output_tokens), 0)::int AS total_output_tokens
         FROM ai_worker_runs`)
       const total = Number(rows[0]?.total ?? 0)
-      return { metrics: { total, resolved: Number(rows[0]?.resolved ?? 0), escalated: Number(rows[0]?.escalated ?? 0), resolutionRate: total ? Math.round((Number(rows[0]?.resolved ?? 0) / total) * 1000) / 10 : 0, estimatedManualMinutes: Number(rows[0]?.estimated_manual_minutes ?? 0), timeSavedMinutes: Number(rows[0]?.time_saved_minutes ?? 0) } }
+      return { metrics: {
+        total,
+        resolved: Number(rows[0]?.resolved ?? 0),
+        escalated: Number(rows[0]?.escalated ?? 0),
+        failed: Number(rows[0]?.failed ?? 0),
+        resolutionRate: total ? Math.round((Number(rows[0]?.resolved ?? 0) / total) * 1000) / 10 : 0,
+        estimatedManualMinutes: Number(rows[0]?.estimated_manual_minutes ?? 0),
+        timeSavedMinutes: Number(rows[0]?.time_saved_minutes ?? 0),
+        totalCostUsd: Number(rows[0]?.total_cost_usd ?? 0),
+        avgCostPerResolution: Number(rows[0]?.avg_cost_per_resolution ?? 0),
+        avgConfidence: Number(rows[0]?.avg_confidence ?? 0),
+        totalInputTokens: Number(rows[0]?.total_input_tokens ?? 0),
+        totalOutputTokens: Number(rows[0]?.total_output_tokens ?? 0),
+      } }
     })
   })
 

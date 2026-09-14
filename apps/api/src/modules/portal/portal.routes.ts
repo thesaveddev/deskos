@@ -287,4 +287,58 @@ export async function portalRoutes(app: FastifyInstance): Promise<void> {
 
     return reply.code(result.changed ? 200 : 204).send(result.changed ? { ticket: result.ticket } : undefined)
   })
+
+  /**
+   * Self-service AI worker trigger: the end-user requests AI help on their ticket.
+   * This creates a worker run in the background. The user gets a confirmation
+   * that an AI worker is looking into their issue.
+   */
+  app.post('/portal/tickets/:number/request-ai-help', { preHandler: guards }, async (request, reply) => {
+    const ctx = request.tenantCtx!
+    const { number } = request.params as { number: string }
+
+    const result = await withTenant(app.db, ctx.tenantId, async (client) => {
+      const { rows } = await client.query(
+        `SELECT id, number, subject, status FROM tickets WHERE number = $1 AND requester_id = $2`,
+        [Number(number), request.user!.id],
+      )
+      const ticket = rows[0]
+      if (!ticket) throw AppError.notFound('Ticket not found')
+      if (ticket.status === 'resolved' || ticket.status === 'closed') {
+        throw AppError.badRequest('This ticket is already resolved or closed.')
+      }
+      // Check if a worker is already running
+      const active = await client.query(
+        `SELECT 1 FROM ai_worker_runs WHERE tenant_id = $1 AND ticket_id = $2 AND status IN ('queued','running','waiting_approval','waiting_action')`,
+        [ctx.tenantId, ticket.id],
+      )
+      if (active.rows[0]) {
+        return { ticket, alreadyRunning: true }
+      }
+      return { ticket, alreadyRunning: false }
+    })
+
+    if (result.alreadyRunning) {
+      return reply.send({ message: 'An AI worker is already looking into your ticket.', ticket_number: result.ticket.number })
+    }
+
+    // Fire the worker in the background (don't block the response)
+    const { createWorkerRun } = await import('../ai-worker/engine.js')
+    const { createTenantAiProvider } = await import('../ai/settings.js')
+    const tenantAi = await createTenantAiProvider(app.db, app.config, ctx.tenantId, app.aiProvider, Boolean(app.aiProvider)).catch(() => null)
+    if (tenantAi) {
+      void createWorkerRun(app.db, ctx.tenantId, result.ticket.id, request.user!.id, {
+        pool: app.db,
+        provider: tenantAi.provider,
+        model: tenantAi.model,
+        webhookKey: app.config.emailKey,
+        config: app.config,
+      }, { triggerType: 'ticket' }).catch(() => undefined)
+    }
+
+    return reply.send({
+      message: 'An AI worker has been notified and is looking into your issue. You will be notified when it is resolved.',
+      ticket_number: result.ticket.number,
+    })
+  })
 }

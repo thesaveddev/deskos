@@ -6,6 +6,7 @@ import type { AiProvider } from '../ai/gateway.js'
 import { getWorkerTool, workerToolCatalogForPrompt, type WorkerStep } from './tools.js'
 import { buildWorkerContext } from './context.js'
 import { emitWebhookEvent } from '../webhooks/webhooks.js'
+import { logAiActivity } from './governance.js'
 import type { AppConfig } from '../../config.js'
 
 export const WORKER_RUN_STATUSES = ['queued', 'running', 'waiting_approval', 'waiting_action', 'resolved', 'handoff', 'failed', 'cancelled'] as const
@@ -348,6 +349,16 @@ export async function createWorkerRun(
     )
     return rows[0]
   })
+  // Log run creation for governance
+  void logAiActivity(pool, tenantId, {
+    actor_type: 'worker',
+    actor_id: actorId,
+    action: 'run_created',
+    resource_type: 'ai_worker_run',
+    resource_id: run.id,
+    data_accessed: { ticketId, triggerType: options.triggerType ?? 'manual' },
+    success: true,
+  })
   // Fire the first planning turn; the caller does not block on the LLM.
   void advanceRun(pool, tenantId, run.id, 'plan', deps).catch((err) => {
     // Surface failures on the run row so the UI can show them.
@@ -505,17 +516,44 @@ async function execStep(
   }
 
   // Execute the tool inside the tenant transaction.
+  const stepStartTime = Date.now()
   try {
     steps[index] = { ...step, status: 'running', startedAt: new Date().toISOString() }
     await writeRunSteps(pool, tenantId, run.id, steps, 'running')
     const result = await withTenant(pool, tenantId, async (client) => {
       return tool.run({ client, tenantId, ticketId: run.ticket_id, deviceId: run.device_id, runId: run.id }, step.toolArgs)
     })
+    const stepDuration = Date.now() - stepStartTime
     steps[index] = { ...steps[index], status: 'succeeded', result, finishedAt: new Date().toISOString() }
     await writeRunSteps(pool, tenantId, run.id, steps, 'running')
+    // Log activity for governance dashboard
+    void logAiActivity(pool, tenantId, {
+      actor_type: 'worker',
+      actor_id: run.created_by ?? undefined,
+      action: 'tool_executed',
+      tool_name: step.tool,
+      resource_type: 'ticket',
+      resource_id: run.ticket_id ?? undefined,
+      data_accessed: { toolArgs: step.toolArgs, resultKeys: result ? Object.keys(result) : [] },
+      duration_ms: stepDuration,
+      success: true,
+    })
   } catch (err) {
+    const stepDuration = Date.now() - stepStartTime
     steps[index] = { ...steps[index], status: 'failed', error: err instanceof Error ? err.message : 'tool failed', finishedAt: new Date().toISOString() }
     await writeRunSteps(pool, tenantId, run.id, steps, 'running')
+    // Log failed activity
+    void logAiActivity(pool, tenantId, {
+      actor_type: 'worker',
+      actor_id: run.created_by ?? undefined,
+      action: 'tool_failed',
+      tool_name: step.tool,
+      resource_type: 'ticket',
+      resource_id: run.ticket_id ?? undefined,
+      duration_ms: stepDuration,
+      success: false,
+      error_message: err instanceof Error ? err.message : 'unknown error',
+    })
     // A failed or denied step means we should not auto-resolve.
     await handRun(pool, tenantId, run.id, `A worker step (${step.tool}) failed: ${err instanceof Error ? err.message : 'unknown error'}`, deps)
     return
@@ -572,18 +610,29 @@ async function finalizeRun(
       `Run summary: ${run.summary}`,
       'Steps and results:',
       JSON.stringify(steps.map((s) => ({ tool: s.tool, result: s.result, status: s.status }))),
-      'If the steps applied a real fix, respond with {"action":"resolve","message":"<public message to the requester>"}.',
-      'Otherwise respond with {"action":"handoff","reason":"<why a human is needed>"}.',
+      'If the steps applied a real fix, respond with {"action":"resolve","message":"<public message to the requester>","confidence":0.0-1.0}.',
+      'Otherwise respond with {"action":"handoff","reason":"<why a human is needed>","confidence":0.0-1.0}.',
+      'Confidence should reflect how certain you are about the outcome based on the evidence.',
       'Respond with ONLY that JSON object.',
     ].join('\n')
-    let decision: { action: 'resolve' | 'handoff'; message?: string; reason?: string } | null = null
+    let decision: { action: 'resolve' | 'handoff'; message?: string; reason?: string; confidence?: number } | null = null
     try {
       const raw = await generateWithRetry(deps.provider, outcomePrompt, { maxTokens: 300, operation: 'ai_worker.finalize' })
       const parsed = parseJsonObject(raw)
       if (parsed && (parsed.action === 'resolve' || parsed.action === 'handoff')) {
-        decision = { action: parsed.action, message: typeof parsed.message === 'string' ? parsed.message : undefined, reason: typeof parsed.reason === 'string' ? parsed.reason : undefined }
+        decision = {
+          action: parsed.action,
+          message: typeof parsed.message === 'string' ? parsed.message : undefined,
+          reason: typeof parsed.reason === 'string' ? parsed.reason : undefined,
+          confidence: typeof parsed.confidence === 'number' ? Math.max(0, Math.min(1, parsed.confidence)) : 0.5,
+        }
       }
     } catch { /* fall back to handoff */ }
+    // Record confidence score on the run
+    const confidenceScore = decision?.confidence ?? 0.5
+    await withTenant(pool, tenantId, async (client) => {
+      await client.query('UPDATE ai_worker_runs SET confidence_score = $2 WHERE id = $1', [run.id, confidenceScore])
+    })
     if (decision?.action === 'resolve' && decision.message) {
       await applyResolve(pool, tenantId, run, { message: decision.message }, deps)
     } else {
