@@ -1578,3 +1578,20 @@
 .pill-read { background: var(--bg-2); color: var(--text-2); border: 1px solid var(--line-1); }
 .pill-low { background: color-mix(in srgb, var(--accent, #47003a) 10%, transparent); color: var(--accent, #47003a); border: 1px solid color-mix(in srgb, var(--accent, #47003a) 30%, transparent); }
 .pill-high { background: color-mix(in srgb, #b3261e 10%, transparent); color: #b3261e; border: 1px solid color-mix(in srgb, #b3261e 30%, transparent); }
+
+/* ---- onboarding wizard ---- */
+.onboarding-overlay { position: fixed; inset: 0; z-index: 300; background: rgba(0, 0, 0, 0.7); display: flex; align-items: center; justify-content: center; padding: 24px; }
+.onboarding-panel { width: 100%; max-width: 480px; background: var(--bg-1); border: 1px solid var(--line-2); border-radius: 12px; overflow: hidden; box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5); }
+.onboarding-progress { height: 3px; background: var(--bg-2); }
+.onboarding-progress-bar { height: 100%; background: var(--accent); transition: width 300ms ease; }
+.onboarding-content { padding: 40px 32px 32px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.onboarding-icon { display: flex; align-items: center; justify-content: center; width: 56px; height: 56px; border-radius: 14px; background: color-mix(in srgb, var(--accent) 12%, var(--bg-2)); border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--line-1)); color: var(--accent); margin-bottom: 8px; }
+.onboarding-title { font-size: 20px; font-weight: 650; letter-spacing: -0.02em; }
+.onboarding-description { color: var(--text-2); font-size: 14px; line-height: 1.6; margin: 0; max-width: 360px; }
+.onboarding-nav { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; border-top: 1px solid var(--line-1); }
+.onboarding-nav-right { display: flex; gap: 8px; }
+.onboarding-dots { display: flex; justify-content: center; gap: 6px; padding: 0 24px 16px; }
+.onboarding-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--line-2); transition: background 200ms ease; }
+.onboarding-dot.active { background: var(--accent); width: 18px; border-radius: 3px; }
+.onboarding-dot.done { background: var(--ok); }
+@media (max-width: 520px) { .onboarding-panel { max-width: 100%; } .onboarding-content { padding: 32px 20px 24px; } }

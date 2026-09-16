@@ -10,6 +10,8 @@ import { listDevices, type Device } from '../lib/devices.js'
 import { listSessions, type RemoteSession } from '../lib/sessions.js'
 import { listMyApprovals, type Approval } from '../lib/catalogue.js'
 import { listIncidents, type MajorIncident } from '../lib/incidents.js'
+import { getOnboardingStatus } from '../lib/onboarding.js'
+import { OnboardingWizard } from '../components/OnboardingWizard.js'
 
 /* ── Role helpers ──────────────────────────────────────────────── */
 
@@ -345,6 +347,7 @@ export default function HomePage() {
   const [approvals, setApprovals] = useState<Approval[]>([])
   const [loading, setLoading] = useState(true)
   const [quickTicketOpen, setQuickTicketOpen] = useState(false)
+  const [showOnboarding, setShowOnboarding] = useState(false)
 
   const myRole = useMemo(() => {
     return auth.memberships.find((m) => m.tenant.id === auth.activeTenantId)?.orgRole || 'end_user'
@@ -376,6 +379,12 @@ export default function HomePage() {
         if (results[4].status === 'fulfilled') setSessions((results[4].value as any).sessions || [])
         if (results[5].status === 'fulfilled') setIncidents((results[5].value as any).incidents || [])
         if (results[6].status === 'fulfilled') setApprovals((results[6].value as any).approvals || [])
+
+        // Check onboarding status
+        try {
+          const onboarding = await getOnboardingStatus()
+          if (!onboarding.completed) setShowOnboarding(true)
+        } catch { /* ignore */ }
       } catch {
         /* partial load is fine */
       } finally {
@@ -435,6 +444,7 @@ export default function HomePage() {
         <EndUserDashboard myTickets={myTickets} onNewTicket={() => setQuickTicketOpen(true)} />
       )}
       <QuickTicketModal open={quickTicketOpen} onClose={() => setQuickTicketOpen(false)} />
+      {showOnboarding && <OnboardingWizard onComplete={() => setShowOnboarding(false)} />}
     </Shell>
   )
 }
