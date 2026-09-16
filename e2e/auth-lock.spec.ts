@@ -84,6 +84,7 @@ async function mockDeskOsApi(page: Page, options: { mfa?: boolean; authenticated
     if (path.startsWith('/sessions')) return json(route, { sessions: [], total: 0, nextCursor: null })
     if (path.startsWith('/incidents')) return json(route, { incidents: [] })
     if (path.startsWith('/approvals')) return json(route, { approvals: [] })
+    if (path === '/onboarding') return json(route, { completed: true, step: null, completedAt: null })
 
     // Unused shell requests should not turn this into an integration test.
     return json(route, {})
