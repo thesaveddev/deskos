@@ -28,6 +28,7 @@ export async function logAiActivity(
   tenantId: string,
   entry: ActivityLogEntry,
 ): Promise<void> {
+  try {
   await withTenant(pool, tenantId, async (client) => {
     await client.query(
       `INSERT INTO ai_activity_log
@@ -52,6 +53,7 @@ export async function logAiActivity(
       ],
     )
   })
+  } catch { /* best-effort: don't let activity logging crash the caller */ }
 }
 
 export interface ActivityLogFilters {
