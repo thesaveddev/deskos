@@ -84,6 +84,9 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
+          accept-android-sdk-licenses: true
 
       - name: Build release APK
         env:
@@ -169,7 +172,7 @@ jobs:
           path: artifacts/windows
 
       - name: Download Android agent APK when available
-        if: ${{ needs.build-android-agent.result == 'success' }}
+        if: ${{ false }}
         uses: actions/download-artifact@v4
         with:
           name: reydesk-android-apk
@@ -179,7 +182,7 @@ jobs:
         run: cp artifacts/windows/reydesk-helper.exe ./reydesk-helper.exe
 
       - name: Stage APK for upload when available
-        if: ${{ needs.build-android-agent.result == 'success' }}
+        if: ${{ false }}
         run: cp artifacts/android/reydesk-agent.apk ./reydesk-agent.apk
 
       - name: Prepare helper directories on VPS
@@ -202,7 +205,7 @@ jobs:
           target: /root/reydesk-app/artifacts/windows
 
       - name: Upload Android agent APK to VPS when available
-        if: ${{ needs.build-android-agent.result == 'success' }}
+        if: ${{ false }}
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.VPS_HOST }}
