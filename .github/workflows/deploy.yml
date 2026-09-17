@@ -61,6 +61,9 @@ jobs:
     name: Build Android agent APK
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Android is an optional artifact. Keep a toolchain/licensing failure from
+    # turning a successful web/API/Windows deployment red.
+    continue-on-error: true
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.head_branch == 'master' && github.event.workflow_run.conclusion == 'success') }}
     steps:
       - name: Checkout tested revision
