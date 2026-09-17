@@ -2,11 +2,11 @@ import { Link } from 'react-router-dom'
 import LandingLayout from '../components/LandingLayout'
 import { Icon, type IconName } from '../components/Icons'
 
-const STATS = [
-  { number: '<30s', label: 'to connect to a device' },
-  { number: '3', label: 'technicians free, forever' },
-  { number: '100%', label: 'consent-enforced sessions' },
-  { number: '0', label: 'monthly fees on the free tier' },
+const PROOF_POINTS = [
+  { number: 'One', label: 'console for support, tickets, and devices' },
+  { number: 'Every', label: 'remote session starts with consent' },
+  { number: 'Free', label: 'workspace for up to 3 technicians' },
+  { number: 'Built-in', label: 'audit trail for the work you do' },
 ]
 
 const HIGHLIGHTS: { icon: IconName; title: string; body: string }[] = [
@@ -63,29 +63,29 @@ const DEPLOYMENTS = [
 export default function LandingPage() {
   return (
     <LandingLayout
-      title="ReyDesk — Remote Support, Endpoint Management & Ticketing"
-      description="One app for remote desktop support, device management, and IT tickets. Consent-first. Self-hostable. No vendor lock-in."
+      title="ReyDesk — Remote Support, ITSM & Endpoint Management"
+      description="Give technicians one console for remote support, ticketing, device health, and governed AI assistance. Start free with no credit card."
     >
       {/* ---- hero ---- */}
       <section className="landing-hero">
         <div className="landing-hero-inner">
           <span className="landing-kicker landing-animate">Remote support · RMM · Ticketing</span>
           <h1 className="landing-title landing-animate landing-animate-delay-1">
-            Fix things remotely.<br />Track everything.
+            Resolve support work<br />without the tool sprawl.
           </h1>
           <p className="landing-sub landing-animate landing-animate-delay-2">
-            ReyDesk gives your IT team remote desktop access, device monitoring, and a ticketing system in one app. Every session requires user consent. Every action is logged. Your data stays in your region.
+            ReyDesk brings remote support, ticketing, device health, and governed AI into one technician console. Start with the queue, jump into a consented session, and leave a clear record of the work.
           </p>
           <div className="landing-cta landing-animate landing-animate-delay-3">
             <Link className="btn btn-primary" to="/signup" style={{ height: 44, padding: '0 28px', fontSize: 15 }}>
-              Start free
+              Start your free workspace
             </Link>
             <Link className="btn btn-ghost" to="/features" style={{ height: 44, padding: '0 28px', fontSize: 15 }}>
-              See what it does
+              See how it works
             </Link>
           </div>
           <p className="landing-sub landing-animate landing-animate-delay-3" style={{ fontSize: 13, marginBottom: 0, marginTop: 12 }}>
-            Free for up to 3 technicians. No credit card.
+            Free for up to 3 technicians. No credit card. Upgrade only when the team needs more.
           </p>
         </div>
 
@@ -95,7 +95,7 @@ export default function LandingPage() {
             <span className="landing-dot" style={{ background: 'var(--crit)' }} />
             <span className="landing-dot" style={{ background: 'var(--warn)' }} />
             <span className="landing-dot" style={{ background: 'var(--ok)' }} />
-            <span className="landing-console-title mono">ReyDesk — technician console</span>
+            <span className="landing-console-title mono">ReyDesk — illustrative technician console</span>
           </div>
           <div className="landing-console-body">
             <div className="landing-console-rail">
@@ -123,28 +123,15 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ---- stats ---- */}
-      <section className="landing-stats">
-        <div className="landing-stats-grid">
-          {STATS.map((s) => (
-            <div key={s.label} className="landing-stat-block">
-              <span className="landing-stat-number">{s.number}</span>
-              <span className="landing-stat-label">{s.label}</span>
+      {/* ---- proof points ---- */}
+      <section className="landing-proof" aria-label="ReyDesk at a glance">
+        <div className="landing-proof-grid">
+          {PROOF_POINTS.map((point) => (
+            <div key={point.label} className="landing-proof-card">
+              <strong>{point.number}</strong>
+              <span>{point.label}</span>
             </div>
           ))}
-        </div>
-      </section>
-
-      {/* ---- trust logos ---- */}
-      <section className="landing-trust">
-        <div className="landing-trust-inner">
-          <p className="landing-trust-label">Used by IT teams at</p>
-          <div className="landing-trust-logos">
-            <span className="landing-trust-logo">Digital Start</span>
-            <span className="landing-trust-logo">Medic Care</span>
-            <span className="landing-trust-logo">ReyDesk</span>
-            <span className="landing-trust-logo">Loadly Group</span>
-          </div>
         </div>
       </section>
 
@@ -168,6 +155,34 @@ export default function LandingPage() {
         </div>
         <div style={{ textAlign: 'center', marginTop: 28 }}>
           <Link className="btn btn-ghost" to="/features">Full feature list →</Link>
+        </div>
+      </section>
+
+      {/* ---- retention loop ---- */}
+      <section className="landing-section landing-section-alt">
+        <div className="landing-section-head">
+          <span className="landing-kicker">The daily workflow</span>
+          <h2 className="landing-h2">Keep the context after the call ends.</h2>
+          <p className="landing-section-sub">
+            ReyDesk is useful every day, not only when a customer needs remote control. The same workspace carries work from first alert to verified resolution.
+          </p>
+        </div>
+        <div className="landing-workflow" aria-label="The ReyDesk support workflow">
+          <article className="landing-workflow-step">
+            <span className="landing-workflow-number">01</span>
+            <h3>See the signal</h3>
+            <p>Tickets, device alerts, SLA risk, and approvals arrive in one queue.</p>
+          </article>
+          <article className="landing-workflow-step">
+            <span className="landing-workflow-number">02</span>
+            <h3>Take the right action</h3>
+            <p>Open a consented session, use a playbook, or route the work to the right team.</p>
+          </article>
+          <article className="landing-workflow-step">
+            <span className="landing-workflow-number">03</span>
+            <h3>Leave the record</h3>
+            <p>Resolution notes, audit events, device context, and knowledge stay attached to the work.</p>
+          </article>
         </div>
       </section>
 
@@ -231,8 +246,9 @@ export default function LandingPage() {
             We built ReyDesk to replace that stack. One app. One database. One login. Remote sessions, tickets, devices, automation, knowledge base, patch tracking — sharing the same data and the same audit chain.
           </p>
           <p>
-            We think the important things are: your data stays in your region with full encryption, every remote session requires explicit consent (no way around it), and the audit log is tamper-evident (so you can actually trust it).
+            We think the important things are: remote sessions require explicit consent, technicians have the context they need, and the audit trail makes the work explainable after the fact.
           </p>
+
           <p>
             The AI features are useful but optional. They suggest, you decide. Nothing runs without approval.
           </p>
@@ -245,25 +261,47 @@ export default function LandingPage() {
           <span className="landing-kicker">Pricing</span>
           <h2 className="landing-h2">No surprises.</h2>
           <p className="landing-section-sub">
-            Free for 3 technicians. Paid plans scale with your team.
+            Start free, then scale when your team and device estate grow.
           </p>
         </div>
         <div className="pricing-preview-grid">
           <article className="landing-feature">
             <h3>Free</h3>
-            <p>3 technicians, 100 devices. Remote support, ticketing, knowledge base. No time limit.</p>
+            <p>Up to 3 technicians and 100 devices. Remote support, ticketing, and knowledge base with no time limit.</p>
           </article>
           <article className="landing-feature gradient-border">
             <h3 style={{ color: 'var(--accent)' }}>Pro — $79/tech/mo</h3>
-            <p>Unlimited technicians, 500 devices. Full RMM, AI assistant, patch management, automations.</p>
+            <p>Unlimited technicians and 500 devices. Full RMM, governed AI assistance, patch management, and automations.</p>
           </article>
           <article className="landing-feature">
             <h3>Enterprise</h3>
-            <p>Custom pricing. Multi-tenant MSP, SSO, dedicated support, and custom SLAs.</p>
+            <p>Custom pricing for MSPs and larger teams that need multi-tenant controls, SSO, and dedicated support.</p>
           </article>
         </div>
         <div style={{ textAlign: 'center', marginTop: 28 }}>
           <Link className="btn btn-ghost" to="/pricing">Compare plans →</Link>
+        </div>
+      </section>
+
+      {/* ---- FAQ ---- */}
+      <section className="landing-section landing-section-alt" id="faq">
+        <div className="landing-section-head">
+          <span className="landing-kicker">Before you start</span>
+          <h2 className="landing-h2">Straight answers.</h2>
+        </div>
+        <div className="landing-faq landing-faq-compact">
+          <details className="landing-faq-item">
+            <summary className="landing-faq-q">Is ReyDesk hosted or self-hosted?</summary>
+            <p className="landing-faq-a">ReyDesk is currently delivered as a hosted service. Create a workspace in about a minute and upgrade as your team grows.</p>
+          </details>
+          <details className="landing-faq-item">
+            <summary className="landing-faq-q">How does remote support work?</summary>
+            <p className="landing-faq-a">The endpoint user downloads the ReyDesk helper, enters the support code from the technician, reviews the requested permissions, and gives consent before the session starts.</p>
+          </details>
+          <details className="landing-faq-item">
+            <summary className="landing-faq-q">Is there a free plan?</summary>
+            <p className="landing-faq-a">Yes. The free workspace supports up to 3 technicians and 100 devices. No credit card is required to start.</p>
+          </details>
         </div>
       </section>
 
@@ -275,10 +313,10 @@ export default function LandingPage() {
         </p>
         <div className="landing-cta">
           <Link className="btn btn-primary" to="/signup" style={{ height: 44, padding: '0 28px', fontSize: 15 }}>
-            Get started
+            Start your free workspace
           </Link>
-          <Link className="btn btn-ghost" to="/features" style={{ height: 44, padding: '0 28px', fontSize: 15 }}>
-            See the features
+          <Link className="btn btn-ghost" to="/contact" style={{ height: 44, padding: '0 28px', fontSize: 15 }}>
+            Talk to our team
           </Link>
         </div>
       </section>
