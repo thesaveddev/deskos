@@ -12,6 +12,7 @@ import { Icon } from './Icons.js'
 import { readSessionDock, sessionDockEventName, type SessionDockEntry } from '../lib/sessions.js'
 import { listNotifications, markNotificationsRead, openNotificationStream, type AppNotification } from '../lib/notifications.js'
 import { BRAND } from '../lib/brand.js'
+import { dismissTicketReminder, listTicketReminders, updateTicketReminder, type TicketReminder } from '../lib/tickets.js'
 
 function tenantColor(id?: string): string {
   if (!id) return 'var(--accent)'
@@ -253,6 +254,8 @@ export function Shell({ children }: { children: ReactNode }) {
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [notifications, setNotifications] = useState<AppNotification[]>([])
   const [notificationsLoading, setNotificationsLoading] = useState(false)
+  const [reminderAlert, setReminderAlert] = useState<{ notification: AppNotification; reminder: TicketReminder } | null>(null)
+  const [reminderActionBusy, setReminderActionBusy] = useState(false)
   const [quickTicketOpen, setQuickTicketOpen] = useState(false)
   const [showSessionKey, setShowSessionKey] = useState(false)
   const [sessionKey, setSessionKey] = useState<string | null>(null)
@@ -336,6 +339,7 @@ export function Shell({ children }: { children: ReactNode }) {
       onConnected: () => void loadNotifications(),
       onNotification: (notification) => {
         setNotifications((items) => [notification, ...items.filter((item) => item.id !== notification.id)].slice(0, 100))
+        void showReminderAlert(notification)
       },
     })
     // Safety nets on top of the SSE stream: a slow refresh keeps the badge
@@ -351,6 +355,8 @@ export function Shell({ children }: { children: ReactNode }) {
       window.clearInterval(fallbackTimer)
       document.removeEventListener('visibilitychange', onVisibility)
     }
+  // showReminderAlert is stable and is declared below with the other actions.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auth.activeTenantId, auth.user?.id, loadNotifications])
 
   const unreadNotifications = notifications.filter((notification) => !notification.read_at)
@@ -362,6 +368,44 @@ export function Shell({ children }: { children: ReactNode }) {
       void loadNotifications()
     }
   }
+  const showReminderAlert = useCallback(async (notification: AppNotification) => {
+    if (notification.kind !== 'ticket.reminder' || !notification.subject_id) return
+    try {
+      const result = await listTicketReminders(notification.subject_id)
+      const reminder = result.reminders.find((item) => Boolean(item.fired_at && !item.dismissed_at))
+      if (reminder) setReminderAlert({ notification, reminder })
+    } catch {
+      // The notification bell remains the fallback if the ticket is no longer readable.
+    }
+  }, [])
+
+  const snoozeReminderAlert = async () => {
+    if (!reminderAlert || reminderActionBusy) return
+    setReminderActionBusy(true)
+    try {
+      await updateTicketReminder(reminderAlert.reminder.id, { dueAt: new Date(Date.now() + 30 * 60 * 1000).toISOString() })
+      setReminderAlert(null)
+    } finally {
+      setReminderActionBusy(false)
+    }
+  }
+
+  const dismissReminderAlert = async () => {
+    if (!reminderAlert || reminderActionBusy) return
+    setReminderActionBusy(true)
+    try {
+      await dismissTicketReminder(reminderAlert.reminder.id)
+      setReminderAlert(null)
+    } finally {
+      setReminderActionBusy(false)
+    }
+  }
+
+  useEffect(() => {
+    const due = notifications.find((notification) => notification.kind === 'ticket.reminder' && !notification.read_at)
+    if (due && !reminderAlert) void showReminderAlert(due)
+  }, [notifications, reminderAlert, showReminderAlert])
+
   const markAllNotificationsRead = async () => {
     if (unreadNotifications.length === 0) return
     setNotifications((items) => items.map((item) => ({ ...item, read_at: item.read_at ?? new Date().toISOString() })))
@@ -614,6 +658,20 @@ export function Shell({ children }: { children: ReactNode }) {
           </div>
         ) : null}
         <main className="app-content" id="main-content" tabIndex={-1}>{children}</main>
+        {reminderAlert ? (
+          <aside className="global-reminder-flyout" role="alert" aria-live="assertive">
+            <div className="global-reminder-head">
+              <Icon name="bell" size={18} />
+              <div><strong>Reminder due</strong><span>{reminderAlert.reminder.note || `Follow up on ticket #${reminderAlert.reminder.ticket_number}`}</span></div>
+              <button type="button" className="btn btn-ghost btn-xs" onClick={() => void dismissReminderAlert()} disabled={reminderActionBusy}>Dismiss</button>
+            </div>
+            <div className="global-reminder-meta mono">#{reminderAlert.reminder.ticket_number} · {reminderAlert.reminder.ticket_subject}</div>
+            <div className="global-reminder-actions">
+              <button type="button" className="btn btn-primary btn-sm" onClick={() => void snoozeReminderAlert()} disabled={reminderActionBusy}>{reminderActionBusy ? 'Saving…' : 'Snooze 30 min'}</button>
+              <Link className="btn btn-ghost btn-sm" to={`/tickets/${reminderAlert.reminder.ticket_id}`} onClick={() => setReminderAlert(null)}>Open ticket</Link>
+            </div>
+          </aside>
+        ) : null}
         <QuickTicketModal open={quickTicketOpen} onClose={() => setQuickTicketOpen(false)} />
       </div>
     </div>

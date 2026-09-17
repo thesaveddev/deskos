@@ -158,7 +158,6 @@ export default function TicketDetailPage() {
   const [reminderNote, setReminderNote] = useState('')
   const [reminderDue, setReminderDue] = useState('')
   const [reminderBusy, setReminderBusy] = useState(false)
-  const [dueReminder, setDueReminder] = useState<TicketReminder | null>(null)
 
   const canUseAi = useAuth((state) => state.memberships.some((m) => m.permissions.includes('ai.use')))
   const canOverrideTicketLock = auth.memberships.some((m) => m.permissions.includes('settings.manage'))
@@ -250,16 +249,6 @@ export default function TicketDetailPage() {
     if (!id || !canUseAi) return
     getTriageState(id).then((result) => setAiTriage(result.triage)).catch(() => setAiTriage(null))
   }, [id, canUseAi])
-
-  useEffect(() => {
-    const checkDueReminder = () => {
-      const due = reminders.find((reminder) => Boolean(reminder.fired_at && !reminder.dismissed_at)) ?? null
-      setDueReminder(due)
-    }
-    checkDueReminder()
-    const interval = window.setInterval(checkDueReminder, 15_000)
-    return () => window.clearInterval(interval)
-  }, [reminders])
 
   useEffect(() => {
     if (!id) return
@@ -387,7 +376,8 @@ export default function TicketDetailPage() {
   const assignedToMe = ticket.assignee_id === auth.user?.id
   const otherViewers = viewers.filter((viewer) => viewer.user_id !== auth.user?.id)
   const blockedByAnotherViewer = assignedToMe && otherViewers.length > 0 && !lockIsMine && !canOverrideTicketLock
-  const readOnlyForLock = Boolean((ticketLock && !lockIsMine && !canOverrideTicketLock) || blockedByAnotherViewer)
+  const readOnlyForLock = ticket.status === 'closed' || Boolean((ticketLock && !lockIsMine && !canOverrideTicketLock) || blockedByAnotherViewer)
+  const ticketIsClosed = ticket.status === 'closed'
   const blockingName = ticketLock?.locked_by_name ?? ticketLock?.locked_by_email ?? otherViewers[0]?.name ?? otherViewers[0]?.email ?? 'Another agent'
   // Pulse the padlock while another agent is waiting for me to release the
   // lock, and while my own release request is still awaiting a response.
@@ -936,13 +926,6 @@ export default function TicketDetailPage() {
         </div>
 
         {/* Legacy inline action panels removed; action forms now render as anchored dropdowns. */}
-        {dueReminder ? (
-          <aside className="ticket-reminder-flyout" role="alert" aria-live="assertive">
-            <div className="ticket-reminder-flyout-head"><Icon name="bell" size={18} /><div><strong>Reminder due</strong><span>{dueReminder.note || 'Follow up on this ticket'}</span></div><button className="btn btn-ghost btn-xs" onClick={() => void handleDismissReminder(dueReminder)} aria-label="Dismiss reminder">Dismiss</button></div>
-            <div className="ticket-reminder-flyout-actions"><button className="btn btn-primary btn-sm" onClick={() => void handleSnoozeReminder(dueReminder)}>Snooze 30 min</button><Link className="btn btn-ghost btn-sm" to="#ticket-timeline">Open ticket</Link></div>
-          </aside>
-        ) : null}
-
         {/* Escalation history */}
           <div className="ticket-escalation-history">
             <span className="etch">Escalation history</span>
@@ -954,104 +937,10 @@ export default function TicketDetailPage() {
               </div>
             ))}
           </div>
-        {/* Removed stale inline action-panel fragment. */}
-        {false && (
-          <div className="ticket-escalate-form">
-            <h4 className="ticket-escalate-title">Escalate ticket</h4>
-            <p className="ticket-escalate-hint">Raise to a higher-level team with a reason. This bumps the escalation level and records a permanent entry in the escalation history.</p>
-            {escPaths.length > 0 ? (
-              <div className="ticket-escalation-paths">
-                <span className="etch">Recommended routes</span>
-                {escPaths.map((path) => (
-                  <button type="button" key={path.id} className={`ticket-escalation-path${escTeam === path.target_team_id ? ' active' : ''}`} onClick={() => chooseEscalationPath(path)}>
-                    <span className="ticket-escalation-path-name">{path.name}</span>
-                    <span className="ticket-escalation-path-target">→ {path.target_team_name || 'team'}</span>
-                  </button>
-                ))}
-              </div>
-            ) : escPathsLoaded ? <div className="muted">No escalation routes match this ticket. Choose a team below.</div> : null}
-            <select className="field-input select-sm" value={escTeam} onChange={(e) => setEscTeam(e.target.value)}>
-              <option value="">Keep current team</option>
-              {teams.filter((t) => t.accepts_tickets !== false).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
-            <textarea className="field-input" placeholder="Reason for escalation (required)" value={escReason} onChange={(e) => setEscReason(e.target.value)} rows={2} />
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <button className="btn btn-primary btn-sm" onClick={() => void handleEscalate()} disabled={escBusy || !escReason.trim()}>
-                {escBusy ? 'Escalating…' : 'Escalate'}
-              </button>
-              <button className="btn btn-ghost btn-sm" onClick={() => setShowEscalate(false)}>Cancel</button>
-            </div>
-          </div>
-        )}
-
-        {/* Forward form */}
-        {showForward && (
-          <div className="ticket-escalate-form">
-            <h4 className="ticket-escalate-title">Forward to another team</h4>
-            <p className="ticket-escalate-hint">Hand this ticket to the correct team. No escalation level is raised and no escalation history entry is written — this is a simple hand-off.</p>
-            <select className="field-input select-sm" value={fwdTeam} onChange={(e) => setFwdTeam(e.target.value)}>
-              <option value="">Select a team…</option>
-              {teams.filter((t) => t.accepts_tickets !== false).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
-            <textarea className="field-input" placeholder="Note (optional)" value={fwdNote} onChange={(e) => setFwdNote(e.target.value)} rows={2} />
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <button className="btn btn-primary btn-sm" onClick={() => void handleForward()} disabled={fwdBusy || !fwdTeam}>
-                {fwdBusy ? 'Forwarding…' : 'Forward'}
-              </button>
-              <button className="btn btn-ghost btn-sm" onClick={() => setShowForward(false)}>Cancel</button>
-            </div>
-          </div>
-        )}
-
-        {showReminder && (
-          <div className="ticket-escalate-form">
-            <h4 className="ticket-escalate-title">Set a reminder</h4>
-            <p className="ticket-escalate-hint">Remind yourself to follow up on this ticket later — when the user asks for a call-back, or you're waiting on an install to finish.</p>
-            <div className="form-row">
-              <div className="field">
-                <span className="field-label">When</span>
-                <input className="field-input" type="datetime-local" value={reminderDue} onChange={(e) => setReminderDue(e.target.value)} />
-              </div>
-              <div className="field" style={{ flex: 2 }}>
-                <span className="field-label">Note</span>
-                <input className="field-input" value={reminderNote} onChange={(e) => setReminderNote(e.target.value)} placeholder="e.g. Call back about VPN access" maxLength={500} />
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <button className="btn btn-primary btn-sm" onClick={() => void handleCreateReminder()} disabled={reminderBusy || !reminderDue}>
-                {reminderBusy ? 'Saving…' : 'Set reminder'}
-              </button>
-              <button className="btn btn-ghost btn-sm" onClick={() => setShowReminder(false)}>Cancel</button>
-            </div>
-            {reminders.length > 0 ? (
-              <div className="ticket-reminder-list">
-                <span className="etch">Your reminders on this ticket</span>
-                {reminders.map((r) => {
-                  const fired = Boolean(r.fired_at && !r.dismissed_at)
-                  const dismissed = Boolean(r.dismissed_at)
-                  return (
-                    <div key={r.id} className={`ticket-reminder-row${fired ? ' fired' : ''}${dismissed ? ' dismissed' : ''}`}>
-                      <div className="ticket-reminder-main">
-                        <strong>{formatWhen(r.due_at)}</strong>
-                        <span>{r.note || 'Follow up on this ticket'}</span>
-                      </div>
-                      <div className="ticket-reminder-actions">
-                        {fired ? <span className="status-pill status-warn">Due now</span> : null}
-                        {dismissed ? <span className="status-pill">Dismissed</span> : null}
-                        {!dismissed ? <button className="btn btn-ghost btn-xs" onClick={() => void handleSnoozeReminder(r)}>Snooze 30m</button> : null}
-                        {!dismissed ? <button className="btn btn-ghost btn-xs" onClick={() => void handleDismissReminder(r)}>Dismiss</button> : null}
-                        <button className="btn btn-ghost btn-xs" onClick={() => void handleDeleteReminder(r)} title="Delete"><Icon name="close" size={12} /></button>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            ) : null}
-          </div>
-        )}
       </div>
 
       {error ? <Alert kind="error">{error}</Alert> : null}
+      {ticketIsClosed ? <div className="ticket-closed-notice" role="status"><Icon name="lock" size={15} /><span>This ticket is closed and read-only. Reopen it before making changes.</span></div> : null}
 
       {/* Lock, viewer, and endpoint context on one compact row */}
       <div className="ticket-context-bar" aria-label="Ticket presence and endpoint context">
@@ -1086,29 +975,26 @@ export default function TicketDetailPage() {
         </div>
         <div className="ticket-endpoint-inline">
           <span className="etch">Endpoint</span>
-          {ticketDevice ? (
-            <Link to={`/devices/${ticketDevice.id}`} className="ticket-device-summary">
-              <span className="device-avatar">{ticketDevice.name.slice(0, 1).toUpperCase()}</span>
-              <span><strong>{ticketDevice.name}</strong><small>{ticketDevice.hostname || ticketDevice.os || 'Device details'}</small></span>
-            </Link>
-          ) : <span className="muted">No device linked</span>}
+          <span className="ticket-endpoint-label">Affected device</span>
+          <span className="ticket-device-select-wrap">
           <select
             className="field-input select-sm ticket-endpoint-select"
             value={ticket.device_id ?? ''}
             onChange={(event) => void changeDevice(event.target.value)}
             disabled={deviceSaving || readOnlyForLock}
-            aria-label="Linked device"
+            aria-label="Affected device"
           >
             <option value="">No device linked</option>
             {ticketDevice && !devices.some((device) => device.id === ticketDevice.id) ? <option value={ticketDevice.id}>{ticketDevice.name}</option> : null}
             {devices.map((device) => <option key={device.id} value={device.id}>{device.name}{device.hostname ? ` · ${device.hostname}` : ''}</option>)}
           </select>
+          <Icon name="chevron-down" size={14} />
+          </span>
         </div>
       </div>
 
       <Modal open={showLockModal} onClose={() => setShowLockModal(false)} title="Ticket lock" width={560}>
-        <div className="ticket-lock-modal">
-          <div className="ticket-lock-modal-state"><Icon name={ticketLock ? 'lock' : 'unlock'} size={20} /><div><strong>{ticketLock ? `${lockIsMine ? 'Locked to you' : `Locked by ${blockingName}`}` : 'Ticket is unlocked'}</strong><span>{ticketLock ? 'Only the current lock holder can edit this ticket.' : 'Assigning this ticket or opening your assigned ticket can claim the lock.'}</span></div></div>
+        <div className="ticket-lock-modal">              <div className="ticket-lock-modal-state"><Icon name={ticketLock ? 'lock' : 'unlock'} size={20} /><div><strong>{ticketIsClosed ? 'Ticket is closed' : ticketLock ? `${lockIsMine ? 'Locked to you' : `Locked by ${blockingName}`}` : 'Ticket is unlocked'}</strong><span>{ticketIsClosed ? 'Closed tickets are read-only. Reopen it to continue working.' : ticketLock ? 'Only the current lock holder can edit this ticket.' : 'The lock is claimed while an agent is actively working. Heartbeats keep it alive and it expires automatically.'}</span></div></div>
           {readOnlyForLock && !lockIsMine ? <button type="button" className="btn btn-primary btn-sm" onClick={() => void handleRequestRelease()} disabled={releaseBusy || releaseRequests.some((request) => request.status === 'pending' && request.requested_by === auth.user?.id)}><Icon name="send" size={14} />{releaseRequests.some((request) => request.status === 'pending' && request.requested_by === auth.user?.id) ? 'Release requested' : releaseBusy ? 'Requesting…' : 'Request release'}</button> : null}
           {ticketLock && canOverrideTicketLock && !lockIsMine ? <button type="button" className="btn btn-ghost btn-sm" onClick={() => void handleForceUnlock()} disabled={lockBusy}><Icon name="unlock" size={14} />{lockBusy ? 'Releasing…' : 'Release lock as manager'}</button> : null}
           {releaseRequests.some((request) => request.status === 'pending' && request.locked_by === auth.user?.id) ? <div className="ticket-lock-modal-requests"><span className="etch">Requests from other agents</span>{releaseRequests.filter((request) => request.status === 'pending' && request.locked_by === auth.user?.id).map((request) => <div className="ticket-release-request" key={request.id}><div><strong>{request.requested_by_name ?? 'An agent'} wants to work on this ticket</strong><span className="muted">{request.message || 'They requested that you release the lock.'}</span></div><div className="ticket-release-request-actions"><button type="button" className="btn btn-primary btn-sm" disabled={releaseBusy} onClick={() => void handleResolveRelease(request, 'approve')}>Release lock</button><button type="button" className="btn btn-ghost btn-sm" disabled={releaseBusy} onClick={() => void handleResolveRelease(request, 'deny')}>Keep lock</button></div></div>)}</div> : null}
@@ -1432,7 +1318,7 @@ export default function TicketDetailPage() {
             <Icon name="lock" size={16} />
             <div className="ticket-composer-readonly-text">
               <strong>Read-only view</strong>
-              <span>{blockingName} is viewing or working on this ticket. Use the lock icon to request release.</span>
+              <span>{ticketIsClosed ? 'This ticket is closed. Reopen it before replying or changing ticket details.' : `${blockingName} is viewing or working on this ticket. Use the lock icon to request release.`}</span>
             </div>
             {!lockIsMine ? (
               <button
