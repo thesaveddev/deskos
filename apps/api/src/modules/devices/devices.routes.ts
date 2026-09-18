@@ -247,9 +247,15 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
       clauses.push(`d.group_id = $${values.length}`)
     }
     const statusExpr = OFFLINE_SQL(await tenantOfflineSec(ctx.tenantId))
-    if (q.status === 'online' || q.status === 'offline' || q.status === 'never') {
-      clauses.push(`${statusExpr} = $${values.length + 1}`)
-      values.push(q.status)
+    if (q.status === 'retired') {
+      clauses.push('d.retired_at IS NOT NULL')
+    } else {
+      // Retired devices are hidden from the working inventory unless asked for.
+      clauses.push('d.retired_at IS NULL')
+      if (q.status === 'online' || q.status === 'offline' || q.status === 'never') {
+        clauses.push(`${statusExpr} = $${values.length + 1}`)
+        values.push(q.status)
+      }
     }
     const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''
     const limit = Math.min(Number(q.limit ?? 50), 200)
@@ -269,6 +275,7 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
                   d.agent_version, d.device_type, d.power_source, d.battery_pct, d.battery_health_pct, d.uptime_seconds, d.last_inventory_at,
                   d.source, d.managed_by, d.serial_number, d.manufacturer, d.model, d.directory_last_seen_at,
                   d.agent_device_id,
+                  d.retired_at,
                   d.group_id, d.enrolled_at, d.last_seen_at, d.created_at,
                   g.name AS group_name,
                   a.tag AS asset_tag, da.assignment_status, au.name AS assigned_user_name, au.email AS assigned_user_email, da.department AS assigned_department,
@@ -303,6 +310,7 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
                   d.source, d.managed_by, d.serial_number, d.manufacturer, d.model, d.directory_last_seen_at,
                   d.agent_device_id,
                   NULL::text AS agent_token_hash,
+                  d.retired_at,
                   d.enrolled_at, d.last_seen_at, d.created_at, d.updated_at,
                   g.name AS group_name,
                   ad.name AS linked_agent_name, ad.hostname AS linked_agent_hostname,
@@ -431,10 +439,71 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
     return withTenant(app.db, ctx.tenantId, async (client) => {
       const current = (await client.query('SELECT id FROM devices WHERE id = $1 AND adhoc = false', [id])).rows[0]
       if (!current) throw AppError.notFound('Device not found')
+      // Refuse to destroy a device while a remote support session is live on
+      // it — a deletion cascades session audit history away mid-support.
+      const liveSession = (await client.query(
+        `SELECT 1 FROM remote_sessions WHERE device_id = $1 AND state IN ('requested', 'consent_pending', 'connecting', 'active', 'reconnecting') LIMIT 1`,
+        [id],
+      )).rows[0]
+      if (liveSession) throw AppError.conflict('Device has a live remote session — end it before removing the device')
       await client.query('DELETE FROM devices WHERE id = $1', [id])
       await recordAudit(client, ctx.tenantId, {
         actorId: request.user!.id,
         action: 'device.deleted',
+        objectType: 'device',
+        objectId: id,
+        ip: request.ip,
+      })
+      return { ok: true }
+    })
+  })
+
+  // -- Device retirement ------------------------------------------------------
+  // Soft-delete: hide from the active inventory, revoke the agent credential
+  // and cut live sessions, but keep sessions/alerts/metrics for the audit
+  // trail. Retired devices are excluded from availability alerting via their
+  // NULL last_seen_at; hard delete remains available afterwards.
+  app.post('/devices/:id/retire', { preHandler: [...guards, requirePermission('device.manage')] }, async (request) => {
+    const ctx = request.tenantCtx!
+    const { id } = request.params as { id: string }
+    return withTenant(app.db, ctx.tenantId, async (client) => {
+      const current = (await client.query('SELECT id FROM devices WHERE id = $1 AND adhoc = false AND retired_at IS NULL', [id])).rows[0]
+      if (!current) throw AppError.notFound('Device not found (or already retired)')
+      await client.query(
+        `UPDATE devices
+            SET retired_at = now(), agent_token_hash = NULL, last_seen_at = NULL, updated_at = now()
+          WHERE id = $1`,
+        [id],
+      )
+      await client.query(
+        `UPDATE remote_sessions SET state = 'ended', ended_at = COALESCE(ended_at, now())
+          WHERE device_id = $1 AND state IN ('requested', 'consent_pending', 'connecting', 'active', 'reconnecting')`,
+        [id],
+      )
+      await recordAudit(client, ctx.tenantId, {
+        actorId: request.user!.id,
+        action: 'device.retired',
+        objectType: 'device',
+        objectId: id,
+        ip: request.ip,
+      })
+      return { ok: true }
+    })
+  })
+
+  app.post('/devices/:id/restore', { preHandler: [...guards, requirePermission('device.manage')] }, async (request) => {
+    const ctx = request.tenantCtx!
+    const { id } = request.params as { id: string }
+    return withTenant(app.db, ctx.tenantId, async (client) => {
+      const current = (await client.query('SELECT id FROM devices WHERE id = $1 AND adhoc = false AND retired_at IS NOT NULL', [id])).rows[0]
+      if (!current) throw AppError.notFound('Device not found (or not retired)')
+      await client.query(
+        `UPDATE devices SET retired_at = NULL, last_seen_at = NULL, updated_at = now() WHERE id = $1`,
+        [id],
+      )
+      await recordAudit(client, ctx.tenantId, {
+        actorId: request.user!.id,
+        action: 'device.restored',
         objectType: 'device',
         objectId: id,
         ip: request.ip,

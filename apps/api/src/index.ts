@@ -5,6 +5,8 @@ import { loadConfig } from './config.js'
 import { runMigrations } from './db/migrate.js'
 import { startDeviceAlertScheduler } from './modules/devices/alerts.js'
 import { checkAllMonitoringPolicies } from './modules/monitoring/monitoring.js'
+import { checkAssetExpiryNotices } from './modules/assets/expiry.js'
+import { checkKbReviewNotices } from './modules/knowledge/review.js'
 import { generateVapidKeyPair } from './modules/push/vapid.js'
 import { startSlaScheduler } from './modules/tickets/sla.js'
 import { startEscalationScheduler } from './modules/tickets/escalation.scheduler.js'
@@ -90,11 +92,29 @@ async function main(): Promise<void> {
   startDeviceAlertScheduler(app.db, {
     offlineSec: app.config.deviceOfflineSec,
     lowDiskPct: app.config.deviceLowDiskPct,
+    metricsRetentionDays: app.config.deviceMetricsRetentionDays,
   }, 60_000, { pool: app.db, config, fallbackProvider: app.aiProvider })
   console.log(`[devices] alert scheduler running (60s interval; offline after ${app.config.deviceOfflineSec}s, low-disk at ${app.config.deviceLowDiskPct}%)`)
   const monitoringTimer = setInterval(() => { void checkAllMonitoringPolicies(app.db).catch(() => undefined) }, 60_000)
   monitoringTimer.unref()
   console.log('[monitoring] heartbeat rules and alert escalations running (60s interval)')
+  // Warranty/licence expiry notices: hourly is plenty (notices are once per
+  // due date, deduped in asset_expiry_notices).
+  let expiryBusy = false
+  const expiryTimer = setInterval(() => {
+    if (expiryBusy) return
+    expiryBusy = true
+    void checkAssetExpiryNotices(app.db, app.emailQueue, app.mailer, app.config.publicUrl)
+      .catch(() => undefined)
+      .finally(() => { expiryBusy = false })
+  }, 3_600_000)
+  expiryTimer.unref()
+  console.log('[assets] warranty/licence expiry notices running (hourly; 30-day window)')
+  // Knowledge-base overdue-review notices run on the same cadence as device
+  // alerting; the ledger table dedupes per due date.
+  const kbReviewTimer = setInterval(() => { void checkKbReviewNotices(app.db).catch(() => undefined) }, 60_000)
+  kbReviewTimer.unref()
+  console.log('[kb] overdue-review notices running (60s interval)')
   if (app.emailWorker) {
     app.emailWorker.start()
   } else {

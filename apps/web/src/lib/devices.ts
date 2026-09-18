@@ -1,6 +1,6 @@
 import { api } from './api.js'
 
-export type DeviceStatus = 'online' | 'offline' | 'never'
+export type DeviceStatus = 'online' | 'offline' | 'never' | 'retired'
 export type DeviceType = 'laptop' | 'workstation' | 'server' | 'network_device' | 'mobile' | 'other'
 
 export interface Device {
@@ -39,6 +39,7 @@ export interface Device {
   last_seen_at: string | null
   created_at: string
   updated_at?: string
+  retired_at?: string | null
   status: DeviceStatus
   agent_token_hash?: string | null
 }
@@ -184,6 +185,14 @@ export function updateDevice(id: string, body: { name?: string; groupId?: string
 
 export function deleteDevice(id: string): Promise<{ ok: true }> {
   return api(`/devices/${id}`, { method: 'DELETE' })
+}
+
+export function retireDevice(id: string): Promise<{ ok: true }> {
+  return api(`/devices/${id}/retire`, { method: 'POST', body: {} })
+}
+
+export function restoreDevice(id: string): Promise<{ ok: true }> {
+  return api(`/devices/${id}/restore`, { method: 'POST', body: {} })
 }
 
 export function createDeviceGroup(body: { name: string; parentId?: string; matchRules?: unknown[] }): Promise<{ group: DeviceGroup }> {

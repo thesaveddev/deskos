@@ -161,6 +161,7 @@ export default function DevicesPage() {
     { label: 'Online', count: status === 'online' ? total : undefined, active: status === 'online' },
     { label: 'Offline', count: status === 'offline' ? total : undefined, active: status === 'offline' },
     { label: 'Never checked in', count: status === 'never' ? total : undefined, active: status === 'never' },
+    { label: 'Retired', count: status === 'retired' ? total : undefined, active: status === 'retired' },
   ] as const
 
   return (
@@ -181,7 +182,7 @@ export default function DevicesPage() {
       </div>
 
       <nav className="workspace-tabs device-workspace-tabs" aria-label="Endpoint views">
-        {deviceTabs.map((tab) => <button key={tab.label} type="button" className={`workspace-tab${tab.active ? ' active' : ''}`} onClick={() => { setStatus(tab.label === 'All endpoints' ? '' : tab.label === 'Online' ? 'online' : tab.label === 'Offline' ? 'offline' : 'never'); pagination.goToPage(0) }}>{tab.label}{tab.count !== undefined ? <span>{tab.count}</span> : null}</button>)}
+        {deviceTabs.map((tab) => <button key={tab.label} type="button" className={`workspace-tab${tab.active ? ' active' : ''}`} onClick={() => { setStatus(tab.label === 'All endpoints' ? '' : tab.label === 'Online' ? 'online' : tab.label === 'Offline' ? 'offline' : tab.label === 'Never checked in' ? 'never' : 'retired'); pagination.goToPage(0) }}>{tab.label}{tab.count !== undefined ? <span>{tab.count}</span> : null}</button>)}
         <Link className="workspace-tab-link" to="/devices/groups"><Icon name="folder" size={14} />Groups</Link>
       </nav>
       <div className="device-toolbar">

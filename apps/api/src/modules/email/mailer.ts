@@ -296,6 +296,8 @@ export class Mailer {
       automation: 'Automation update',
       'ai_worker.approval': 'AI worker approval needed',
       'telephony.call_received': 'Inbound call',
+      'asset.warranty_expiry': 'Asset warranty / licence expiring',
+      'kb.review_due': 'Knowledge base review due',
     }
     const label = labels[ctx.kind] ?? 'Workspace notification'
     return {
@@ -311,6 +313,25 @@ export class Mailer {
         paragraphs: [ctx.body],
         action: ctx.action,
         footer: `You received this because email notifications are enabled for this event in ${ctx.tenantName}. Manage preferences in ReyDesk Settings.`,
+      }),
+    }
+  }
+
+  /** Build a branded asset warranty/licence expiry notice email. */
+  buildAssetExpiryMailCtx(ctx: { to: string; tenantName: string; label: string; body: string; assetTag: string; dueDate: string; settingsUrl?: string }): { to: string; subject: string; text: string; html: string } {
+    return {
+      to: ctx.to,
+      subject: `${ctx.label} · ${ctx.assetTag}`,
+      text: [`${ctx.label} — ${ctx.tenantName}`, '', ctx.body, '', `Review assets: ${ctx.settingsUrl ?? ''}`].join('\n'),
+      html: renderBrandedEmail({
+        tenantName: ctx.tenantName,
+        eyebrow: ctx.label,
+        preheader: ctx.body,
+        title: ctx.label,
+        greeting: `Asset ${ctx.assetTag} needs attention.`,
+        paragraphs: [ctx.body, 'Review the asset record in ReyDesk to renew the warranty or licence.'],
+        action: ctx.settingsUrl ? { label: 'Open assets', url: ctx.settingsUrl } : undefined,
+        footer: `You received this because you own this asset in ${ctx.tenantName}. Manage expiry emails in ReyDesk Settings.`,
       }),
     }
   }

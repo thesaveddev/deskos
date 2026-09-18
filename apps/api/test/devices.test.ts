@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { FastifyInstance } from 'fastify'
 import { createTestApp, signupOwner, seedActiveMember, authHeaders, type Session } from './helpers.js'
 import { withTenant } from '../src/db/pool.js'
-import { checkDeviceAlertsForTenant } from '../src/modules/devices/alerts.js'
+import { checkDeviceAlertsForTenant, pruneDeviceMetrics } from '../src/modules/devices/alerts.js'
 
 const OFFLINE_SEC = 120
 const LOW_DISK_PCT = 85
@@ -565,6 +565,140 @@ describe('devices & agent v1', () => {
       })
       expect(res.statusCode).toBe(200)
       expect(res.json().device.name).toBe('renamed-device')
+    })
+  })
+
+  describe('device lifecycle', () => {
+    it('retires a device: revokes the agent, hides it from the inventory, and keeps history', async () => {
+      const device = await enrolDevice({ name: 'retire-me' })
+
+      // Heartbeat so the device is visible, then retire.
+      const beat = await app.inject({
+        method: 'POST',
+        url: '/api/v1/agent/heartbeat',
+        headers: { authorization: `Bearer ${device.deviceToken}` },
+        payload: {},
+      })
+      expect(beat.statusCode).toBe(200)
+
+      const retire = await app.inject({
+        method: 'POST',
+        url: `/api/v1/devices/${device.deviceId}/retire`,
+        headers: authHeaders(owner),
+      })
+      expect(retire.statusCode).toBe(200)
+
+      // Agent credential is dead immediately.
+      const afterRetire = await app.inject({
+        method: 'POST',
+        url: '/api/v1/agent/heartbeat',
+        headers: { authorization: `Bearer ${device.deviceToken}` },
+        payload: {},
+      })
+      expect(afterRetire.statusCode).toBe(401)
+
+      // Hidden from the default list, visible under status=retired.
+      const list = await app.inject({ method: 'GET', url: '/api/v1/devices', headers: authHeaders(owner) })
+      expect(list.json().devices.find((d: { id: string }) => d.id === device.deviceId)).toBeUndefined()
+      const retiredList = await app.inject({ method: 'GET', url: '/api/v1/devices?status=retired', headers: authHeaders(owner) })
+      const retiredRow = retiredList.json().devices.find((d: { id: string }) => d.id === device.deviceId)
+      expect(retiredRow).toBeTruthy()
+      expect(retiredRow.retired_at).toBeTruthy()
+
+      // Restore puts it back (agent stays revoked until re-enrol).
+      const restore = await app.inject({
+        method: 'POST',
+        url: `/api/v1/devices/${device.deviceId}/restore`,
+        headers: authHeaders(owner),
+      })
+      expect(restore.statusCode).toBe(200)
+      const restoredList = await app.inject({ method: 'GET', url: '/api/v1/devices', headers: authHeaders(owner) })
+      expect(restoredList.json().devices.find((d: { id: string }) => d.id === device.deviceId)).toBeTruthy()
+    })
+
+    it('refuses to hard-delete a device with a live remote session', async () => {
+      const device = await enrolDevice({ name: 'live-session-box' })
+      const session = await app.inject({
+        method: 'POST',
+        url: '/api/v1/sessions',
+        headers: authHeaders(owner),
+        payload: { deviceId: device.deviceId, type: 'attended', permissions: ['view_screen'], reason: 'deletion guard test' },
+      })
+      expect(session.statusCode).toBe(201)
+
+      const del = await app.inject({
+        method: 'DELETE',
+        url: `/api/v1/devices/${device.deviceId}`,
+        headers: authHeaders(owner),
+      })
+      expect(del.statusCode).toBe(409)
+
+      // After the session ends, deletion is allowed again.
+      await app.inject({ method: 'POST', url: `/api/v1/sessions/${session.json().session.id}/end`, headers: authHeaders(owner) })
+      const delAfter = await app.inject({
+        method: 'DELETE',
+        url: `/api/v1/devices/${device.deviceId}`,
+        headers: authHeaders(owner),
+      })
+      expect(delAfter.statusCode).toBe(200)
+    })
+
+    it('prunes device metrics older than the retention horizon', async () => {
+      const device = await enrolDevice({ name: 'metrics-prune-box' })
+      const fresh = await withTenant(app.db, owner.tenantId!, async (client) => {
+        const oldRow = await client.query(
+          `INSERT INTO device_metrics (tenant_id, device_id, cpu_pct, mem_pct, disk_pct, recorded_at)
+           VALUES ($1, $2, 10, 20, 30, now() - interval '60 days') RETURNING id`,
+          [owner.tenantId, device.deviceId],
+        )
+        const newRow = await client.query(
+          `INSERT INTO device_metrics (tenant_id, device_id, cpu_pct, mem_pct, disk_pct, recorded_at)
+           VALUES ($1, $2, 11, 21, 31, now()) RETURNING id`,
+          [owner.tenantId, device.deviceId],
+        )
+        return { oldId: oldRow.rows[0].id as string, newId: newRow.rows[0].id as string }
+      })
+
+      const pruned = await pruneDeviceMetrics(app.db, 30)
+      expect(pruned).toBeGreaterThanOrEqual(1)
+
+      const remaining = await withTenant(app.db, owner.tenantId!, async (client) => {
+        const rows = await client.query('SELECT id FROM device_metrics WHERE device_id = $1', [device.deviceId])
+        return rows.rows.map((r: { id: string }) => r.id)
+      })
+      expect(remaining).toContain(fresh.newId)
+      expect(remaining).not.toContain(fresh.oldId)
+    })
+  })
+
+  describe('low disk alert lifecycle', () => {
+    it('resolves a low-disk alert once fresh metrics fall under the threshold', async () => {
+      const device = await enrolDevice({ name: 'disk-recover-box' })
+      const post = (diskPct: number) => app.inject({
+        method: 'POST',
+        url: '/api/v1/agent/metrics',
+        headers: { authorization: `Bearer ${device.deviceToken}` },
+        payload: { cpuPct: 10, memPct: 20, diskPct, reason: 'periodic' },
+      })
+
+      // Trip the threshold.
+      await post(LOW_DISK_PCT + 5)
+      const raised = await checkDeviceAlertsForTenant(app.db, owner.tenantId!, { offlineSec: OFFLINE_SEC, lowDiskPct: LOW_DISK_PCT })
+      expect(raised.lowDisk).toBe(1)
+
+      // A second sweep with the same metric must not duplicate the alert.
+      const again = await checkDeviceAlertsForTenant(app.db, owner.tenantId!, { offlineSec: OFFLINE_SEC, lowDiskPct: LOW_DISK_PCT })
+      expect(again.lowDisk).toBe(0)
+
+      // Disk freed: the sweep resolves the alert and reports recovery.
+      await post(LOW_DISK_PCT - 20)
+      const recovered = await checkDeviceAlertsForTenant(app.db, owner.tenantId!, { offlineSec: OFFLINE_SEC, lowDiskPct: LOW_DISK_PCT })
+      expect(recovered.resolved).toBe(1)
+
+      // And a future breach can raise a fresh alert again.
+      await post(LOW_DISK_PCT + 2)
+      const reRaised = await checkDeviceAlertsForTenant(app.db, owner.tenantId!, { offlineSec: OFFLINE_SEC, lowDiskPct: LOW_DISK_PCT })
+      expect(reRaised.lowDisk).toBe(1)
     })
   })
 })

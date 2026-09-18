@@ -20,6 +20,7 @@ import { useAuth } from '../lib/auth.js'
 import { api } from '../lib/api.js'
 import { MfaQrCode } from '../components/MfaQrCode.js'
 import { createSession, type RemoteSessionType } from '../lib/sessions.js'
+import { retireDevice, restoreDevice } from '../lib/devices.js'
 import { getDeviceDex, type DeviceDex } from '../lib/dex.js'
 import { Shell } from '../components/Shell.js'
 
@@ -256,7 +257,7 @@ export default function DeviceDetailPage() {
   }
 
   const removeDevice = async () => {
-    if (!device || deleteBusy || !await confirm(`Remove “${device.name}” from ReyDesk? This revokes its agent credential, ends its remote sessions, and cannot be undone.`, { title: 'Remove device', confirmLabel: 'Remove device', destructive: true })) return
+    if (!device || deleteBusy || !await confirm(`Remove “${device.name}” from ReyDesk? This permanently deletes the device and its history and cannot be undone. End-of-life devices should usually be retired instead.`, { title: 'Remove device', confirmLabel: 'Remove permanently', destructive: true })) return
     setDeleteBusy(true)
     setError(null)
     try {
@@ -264,6 +265,36 @@ export default function DeviceDetailPage() {
       navigate('/devices')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not remove device')
+    } finally {
+      setDeleteBusy(false)
+    }
+  }
+
+  const retireDeviceNow = async () => {
+    if (!device || deleteBusy || !await confirm(`Retire “${device.name}”? The agent is revoked, live sessions end, and the device leaves the active inventory. Its history is kept and it can be restored later.`, { title: 'Retire device', confirmLabel: 'Retire device' })) return
+    setDeleteBusy(true)
+    setError(null)
+    try {
+      await retireDevice(device.id)
+      setNotice('Device retired. Its history is preserved and it can be restored at any time.')
+      await load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not retire device')
+    } finally {
+      setDeleteBusy(false)
+    }
+  }
+
+  const restoreDeviceNow = async () => {
+    if (!device || deleteBusy) return
+    setDeleteBusy(true)
+    setError(null)
+    try {
+      await restoreDevice(device.id)
+      setNotice('Device restored to the active inventory. It will re-enrol or check in on its next agent contact.')
+      await load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not restore device')
     } finally {
       setDeleteBusy(false)
     }
@@ -315,13 +346,22 @@ export default function DeviceDetailPage() {
         </div>
         <div className="device-detail-actions">
           {canRemote ? <button className="btn btn-primary btn-sm" onClick={() => setShowSessionRequest((visible) => { const next = !visible; if (next) setSessionTicketId(linkableTickets[0]?.id ?? ''); return next })}>{showSessionRequest ? 'Cancel request' : 'Request remote session'}</button> : null}
-          {canManageDevice ? <button className="btn btn-danger btn-sm" onClick={() => void removeDevice()} disabled={deleteBusy}>{deleteBusy ? 'Removing…' : 'Remove device'}</button> : null}
+          {canManageDevice && !device.retired_at ? <button className="btn btn-warning btn-sm" onClick={() => void retireDeviceNow()} disabled={deleteBusy}>{deleteBusy ? 'Retiring…' : 'Retire device'}</button> : null}
+          {canManageDevice && device.retired_at ? <button className="btn btn-primary btn-sm" onClick={() => void restoreDeviceNow()} disabled={deleteBusy}>Restore to inventory</button> : null}
+          {canManageDevice ? <button className="btn btn-danger btn-sm" onClick={() => void removeDevice()} disabled={deleteBusy}>{deleteBusy ? 'Removing…' : 'Remove permanently'}</button> : null}
           <button className="btn btn-ghost btn-sm" onClick={() => navigate('/devices')}>Back to devices</button>
         </div>
       </div>
 
       {error ? <Alert kind="error">{error}</Alert> : null}
       {notice ? <Alert kind="info">{notice}</Alert> : null}
+
+      {device.retired_at ? (
+        <div className="device-retired-banner">
+          <span aria-hidden="true">⏸</span>
+          <span>This device was retired {formatWhen(device.retired_at)} — its agent is revoked and it is hidden from the active inventory. History is preserved.</span>
+        </div>
+      ) : null}
 
       {showSessionRequest && canRemote ? (
         <section className="session-request-panel">

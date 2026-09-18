@@ -28,6 +28,8 @@ export const NOTIFICATION_KINDS = [
   'change.approval',
   'telephony.call_received',
   'chat.message',
+  'asset.warranty_expiry',
+  'kb.review_due',
 ] as const
 
 export interface NotifyInput {
