@@ -6,8 +6,8 @@ import { useAuth } from '../lib/auth.js'
 import { api } from '../lib/api.js'
 import { Icon } from '../components/Icons.js'
 import {
-  createAsset, createLicence, deleteAsset, deleteLicence, listAssets, listLicences, updateAsset,
-  type Asset, type AssetStatus, type AssetType, type Licence,
+  createAsset, createLicence, deleteAsset, deleteLicence, listAssets, listLicences, listWarrantyWatch, updateAsset,
+  type Asset, type AssetStatus, type AssetType, type Licence, type WarrantyWatchItem,
 } from '../lib/assets.js'
 
 const TYPES: AssetType[] = ['hardware', 'mobile', 'network', 'peripheral', 'cloud', 'software', 'other']
@@ -52,7 +52,7 @@ interface LicenceForm {
 
 const EMPTY_LICENCE: LicenceForm = { name: '', keyRef: '', seatsTotal: '', expiresAt: '' }
 
-function Kpi({ icon, tone, label, value, sub }: { icon: 'package' | 'monitor' | 'box' | 'wrench' | 'key'; tone?: string; label: string; value: string | number; sub?: string }) {
+function Kpi({ icon, tone, label, value, sub }: { icon: 'package' | 'monitor' | 'box' | 'wrench' | 'key' | 'clock'; tone?: string; label: string; value: string | number; sub?: string }) {
   return (
     <div className="ops-kpi">
       <div className="ops-kpi-head">
@@ -86,14 +86,18 @@ export default function AssetsPage() {
   const [deviceOptions, setDeviceOptions] = useState<Array<{ id: string; name: string; hostname: string }>>([])
   const [memberOptions, setMemberOptions] = useState<Array<{ id: string; name: string; email: string }>>([])
 
+  const [watch, setWatch] = useState<{ warranties: WarrantyWatchItem[]; licences: WarrantyWatchItem[] }>({ warranties: [], licences: [] })
+
   const load = useCallback(async () => {
     try {
-      const [a, l] = await Promise.all([
+      const [a, l, w] = await Promise.all([
         listAssets({ q: q || undefined, type: typeFilter || undefined, status: statusFilter || undefined }),
         listLicences(),
+        listWarrantyWatch(90).catch(() => ({ warranties: [], licences: [] })),
       ])
       setAssets(a.assets)
       setLicences(l.licences)
+      setWatch(w)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load assets')
     }
@@ -230,6 +234,21 @@ export default function AssetsPage() {
   const assetName = (id: string | null) => assets?.find((a) => a.id === id)?.name ?? '—'
   const count = (s: AssetStatus) => (assets ?? []).filter((a) => a.status === s).length
   const assigneeLabel = (a: Asset) => a.assigned_user_name ?? (a.assignment_status === 'shared' ? 'Shared pool' : a.owner_name ?? '—')
+  const dueSoon = watch.warranties.length + watch.licences.length
+
+  /** Days until a warranty/licence date; negative means already expired. */
+  const daysUntil = (date: string | null | undefined): number | null => {
+    if (!date) return null
+    const ms = new Date(`${date}T00:00:00`).getTime() - Date.now()
+    return Math.ceil(ms / 86_400_000)
+  }
+  const expiryTone = (date: string | null | undefined): 'crit' | 'warn' | 'ok' | null => {
+    const days = daysUntil(date)
+    if (days === null) return null
+    if (days < 0) return 'crit'
+    if (days <= 30) return 'warn'
+    return 'ok'
+  }
 
   return (
     <Shell>
@@ -253,6 +272,13 @@ export default function AssetsPage() {
         <Kpi icon="box" tone="tone-ok" label="Available" value={count('available')} />
         <Kpi icon="wrench" tone="tone-warn" label="In repair" value={count('in_repair')} sub={`${count('retired')} retired · ${count('lost')} lost`} />
         <Kpi icon="key" label="Assigned" value={(assets ?? []).filter((a) => a.assignment_status === 'assigned' || a.assignment_status === 'temporary').length} sub="To staff members" />
+        <Kpi
+          icon="clock"
+          tone={dueSoon > 0 ? 'tone-warn' : undefined}
+          label="Renewals due"
+          value={dueSoon || '—'}
+          sub={dueSoon > 0 ? `${watch.warranties.length} warranties · ${watch.licences.length} licences` : 'Nothing expires in 90 days'}
+        />
       </div>
 
       <div className="tabs">
@@ -311,7 +337,17 @@ export default function AssetsPage() {
                       <td><span className={`ops-pill ${STATUS_TONES[a.status] ?? 'tone-muted'}`}>{STATUS_LABELS[a.status] ?? a.status}</span></td>
                       <td>{assigneeLabel(a)}</td>
                       <td className="muted">{a.location ?? '—'}</td>
-                      <td className="mono muted">{a.warranty_until ?? '—'}</td>
+                      <td>
+                        {a.warranty_until ? (() => {
+                          const tone = expiryTone(a.warranty_until)
+                          return (
+                            <span className="ops-cell-inline">
+                              <span className="mono muted">{a.warranty_until}</span>
+                              {tone ? <span className={`ops-pill tone-${tone}`}>{daysUntil(a.warranty_until)! < 0 ? 'expired' : daysUntil(a.warranty_until)! <= 30 ? 'due soon' : 'ok'}</span> : null}
+                            </span>
+                          )
+                        })() : <span className="muted">—</span>}
+                      </td>
                       {canManage ? (
                         <td>
                           <div className="ops-actions">
@@ -363,7 +399,17 @@ export default function AssetsPage() {
                         <span className="ops-progress-num">{l.seats_used}/{l.seats_total}</span>
                       </div>
                     </td>
-                    <td className="mono muted">{l.expires_at ?? '—'}</td>
+                    <td>
+                      {l.expires_at ? (() => {
+                        const tone = expiryTone(l.expires_at)
+                        return (
+                          <span className="ops-cell-inline">
+                            <span className="mono muted">{l.expires_at}</span>
+                            {tone ? <span className={`ops-pill tone-${tone}`}>{daysUntil(l.expires_at)! < 0 ? 'expired' : daysUntil(l.expires_at)! <= 30 ? 'due soon' : 'ok'}</span> : null}
+                          </span>
+                        )
+                      })() : <span className="muted">—</span>}
+                    </td>
                     {canManage ? (
                       <td>
                         <div className="ops-actions">

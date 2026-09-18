@@ -243,6 +243,9 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
       connection_test_timeout_seconds: 10,
       oauth_expiry_warning_days: 14,
     },
+    assets: {
+      warranty_expiry_emails: true,
+    },
     data_retention: {
       audit_days: 365,
       recording_days: 30,
@@ -345,6 +348,9 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
       connection_test_timeout_seconds: z.number().int().min(1).max(120).optional(),
       oauth_expiry_warning_days: z.number().int().min(1).max(365).optional(),
     }).partial().optional(),
+    assets: z.object({
+      warranty_expiry_emails: z.boolean().optional(),
+    }).partial().optional(),
     data_retention: z.object({
       audit_days: z.number().int().min(30).max(3650).optional(),
       recording_days: z.number().int().min(1).max(3650).optional(),
@@ -373,6 +379,7 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
       monitoring: { ...DEFAULT_SETTINGS.monitoring, ...section('monitoring') },
       data_retention: { ...DEFAULT_SETTINGS.data_retention, ...section('data_retention') },
       integrations: { ...DEFAULT_SETTINGS.integrations, ...section('integrations') },
+      assets: { ...DEFAULT_SETTINGS.assets, ...section('assets') },
     }
   }
 

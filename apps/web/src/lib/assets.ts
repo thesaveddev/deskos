@@ -119,3 +119,23 @@ export function updateLicence(id: string, body: Partial<{
 export function deleteLicence(id: string): Promise<{ ok: boolean }> {
   return api(`/licences/${id}`, { method: 'DELETE' })
 }
+
+export interface WarrantyWatchItem {
+  id: string
+  tag?: string
+  name: string
+  type?: string
+  status?: string
+  warranty_until?: string | null
+  expires_at?: string | null
+  seats_used?: number
+  seats_total?: number
+  device_name?: string | null
+  asset_tag?: string | null
+  asset_name?: string | null
+}
+
+/** Warranties and licence expiries inside the horizon (default 90 days). */
+export function listWarrantyWatch(days = 90): Promise<{ warranties: WarrantyWatchItem[]; licences: WarrantyWatchItem[] }> {
+  return api(`/assets/warranties?days=${days}`)
+}

@@ -237,8 +237,19 @@ export async function assetRoutes(app: FastifyInstance): Promise<void> {
     const ctx = request.tenantCtx!
     const { id } = request.params as { id: string }
     return withTenant(app.db, ctx.tenantId, async (client) => {
-      const res = await client.query('DELETE FROM assets WHERE id = $1 RETURNING id', [id])
-      if (!res.rows[0]) throw AppError.notFound('Asset not found')
+      const current = (await client.query('SELECT id, tag FROM assets WHERE id = $1', [id])).rows[0]
+      if (!current) throw AppError.notFound('Asset not found')
+      // Deleting an asset silently unlinks its licences (ON DELETE SET NULL),
+      // losing entitlement tracking. Surface it instead of letting it happen
+      // invisibly.
+      const licences = (await client.query('SELECT count(*)::int AS n FROM licences WHERE asset_id = $1', [id])).rows[0].n
+      if (licences > 0) {
+        throw AppError.conflict(
+          `This asset has ${licences} linked ${licences === 1 ? 'licence' : 'licences'} — delete or re-link them first`,
+          'asset_has_licences',
+        )
+      }
+      await client.query('DELETE FROM assets WHERE id = $1', [id])
       await recordAudit(client, ctx.tenantId, {
         actorType: 'user',
         actorId: request.user!.id,
@@ -246,8 +257,41 @@ export async function assetRoutes(app: FastifyInstance): Promise<void> {
         objectType: 'asset',
         objectId: id,
         ip: request.ip,
+        payload: { tag: current.tag },
       })
       return reply.code(200).send({ ok: true })
+    })
+  })
+
+  // ---- Renewals watch -------------------------------------------------------
+  /** Warranties and licence expiries across the fleet, soonest first —
+   *  one endpoint so the renewals view stays cheap for the client. */
+  app.get('/assets/warranties', { preHandler: read }, async (request) => {
+    const ctx = request.tenantCtx!
+    const query = request.query as { days?: string }
+    const days = Math.min(Math.max(Number(query.days ?? 90), 1), 365)
+    return withTenant(app.db, ctx.tenantId, async (client) => {
+      const warranties = await client.query(
+        `SELECT a.id, a.tag, a.name, a.type, a.status, a.warranty_until, d.name AS device_name
+           FROM assets a
+           LEFT JOIN devices d ON d.id = a.device_id
+          WHERE a.warranty_until IS NOT NULL
+            AND a.warranty_until < now() + ($1 || ' days')::interval
+          ORDER BY a.warranty_until ASC
+          LIMIT 50`,
+        [days],
+      )
+      const licences = await client.query(
+        `SELECT l.id, l.name, l.seats_used, l.seats_total, l.expires_at, a.tag AS asset_tag, a.name AS asset_name
+           FROM licences l
+           LEFT JOIN assets a ON a.id = l.asset_id
+          WHERE l.expires_at IS NOT NULL
+            AND l.expires_at < now() + ($1 || ' days')::interval
+          ORDER BY l.expires_at ASC
+          LIMIT 50`,
+        [days],
+      )
+      return { warranties: warranties.rows, licences: licences.rows }
     })
   })
 
@@ -347,6 +391,18 @@ export async function assetRoutes(app: FastifyInstance): Promise<void> {
       const current = (await client.query('SELECT * FROM licences WHERE id = $1', [id])).rows[0]
       if (!current) throw AppError.notFound('Licence not found')
       if (body.assetId) await ensureAssetInTenant(client, ctx.tenantId, body.assetId)
+      // seats_used is maintained by the assignment flow (sum of active
+      // assignment seats). Reject edits that would undercut active assignments
+      // so the counter can never disagree with reality.
+      if (body.seatsUsed !== undefined) {
+        const active = (await client.query('SELECT COALESCE(sum(seats), 0)::int AS seats FROM licence_assignments WHERE licence_id = $1 AND ended_at IS NULL', [id])).rows[0].seats
+        if (Number(body.seatsUsed) < Number(active)) {
+          throw AppError.conflict(
+            `seatsUsed cannot be below the ${active} seats currently assigned. Return assignments instead.`,
+            'licence_seats_below_active',
+          )
+        }
+      }
 
       const res = await client.query(
         `UPDATE licences SET
