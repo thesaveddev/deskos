@@ -171,6 +171,11 @@ export function deleteRelation(id: string, relationId: string): Promise<void> {
   return api(`/kb/articles/${id}/relations/${relationId}`, { method: 'DELETE' })
 }
 
+/** Delete a draft article. Published/archived articles must be archived. */
+export function deleteArticle(id: string): Promise<void> {
+  return api(`/kb/articles/${id}`, { method: 'DELETE' })
+}
+
 export function listPortalArticles(params: { q?: string; tag?: string; folderId?: string; page?: number; pageSize?: number } = {}): Promise<{ articles: KbArticle[]; pagination: KbPagination }> {
   const query = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {

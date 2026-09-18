@@ -399,6 +399,28 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     })
   })
 
+  // Delete is for drafts only: junk drafts are the one lifecycle state with no
+  // forward path. Anything published or archived must be archived instead —
+  // it may be linked from tickets, AI answers, and portal bookmarks, and
+  // version/feedback history exists for audit reasons.
+  app.delete('/kb/articles/:id', { preHandler: [authenticate, requireTenant, requirePermission('kb.write')] }, async (request, reply) => {
+    const ctx = request.tenantCtx!
+    const { id } = request.params as { id: string }
+    await withTenant(app.db, ctx.tenantId, async (client) => {
+      const current = (await client.query('SELECT id, status, title FROM kb_articles WHERE id = $1', [id])).rows[0]
+      if (!current) throw AppError.notFound('Article not found')
+      if (current.status !== 'draft') {
+        throw AppError.conflict(
+          `Only draft articles can be deleted — archive a ${current.status} article instead`,
+          'kb_article_not_deletable',
+        )
+      }
+      await client.query('DELETE FROM kb_articles WHERE id = $1', [id])
+      await recordAudit(client, ctx.tenantId, { actorType: 'user', actorId: request.user!.id, action: 'kb.article.deleted', objectType: 'kb_article', objectId: id, ip: request.ip, payload: { title: current.title } })
+    })
+    return reply.code(204).send()
+  })
+
   // ---- Related articles ----------------------------------------------------
   app.get('/kb/articles/:id/relations', { preHandler: [authenticate, requireTenant, requirePermission('kb.read')] }, async (request) => {
     const ctx = request.tenantCtx!

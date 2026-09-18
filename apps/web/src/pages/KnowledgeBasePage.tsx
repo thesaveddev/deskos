@@ -5,7 +5,7 @@ import { Alert, Field, Modal, PageHeader, Panel, useConfirm } from '../component
 import { Pagination } from '../components/Pagination.js'
 import { useAuth } from '../lib/auth.js'
 import {
-  compareArticleVersions, createArticle, createFolder, createRelation, deleteFolder, deleteRelation, getArticle, getKbOverview,
+  compareArticleVersions, createArticle, createFolder, createRelation, deleteArticle, deleteFolder, deleteRelation, getArticle, getKbOverview,
   listArticles, listFolders, restoreArticleVersion, setArticleStatus, updateArticle, updateFolder,
   type KbArticle, type KbArticleVersion, type KbFolder, type KbOverview, type KbRelation, type KbRelationType, type KbStatus, type KbVisibility,
 } from '../lib/kb.js'
@@ -260,6 +260,14 @@ export default function KnowledgeBasePage() {
     finally { setBusy(false) }
   }
 
+  async function removeArticle(article: KbArticle) {
+    if (!canWrite || busy || !await confirm(`Delete draft “${article.title}”? This removes the article and its version history permanently.`, { title: 'Delete draft', confirmLabel: 'Delete draft', destructive: true })) return
+    setBusy(true); setError(null)
+    try { await deleteArticle(article.id); setNotice('Draft deleted.'); setViewing(null); await load() }
+    catch (err) { setError(err instanceof Error ? err.message : 'Could not delete draft') }
+    finally { setBusy(false) }
+  }
+
   async function addRelation(event: FormEvent) {
     event.preventDefault()
     if (!viewing || !relatedId || !canWrite || busy) return
@@ -314,7 +322,7 @@ export default function KnowledgeBasePage() {
               <div className="kb-detail-head"><div><span className={`kb-status kb-status-${viewing.article.status}`}>{STATUS_LABELS[viewing.article.status]}</span><span className="kb-detail-folder">{folderName(viewing.article.folder_id)} · v{viewing.article.version}</span><h2>{viewing.article.title}</h2><p className="kb-detail-summary">{viewing.article.summary || 'No summary provided.'}</p></div></div>
               <div className="kb-detail-meta"><span><Icon name="eye" size={14} />{viewing.article.view_count} views</span><span><Icon name="check" size={14} />{viewing.article.helpful_count} helpful</span><span>Visibility: {viewing.article.visibility}</span><span>Updated {formatDate(viewing.article.updated_at)}</span>{viewing.article.review_due_at ? <span>Review {formatDate(viewing.article.review_due_at)}</span> : null}</div>
               <ArticleBody body={viewing.article.body} />
-              {canWrite ? <div className="kb-detail-actions"><button className="btn btn-ghost btn-sm" onClick={() => void changeStatus(viewing.article, viewing.article.status === 'published' ? 'archived' : 'published')}><Icon name={viewing.article.status === 'published' ? 'folder' : 'check'} size={14} />{viewing.article.status === 'published' ? 'Archive' : 'Publish'}</button></div> : null}
+              {canWrite ? <div className="kb-detail-actions"><button className="btn btn-ghost btn-sm" onClick={() => void changeStatus(viewing.article, viewing.article.status === 'published' ? 'archived' : 'published')}><Icon name={viewing.article.status === 'published' ? 'folder' : 'check'} size={14} />{viewing.article.status === 'published' ? 'Archive' : 'Publish'}</button>{viewing.article.status === 'draft' ? <button className="btn btn-danger btn-sm" onClick={() => void removeArticle(viewing.article)}><Icon name="delete" size={14} />Delete draft</button> : null}</div> : null}
               <div className="kb-detail-grid">
                 <section className="kb-detail-section"><h3>Version history</h3>
                   <p className="kb-version-hint">Every change is recorded. Compare any two versions or roll an article back to an earlier state — the rollback itself is saved as a new version.</p>

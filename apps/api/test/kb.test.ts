@@ -215,4 +215,85 @@ describe('knowledge base', () => {
     const list = await app.inject({ method: 'GET', url: '/api/v1/kb/articles', headers: authHeaders(foreignOwner) })
     expect(list.json().articles).toHaveLength(0)
   })
+
+  describe('article lifecycle', () => {
+    const withTenant = async <T,>(fn: (client: import('../src/db/pool.js').DbClient) => Promise<T>): Promise<T> => {
+      const { withTenant: wt } = await import('../src/db/pool.js')
+      return wt(app.db, owner.tenantId!, fn)
+    }
+
+    it('deletes a draft but refuses to delete published or archived articles', async () => {
+      const draft = await app.inject({
+        method: 'POST',
+        url: '/api/v1/kb/articles',
+        headers: authHeaders(manager),
+        payload: { title: 'Junk draft to delete', body: 'never published' },
+      })
+      expect(draft.statusCode).toBe(201)
+      const draftId = draft.json().article.id as string
+
+      const del = await app.inject({ method: 'DELETE', url: `/api/v1/kb/articles/${draftId}`, headers: authHeaders(manager) })
+      expect(del.statusCode).toBe(204)
+      const gone = await app.inject({ method: 'GET', url: `/api/v1/kb/articles/${draftId}`, headers: authHeaders(manager) })
+      expect(gone.statusCode).toBe(404)
+
+      const published = await app.inject({
+        method: 'POST',
+        url: '/api/v1/kb/articles',
+        headers: authHeaders(manager),
+        payload: { title: 'Published article cannot be deleted', body: 'live content', status: 'published', visibility: 'portal' },
+      })
+      const publishedId = published.json().article.id as string
+
+      const blocked = await app.inject({ method: 'DELETE', url: `/api/v1/kb/articles/${publishedId}`, headers: authHeaders(manager) })
+      expect(blocked.statusCode).toBe(409)
+      expect(blocked.json().error?.code ?? blocked.json().code).toBe('kb_article_not_deletable')
+
+      // Archiving keeps it undeletable — the archive IS the retirement state.
+      await app.inject({ method: 'POST', url: `/api/v1/kb/articles/${publishedId}/status`, headers: authHeaders(manager), payload: { status: 'archived' } })
+      const stillBlocked = await app.inject({ method: 'DELETE', url: `/api/v1/kb/articles/${publishedId}`, headers: authHeaders(manager) })
+      expect(stillBlocked.statusCode).toBe(409)
+    })
+
+    it('notifies the author once per overdue review date, and re-arms after the date moves', async () => {
+      const overdue = await app.inject({
+        method: 'POST',
+        url: '/api/v1/kb/articles',
+        headers: authHeaders(manager),
+        payload: {
+          title: 'Stale article needing review',
+          body: 'review is overdue',
+          status: 'published',
+          visibility: 'portal',
+          reviewDueAt: new Date(Date.now() - 5 * 86_400_000).toISOString(),
+        },
+      })
+      expect(overdue.statusCode).toBe(201)
+      const staleId = overdue.json().article.id as string
+
+      const { checkKbReviewNotices } = await import('../src/modules/knowledge/review.js')
+      const first = await checkKbReviewNotices(app.db)
+      expect(first.notified).toBeGreaterThanOrEqual(1)
+
+      const notices = async () => (await withTenant((client) => client.query(
+        `SELECT count(*)::int AS n FROM notifications WHERE kind = 'kb.review_due' AND subject_id = $1`,
+        [staleId],
+      ))).rows[0].n as number
+      expect(await notices()).toBe(1)
+
+      // Second sweep: the same overdue episode does not re-notify.
+      await checkKbReviewNotices(app.db)
+      expect(await notices()).toBe(1)
+
+      // Reviewing the article (moving the date forward) starts a new episode:
+      // when that date passes, the author is notified again.
+      await withTenant((client) => client.query(
+        `UPDATE kb_articles SET review_due_at = now() - interval '1 day', last_reviewed_at = now() WHERE id = $1`,
+        [staleId],
+      ))
+      const again = await checkKbReviewNotices(app.db)
+      expect(again.notified).toBeGreaterThanOrEqual(1)
+      expect(await notices()).toBe(2)
+    })
+  })
 })
