@@ -9,6 +9,7 @@ import '@fontsource/ibm-plex-mono/500.css'
 import App from './App'
 import { ErrorBoundary } from './components/ErrorBoundary.js'
 import { ConfirmProvider } from './components/ui.js'
+import { ToastProvider } from './components/Toasts.js'
 import { ThemeProvider } from './lib/theme.js'
 import './index.css'
 import { registerServiceWorker } from './lib/push.js'
@@ -26,9 +27,11 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <ErrorBoundary autoReloadOnChunkError>
       <ThemeProvider>
         <ConfirmProvider>
-          <BrowserRouter>
-            <App />
-          </BrowserRouter>
+          <ToastProvider>
+            <BrowserRouter>
+              <App />
+            </BrowserRouter>
+          </ToastProvider>
         </ConfirmProvider>
       </ThemeProvider>
     </ErrorBoundary>

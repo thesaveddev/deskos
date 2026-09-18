@@ -250,3 +250,34 @@ export async function uploadRecording(id: string, blob: Blob, durationSec: numbe
   }
   return (await res.json()) as { recording: SessionRecording }
 }
+
+/** Ticket-side session audit history (side rail on the ticket detail view). */
+export interface TicketSessionSummary {
+  id: string
+  type: RemoteSessionType
+  state: RemoteSessionState
+  reason: string
+  permissions: string[]
+  consented_at: string | null
+  started_at: string | null
+  ended_at: string | null
+  created_at: string
+  device_name: string
+  hostname: string | null
+  requested_by_name: string | null
+  /** Total audit events for the session; the panel itself shows a recent window. */
+  event_count: number
+}
+
+export interface TicketSessionEvent {
+  id: number
+  session_id: string
+  actor_type: string
+  event: string
+  payload: Record<string, unknown>
+  created_at: string
+}
+
+export function listTicketSessions(ticketId: string): Promise<{ sessions: TicketSessionSummary[]; events: TicketSessionEvent[] }> {
+  return api(`/tickets/${ticketId}/sessions`)
+}

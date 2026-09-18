@@ -285,4 +285,59 @@ describe('tickets', () => {
     expect(res.statusCode).toBe(201)
     expect(res.json().ticket.number).toBe(1)
   })
+
+  describe('session audit history', () => {
+    const seedSessionWithEvents = async (tenantId: string, ticketId: string) =>
+      withTenant(app.db, tenantId, async (client) => {
+        const device = await client.query(
+          `INSERT INTO devices (tenant_id, name, hostname, os) VALUES ($1, 'Audit Box', 'audit-box', 'windows') RETURNING id`,
+          [tenantId],
+        )
+        const session = await client.query(
+          `INSERT INTO remote_sessions (tenant_id, device_id, ticket_id, type, state, reason, requested_by)
+           VALUES ($1, $2, $3, 'attended', 'ended', 'Disk cleanup', $4) RETURNING id`,
+          [tenantId, device.rows[0].id, ticketId, owner.userId],
+        )
+        await client.query(
+          `INSERT INTO session_events (tenant_id, session_id, actor_type, event, payload, created_at)
+           VALUES ($1, $2, 'agent', 'webrtc.ice_connected', $3::jsonb, now() - interval '50 minutes'),
+                  ($1, $2, 'user', 'session.files.downloaded', $4::jsonb, now() - interval '10 minutes')`,
+          [tenantId, session.rows[0].id, JSON.stringify({ duration_s: 642 }), JSON.stringify({ path: 'C:\\logs\\app.log' })],
+        )
+        return { sessionId: session.rows[0].id as string }
+      })
+
+    it('returns ticket sessions with their audit events', async () => {
+      const ticket = await createTicket(owner, 'Session history ticket')
+      await seedSessionWithEvents(owner.tenantId!, ticket.id)
+
+      const res = await app.inject({ method: 'GET', url: `/api/v1/tickets/${ticket.id}/sessions`, headers: authHeaders(owner) })
+      expect(res.statusCode).toBe(200)
+      const body = res.json()
+      expect(body.sessions).toHaveLength(1)
+      expect(body.sessions[0]).toMatchObject({ type: 'attended', state: 'ended', device_name: 'Audit Box', reason: 'Disk cleanup', event_count: 2 })
+      expect(body.events).toHaveLength(2)
+      expect(body.events.map((e: { event: string }) => e.event)).toEqual(['session.files.downloaded', 'webrtc.ice_connected'])
+    })
+
+    it('returns an empty history for tickets without sessions', async () => {
+      const ticket = await createTicket(owner, 'No sessions yet')
+      const res = await app.inject({ method: 'GET', url: `/api/v1/tickets/${ticket.id}/sessions`, headers: authHeaders(owner) })
+      expect(res.statusCode).toBe(200)
+      expect(res.json().sessions).toHaveLength(0)
+      expect(res.json().events).toHaveLength(0)
+    })
+
+    it('rejects cross-tenant ticket session history', async () => {
+      const ticket = await createTicket(owner, 'Cross-tenant history probe')
+      await seedSessionWithEvents(owner.tenantId!, ticket.id)
+
+      const cross = await app.inject({
+        method: 'GET',
+        url: `/api/v1/tickets/${ticket.id}/sessions`,
+        headers: authHeaders(otherOwner, owner.tenantSlug),
+      })
+      expect(cross.statusCode).toBe(403)
+    })
+  })
 })

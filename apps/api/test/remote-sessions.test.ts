@@ -728,4 +728,68 @@ describe('remote session control plane', () => {
     const afterEnd = await app.inject({ method: 'POST', url: `/api/v1/agent/sessions/${sessionId}/recording`, headers: { authorization: `Bearer ${deviceToken}` }, payload: { state: 'stopped' } })
     expect(afterEnd.statusCode).toBe(409)
   })
+
+  it('auto-links a session to the device\'s most recent active ticket when ticketId is omitted', async () => {
+    const ticketRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/tickets',
+      headers: authHeaders(owner),
+      payload: { subject: 'Auto-link ticket', description: 'created before the session', deviceId },
+    })
+    expect(ticketRes.statusCode).toBe(201)
+    const ticketId = ticketRes.json().ticket.id as string
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/v1/sessions',
+      headers: authHeaders(owner),
+      payload: { deviceId, permissions: ['view_screen'], reason: 'Auto-link test' },
+    })
+    expect(created.statusCode).toBe(201)
+    expect(created.json().session.ticket_id).toBe(ticketId)
+
+    // The linked ticket's timeline records the session request.
+    const detail = await app.inject({ method: 'GET', url: `/api/v1/tickets/${ticketId}`, headers: authHeaders(owner) })
+    const events = detail.json().threads
+      .filter((thread: { kind: string }) => thread.kind === 'session_record')
+      .map((thread: { meta: { event?: string } }) => thread.meta?.event)
+    expect(events).toContain('session.created')
+  })
+
+  it('does not auto-link when the device only has closed tickets', async () => {
+    // Fresh device so no other open tickets exist for the fallback to find.
+    const rotate = await app.inject({ method: 'POST', url: '/api/v1/devices/enrol-token/rotate', headers: authHeaders(owner) })
+    expect(rotate.statusCode).toBe(201)
+    const enrol = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/enrol',
+      payload: { token: rotate.json().token, name: 'closed-link-box', hostname: 'closed-link-host', os: 'windows' },
+    })
+    expect(enrol.statusCode).toBe(201)
+    const freshDeviceId = enrol.json().device.id as string
+
+    const ticketRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/tickets',
+      headers: authHeaders(owner),
+      payload: { subject: 'Closed auto-link ticket', description: 'closed before the session', deviceId: freshDeviceId },
+    })
+    const ticketId = ticketRes.json().ticket.id as string
+    const closeRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/tickets/${ticketId}/status`,
+      headers: authHeaders(owner),
+      payload: { status: 'closed' },
+    })
+    expect(closeRes.statusCode).toBe(200)
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/v1/sessions',
+      headers: authHeaders(owner),
+      payload: { deviceId: freshDeviceId, permissions: ['view_screen'], reason: 'Closed-ticket exclusion test' },
+    })
+    expect(created.statusCode).toBe(201)
+    expect(created.json().session.ticket_id).toBeNull()
+  })
 })

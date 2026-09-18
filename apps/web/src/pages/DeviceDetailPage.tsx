@@ -81,6 +81,7 @@ export default function DeviceDetailPage() {
   const [showSessionRequest, setShowSessionRequest] = useState(false)
   const [sessionType, setSessionType] = useState<RemoteSessionType>('attended')
   const [sessionReason, setSessionReason] = useState('')
+  const [sessionTicketId, setSessionTicketId] = useState('')
   const [allowControlInput, setAllowControlInput] = useState(false)
   const [allowClipboard, setAllowClipboard] = useState(false)
   const [allowTerminal, setAllowTerminal] = useState(false)
@@ -142,6 +143,11 @@ export default function DeviceDetailPage() {
 
   const latestMetric = metrics.length > 0 ? metrics[metrics.length - 1] : null
   const recentMetrics = useMemo(() => metrics.slice(-12), [metrics])
+  // Active tickets the session can be recorded against — most recent first.
+  const linkableTickets = useMemo(
+    () => tickets.filter((ticket) => !['resolved', 'closed'].includes(ticket.status)).slice(0, 5),
+    [tickets],
+  )
 
   const requestSession = async (event: FormEvent) => {
     event.preventDefault()
@@ -162,9 +168,11 @@ export default function DeviceDetailPage() {
           ...(allowSystemManage && sessionType !== 'inspection' ? ['system_manage', 'elevation'] : []),
         ],
         reason: sessionReason.trim(),
+        ticketId: sessionTicketId || undefined,
       })
       setShowSessionRequest(false)
       setSessionReason('')
+      setSessionTicketId('')
       setAllowClipboard(false)
       setAllowTerminal(false)
       setAllowFileTransfer(false)
@@ -306,7 +314,7 @@ export default function DeviceDetailPage() {
           </div>
         </div>
         <div className="device-detail-actions">
-          {canRemote ? <button className="btn btn-primary btn-sm" onClick={() => setShowSessionRequest((visible) => !visible)}>{showSessionRequest ? 'Cancel request' : 'Request remote session'}</button> : null}
+          {canRemote ? <button className="btn btn-primary btn-sm" onClick={() => setShowSessionRequest((visible) => { const next = !visible; if (next) setSessionTicketId(linkableTickets[0]?.id ?? ''); return next })}>{showSessionRequest ? 'Cancel request' : 'Request remote session'}</button> : null}
           {canManageDevice ? <button className="btn btn-danger btn-sm" onClick={() => void removeDevice()} disabled={deleteBusy}>{deleteBusy ? 'Removing…' : 'Remove device'}</button> : null}
           <button className="btn btn-ghost btn-sm" onClick={() => navigate('/devices')}>Back to devices</button>
         </div>
@@ -329,6 +337,17 @@ export default function DeviceDetailPage() {
             <Field label="Reason" hint="Shown in the consent prompt and recorded in the audit trail.">
               <input className="field-input" value={sessionReason} onChange={(event) => setSessionReason(event.target.value)} placeholder="Why do you need access?" required />
             </Field>
+            {linkableTickets.length > 0 ? (
+              <Field label="Linked ticket" hint="Session history and the audit timeline are recorded on this ticket.">
+                <select className="field-input" value={sessionTicketId} onChange={(event) => setSessionTicketId(event.target.value)}>
+                  {linkableTickets.map((ticket) => (
+                    <option key={ticket.id} value={ticket.id}>#{ticket.number} — {ticket.subject}</option>
+                  ))}
+                </select>
+              </Field>
+            ) : (
+              <p className="muted">No active ticket on this device — the session stays in the audit log unless one is linked later.</p>
+            )}
             <label className="checkbox-field session-permission-check">
               <input
                 type="checkbox"

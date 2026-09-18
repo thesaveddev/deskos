@@ -209,9 +209,24 @@ export async function remoteRoutes(app: FastifyInstance): Promise<void> {
     const result = await withTenant(app.db, ctx.tenantId, async (client) => {
       const device = (await client.query('SELECT id, name FROM devices WHERE id = $1', [body.deviceId])).rows[0]
       if (!device) throw AppError.notFound('Device not found')
-      if (body.ticketId) {
-        const ticket = (await client.query('SELECT id FROM tickets WHERE id = $1', [body.ticketId])).rows[0]
+      // Resolve the linked ticket: an explicit ticketId wins; otherwise fall back
+      // to the device's most recent active ticket so sessions started from the
+      // device page still show up in that ticket's session history and timeline.
+      let ticketId = body.ticketId ?? null
+      if (ticketId) {
+        const ticket = (await client.query('SELECT id FROM tickets WHERE id = $1', [ticketId])).rows[0]
         if (!ticket) throw AppError.notFound('Ticket not found')
+      } else {
+        const fallback = (
+          await client.query(
+            `SELECT id FROM tickets
+              WHERE device_id = $1 AND status NOT IN ('resolved', 'closed')
+              ORDER BY created_at DESC
+              LIMIT 1`,
+            [body.deviceId],
+          )
+        ).rows[0]
+        ticketId = fallback?.id ?? null
       }
 
       const state = body.type === 'attended' ? 'consent_pending' : body.type === 'inspection' ? 'connecting' : 'requested'
@@ -221,7 +236,7 @@ export async function remoteRoutes(app: FastifyInstance): Promise<void> {
              (tenant_id, device_id, ticket_id, type, state, permissions, reason, requested_by, recording_mode, recording_retention_days)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
            RETURNING *`,
-          [ctx.tenantId, body.deviceId, body.ticketId ?? null, body.type, state, body.permissions, body.reason ?? '', request.user!.id, recordingMode, recordingRetentionDays],
+          [ctx.tenantId, body.deviceId, ticketId, body.type, state, body.permissions, body.reason ?? '', request.user!.id, recordingMode, recordingRetentionDays],
         )
       ).rows[0]
       await client.query(
@@ -234,10 +249,11 @@ export async function remoteRoutes(app: FastifyInstance): Promise<void> {
       await addSessionEvent(client, ctx.tenantId, session.id, 'session.created', 'user', request.user!.id, {
         type: body.type,
         deviceId: body.deviceId,
-        ticketId: body.ticketId ?? null,
+        ticketId,
+        ticketLinkedAutomatically: !body.ticketId && ticketId != null,
         permissions: body.permissions,
       })
-      if (body.ticketId) {
+      if (ticketId) {
         await appendTicketTimeline(client, ctx.tenantId, session.id, 'session.created', `Remote ${body.type} session requested for ${device.name}.`, 'user', request.user!.id, { type: body.type })
       }
       if (body.type === 'attended') {

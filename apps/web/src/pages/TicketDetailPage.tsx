@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import { Shell } from '../components/Shell.js'
 import { Alert, Modal } from '../components/ui.js'
+import { useToast } from '../components/Toasts.js'
 import { Icon } from '../components/Icons.js'
 import { getAccessToken } from '../lib/api.js'
 import { useAuth } from '../lib/auth.js'
@@ -21,7 +22,8 @@ import {
 } from '../lib/tickets.js'
 import { listCannedResponses, type CannedResponse } from '../lib/canned.js'
 import '../styles/ticket-lock.css'
-import { listDevices, type Device } from '../lib/devices.js'
+import { listDevices, getDevice, type Device, type DeviceMetric, type DeviceAlert } from '../lib/devices.js'
+import { listTicketSessions, type TicketSessionSummary, type TicketSessionEvent } from '../lib/sessions.js'
 import { draftKbArticle, getTriageState, listSimilarTickets, retryTriage, stopTriage, summarizeTicket, type KbDraftArticle, type SimilarTicket, type TriageState } from '../lib/ai.js'
 
 const STATUS_OPTIONS = ['new', 'open', 'in_progress', 'pending_user', 'pending_vendor', 'escalated', 'resolved', 'closed']
@@ -43,6 +45,13 @@ function toLocalInputValue(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
+/** Human label for a session audit event (`session.files.downloaded` → "files downloaded"). */
+function sessionEventLabel(event: string): string {
+  return event
+    .replace(/^(session|webrtc|screen|relay|recording)\./, '')
+    .replaceAll(/[._]/g, ' ')
+}
+
 export default function TicketDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -59,6 +68,12 @@ export default function TicketDetailPage() {
   const [composerMode, setComposerMode] = useState<'public' | 'internal'>('public')
   const [draft, setDraft] = useState('')
   const [error, setError] = useState<string | null>(null)
+  // Action feedback (replies, status changes, escalations…) is transient and
+  // must not push the page around or wipe the view, so it goes to toasts.
+  // `error` is kept only for failures that decide whether the ticket rendered
+  // at all (see the early return below).
+  const toast = useToast()
+  const fail = (err: unknown, fallback: string) => toast.error(err instanceof Error ? err.message : fallback)
   const [busy, setBusy] = useState(false)
   const [canned, setCanned] = useState<CannedResponse[]>([])
   const [cannedQuery, setCannedQuery] = useState('')
@@ -154,10 +169,56 @@ export default function TicketDetailPage() {
   const [showEscalate, setShowEscalate] = useState(false)
   const [showForward, setShowForward] = useState(false)
   const [showReminder, setShowReminder] = useState(false)
+
+  // The action dropdowns are anchored overlays. Without an outside-click
+  // handler, one left open (e.g. after saving a reminder) invisibly keeps
+  // intercepting pointer events over the ticket body below it, so clicks on
+  // the closed-ticket notice or composer silently do nothing. Clicks inside
+  // the open form stay, clicks on the toggle buttons are left to their own
+  // handlers (so toggling still works), and anything else closes the menus.
+  useEffect(() => {
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null
+      if (!target) return
+      const openMenu = document.querySelector('.ticket-action-dropdown')
+      if (!openMenu) return
+      if (openMenu.contains(target)) return
+      if (target.closest('.ticket-action-menu')) return
+      setShowEscalate(false)
+      setShowForward(false)
+      setShowReminder(false)
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    return () => document.removeEventListener('mousedown', onPointerDown)
+  }, [])
   const [reminders, setReminders] = useState<TicketReminder[]>([])
   const [reminderNote, setReminderNote] = useState('')
   const [reminderDue, setReminderDue] = useState('')
   const [reminderBusy, setReminderBusy] = useState(false)
+
+  // Device health for the affected device (latest metrics + unresolved alerts)
+  const [deviceMetrics, setDeviceMetrics] = useState<DeviceMetric | null>(null)
+  const [deviceAlerts, setDeviceAlerts] = useState<DeviceAlert[]>([])
+  const [deviceHealthLoading, setDeviceHealthLoading] = useState(false)
+
+  // Session audit history: remote sessions linked to this ticket plus their
+  // recent audit events, shown in the side rail.
+  const [sessionAudit, setSessionAudit] = useState<{ sessions: TicketSessionSummary[]; events: TicketSessionEvent[] } | null>(null)
+  const [sessionAuditLoading, setSessionAuditLoading] = useState(false)
+
+  // Collapsible side rail. The preference persists in localStorage so a
+  // technician who prefers the focused conversation view keeps it across
+  // tickets, pages, and sessions.
+  const [railCollapsed, setRailCollapsed] = useState<boolean>(() => {
+    try { return window.localStorage.getItem('reydesk.ticketRailCollapsed') === '1' } catch { return false }
+  })
+  const toggleRailCollapsed = () => {
+    setRailCollapsed((value) => {
+      const next = !value
+      try { window.localStorage.setItem('reydesk.ticketRailCollapsed', next ? '1' : '0') } catch { /* private mode */ }
+      return next
+    })
+  }
 
   const canUseAi = useAuth((state) => state.memberships.some((m) => m.permissions.includes('ai.use')))
   const canOverrideTicketLock = auth.memberships.some((m) => m.permissions.includes('settings.manage'))
@@ -241,6 +302,48 @@ export default function TicketDetailPage() {
     if (id) {
       getTicketEscalations(id).then((r) => setEscalations(r.escalations)).catch(() => {})
     }
+  }, [id])
+
+  // Fetch the affected device's health (latest metric + open alerts) whenever
+  // the linked device changes. Failures degrade to an empty panel silently —
+  // device health is supplementary, not worth an error banner.
+  useEffect(() => {
+    const deviceId = ticketDevice?.id ?? ticket?.device_id ?? null
+    if (!deviceId) {
+      setDeviceMetrics(null)
+      setDeviceAlerts([])
+      return
+    }
+    let cancelled = false
+    setDeviceHealthLoading(true)
+    getDevice(deviceId)
+      .then((res) => {
+        if (cancelled) return
+        setDeviceMetrics(res.metrics?.[0] ?? null)
+        setDeviceAlerts((res.alerts ?? []).filter((a) => !a.resolved_at).slice(0, 3))
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setDeviceMetrics(null)
+          setDeviceAlerts([])
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setDeviceHealthLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [ticketDevice?.id, ticket?.device_id])
+
+  // Session audit history loads once per ticket.
+  useEffect(() => {
+    if (!id) return
+    let cancelled = false
+    setSessionAuditLoading(true)
+    listTicketSessions(id)
+      .then((res) => { if (!cancelled) setSessionAudit(res) })
+      .catch(() => { if (!cancelled) setSessionAudit({ sessions: [], events: [] }) })
+      .finally(() => { if (!cancelled) setSessionAuditLoading(false) })
+    return () => { cancelled = true }
   }, [id])
 
   // These effects must run before the loading/error returns below. Keeping them
@@ -357,7 +460,9 @@ export default function TicketDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [previewImage, previewLoading, previewFullscreen])
 
-  if (error) {
+  if (error && !ticket) {
+    // Only a failed page load replaces the whole view. Action failures surface
+    // as transient toasts and keep the ticket on screen.
     return (
       <Shell>
         <Alert kind="error">{error}</Alert>
@@ -388,40 +493,43 @@ export default function TicketDetailPage() {
   const sendReply = async () => {
     if (!draft.trim() || busy) return
     setBusy(true)
-    setError(null)
     try {
       await replyTicket(ticket.id, draft.trim(), composerMode)
       setDraft('')
       await load()
+      toast.success(composerMode === 'internal' ? 'Internal note added' : 'Reply sent')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Reply failed')
+      fail(err, 'Reply failed')
     } finally {
       setBusy(false)
     }
   }
 
   const changeStatus = async (status: string) => {
-    setError(null)
+    const previous = ticket.status
     try {
       const res = await setTicketStatus(ticket.id, status)
       setTicket(res.ticket)
       await load()
+      toast.success(`Status changed to ${STATUS_LABELS[status] ?? status}`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Status change failed')
+      fail(err, 'Status change failed')
+      // Restore the select to the ticket's actual status.
+      setTicket({ ...ticket, status: previous })
     }
   }
 
   const assignToMe = async () => {
     if (!auth.user) return
-    setError(null)
     try {
       // The API claims and locks in one transaction. Do not lock first: that
       // would leave an orphaned lock if assignment failed or raced another agent.
       const res = await assignTicket(ticket.id, auth.user.id)
       setTicket(res.ticket)
       await load()
+      toast.success('Ticket assigned to you')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Assign failed')
+      fail(err, 'Assign failed')
     }
   }
 
@@ -429,6 +537,7 @@ export default function TicketDetailPage() {
     const next = !showEscalate
     setShowEscalate(next)
     setShowForward(false)
+    setShowReminder(false)
     if (next && !escPathsLoaded) {
       getTicketEscalationPaths(ticket.id)
         .then((result) => setEscPaths(result.paths))
@@ -456,8 +565,9 @@ export default function TicketDetailPage() {
       await load()
       const r = await getTicketEscalations(ticket.id)
       setEscalations(r.escalations)
+      toast.success('Ticket escalated')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Escalation failed')
+      fail(err, 'Escalation failed')
     }
     setEscBusy(false)
   }
@@ -472,7 +582,7 @@ export default function TicketDetailPage() {
       setShowForward(false)
       await load()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Forward failed')
+      fail(err, 'Forward failed')
     }
     setFwdBusy(false)
   }
@@ -498,8 +608,9 @@ export default function TicketDetailPage() {
       setReminderNote('')
       setReminders((await listTicketReminders(ticket.id)).reminders)
       setShowReminder(false)
+      toast.success('Reminder set')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not set reminder')
+      fail(err, 'Could not set reminder')
     }
     setReminderBusy(false)
   }
@@ -510,8 +621,9 @@ export default function TicketDetailPage() {
       const d = new Date(Date.now() + 30 * 60 * 1000)
       await updateTicketReminder(reminder.id, { dueAt: d.toISOString() })
       setReminders((await listTicketReminders(ticket!.id)).reminders)
+      toast.info('Reminder snoozed 30 minutes')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not snooze reminder')
+      fail(err, 'Could not snooze reminder')
     }
   }
 
@@ -520,7 +632,7 @@ export default function TicketDetailPage() {
       await dismissTicketReminder(reminder.id)
       setReminders((await listTicketReminders(ticket!.id)).reminders)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not dismiss reminder')
+      fail(err, 'Could not dismiss reminder')
     }
   }
 
@@ -528,8 +640,9 @@ export default function TicketDetailPage() {
     try {
       await deleteTicketReminder(reminder.id)
       setReminders((await listTicketReminders(ticket!.id)).reminders)
+      toast.info('Reminder deleted')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not delete reminder')
+      fail(err, 'Could not delete reminder')
     }
   }
 
@@ -543,7 +656,7 @@ export default function TicketDetailPage() {
       setLockIsMine(false)
       await load()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not force unlock ticket')
+      fail(err, 'Could not force unlock ticket')
     }
     setLockBusy(false)
   }
@@ -551,12 +664,12 @@ export default function TicketDetailPage() {
   const handleRequestRelease = async () => {
     if (!ticket || lockIsMine || releaseBusy) return
     setReleaseBusy(true)
-    setError(null)
     try {
       const result = await requestTicketLockRelease(ticket.id, 'Please release this ticket when you are finished so I can continue.')
       setReleaseRequests((current) => [result.request, ...current.filter((request) => request.id !== result.request.id)])
+      toast.info('Release request sent')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not request lock release')
+      fail(err, 'Could not request lock release')
     } finally {
       setReleaseBusy(false)
     }
@@ -565,16 +678,16 @@ export default function TicketDetailPage() {
   const handleResolveRelease = async (request: LockReleaseRequest, decision: 'approve' | 'deny') => {
     if (!ticket || releaseBusy) return
     setReleaseBusy(true)
-    setError(null)
     try {
       const result = await resolveLockReleaseRequest(ticket.id, request.id, decision)
       setReleaseRequests((current) => current.map((item) => item.id === result.request.id ? result.request : item))
       if (decision === 'approve') {
         setTicketLock(null)
         setLockIsMine(false)
+        toast.info('Lock released')
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not resolve lock request')
+      fail(err, 'Could not resolve lock request')
     } finally {
       setReleaseBusy(false)
     }
@@ -598,8 +711,9 @@ export default function TicketDetailPage() {
         setTicketLock(null)
         setLockIsMine(false)
       }
+      toast.info('Lock released')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not release lock')
+      fail(err, 'Could not release lock')
     } finally {
       setLockBusy(false)
     }
@@ -608,13 +722,13 @@ export default function TicketDetailPage() {
   const changeDevice = async (deviceId: string) => {
     if (!ticket || deviceSaving) return
     setDeviceSaving(true)
-    setError(null)
     try {
       const res = await updateTicket(ticket.id, { deviceId: deviceId || null })
       setTicket(res.ticket)
       setTicketDevice(deviceId ? devices.find((device) => device.id === deviceId) ?? ticketDevice : null)
+      toast.success(deviceId ? 'Device linked' : 'Device unlinked')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not link device')
+      fail(err, 'Could not link device')
     } finally {
       setDeviceSaving(false)
     }
@@ -629,7 +743,9 @@ export default function TicketDetailPage() {
         await uploadAttachment(getAccessToken() ?? '', ticket.id, file)
       }
       await load()
+      toast.success(files.length === 1 ? `Attached ${files[0].name}` : `Attached ${files.length} files`)
     } catch (err) {
+      fail(err, 'Upload failed')
       setUploadError(err instanceof Error ? err.message : 'Upload failed')
     } finally {
       setUploading(false)
@@ -672,15 +788,15 @@ export default function TicketDetailPage() {
 
   const addLink = async () => {
     if (!ticket || !linkTargetId.trim()) return
-    setError(null)
     try {
       await addTicketLink(ticket.id, { linkType, targetType: linkTargetType, targetId: linkTargetId.trim() })
       setLinkTargetId('')
       setLinkTargetLabel('')
       setShowLinkForm(false)
       await load()
+      toast.success('Link added')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not link')
+      fail(err, 'Could not link')
     }
   }
 
@@ -705,12 +821,12 @@ export default function TicketDetailPage() {
   }
 
   const removeLink = async (link: TicketLink) => {
-    setError(null)
     try {
       await removeTicketLink(link.id)
       await load()
+      toast.info('Link removed')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not unlink')
+      fail(err, 'Could not unlink')
     }
   }
 
@@ -718,14 +834,13 @@ export default function TicketDetailPage() {
 
   const openImagePreview = async (attachment: Attachment) => {
     setPreviewLoading(true)
-    setError(null)
     try {
       const url = await fetchAttachmentBlob(getAccessToken() ?? '', attachment.id)
       setPreviewZoom(1)
       setPreviewFullscreen(false)
       setPreviewImage({ id: attachment.id, filename: attachment.filename, url })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not load image')
+      fail(err, 'Could not load image')
     } finally {
       setPreviewLoading(false)
     }
@@ -763,13 +878,13 @@ export default function TicketDetailPage() {
   const runAiSummary = async () => {
     if (!ticket || aiSummaryBusy) return
     setAiSummaryBusy(true)
-    setError(null)
     try {
       const res = await summarizeTicket(ticket.id)
       setAiSummary(res.summary)
       await load()
+      toast.success('Summary ready')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Summary failed')
+      fail(err, 'Summary failed')
     } finally {
       setAiSummaryBusy(false)
     }
@@ -778,11 +893,10 @@ export default function TicketDetailPage() {
   const runAiSimilar = async () => {
     if (!ticket || aiSimilarBusy) return
     setAiSimilarBusy(true)
-    setError(null)
     try {
       setAiSimilar((await listSimilarTickets(ticket.id)).similar)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Similarity search failed')
+      fail(err, 'Similarity search failed')
     } finally {
       setAiSimilarDone(true)
       setAiSimilarBusy(false)
@@ -792,11 +906,10 @@ export default function TicketDetailPage() {
   const runAiDraft = async () => {
     if (!ticket || aiDraftBusy) return
     setAiDraftBusy(true)
-    setError(null)
     try {
       setAiDraft((await draftKbArticle(ticket.id)).article)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'KB draft failed')
+      fail(err, 'KB draft failed')
     } finally {
       setAiDraftBusy(false)
     }
@@ -805,7 +918,6 @@ export default function TicketDetailPage() {
   const runAiTriageAction = async (action: 'retry' | 'stop') => {
     if (!ticket || aiTriageBusy) return
     setAiTriageBusy(true)
-    setError(null)
     try {
       if (action === 'retry') {
         await retryTriage(ticket.id)
@@ -815,8 +927,9 @@ export default function TicketDetailPage() {
         setAiTriage((await getTriageState(ticket.id)).triage)
       }
       await load()
+      toast.success(action === 'retry' ? 'AI triage restarted' : 'AI triage stopped')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'AI triage action failed')
+      fail(err, 'AI triage action failed')
     } finally {
       setAiTriageBusy(false)
     }
@@ -843,6 +956,7 @@ export default function TicketDetailPage() {
     <Shell>
       <div className="ticket-detail-layout">
       <div className="ticket-detail-scroll">
+      <div className="ticket-detail-main">
       <div className="ticket-head">
         <div className="ticket-head-main">
           <div className="ticket-id-row">
@@ -881,7 +995,7 @@ export default function TicketDetailPage() {
             ))}
           </select>
           <div className="ticket-action-menu">
-            <button className="btn btn-ghost btn-sm" disabled={readOnlyForLock} onClick={openEscalate} aria-expanded={showEscalate}>
+            <button className="btn btn-ghost btn-sm" disabled={readOnlyForLock} onClick={openEscalate} aria-expanded={showEscalate} aria-haspopup="true">
               <Icon name="activity" size={14} />Escalate
             </button>
             {showEscalate && (
@@ -926,21 +1040,22 @@ export default function TicketDetailPage() {
         </div>
 
         {/* Legacy inline action panels removed; action forms now render as anchored dropdowns. */}
-        {/* Escalation history */}
-          <div className="ticket-escalation-history">
-            <span className="etch">Escalation history</span>
-            {escalations.map((e) => (
-              <div key={e.id} className="ticket-escalation-entry">
-                <span className="ticket-esc-level">Level {e.level}</span>
-                <span className="ticket-esc-reason">{e.reason}</span>
-                <span className="ticket-esc-meta">by {e.escalated_by_name || 'Unknown'} · {formatWhen(e.created_at)}</span>
-              </div>
-            ))}
-          </div>
+        {/* Escalation history now lives in the side rail, below linked items. */}
       </div>
 
-      {error ? <Alert kind="error">{error}</Alert> : null}
-      {ticketIsClosed ? <div className="ticket-closed-notice" role="status"><Icon name="lock" size={15} /><span>This ticket is closed and read-only. Reopen it before making changes.</span></div> : null}
+      {error && !ticket ? <Alert kind="error">{error}</Alert> : null}
+      {ticketIsClosed ? (
+        <div className="ticket-closed-notice" role="status">
+          <Icon name="lock" size={15} />
+          <span>This ticket is closed and read-only. Reopen it before making changes.</span>
+          {/* Closed tickets are read-only everywhere else, so the notice carries
+              the only reopen affordance. The API accepts closed → open and
+              clears resolved/closed timestamps on the way back. */}
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => void changeStatus('open')}>
+            Reopen ticket
+          </button>
+        </div>
+      ) : null}
 
       {/* Lock, viewer, and endpoint context on one compact row */}
       <div className="ticket-context-bar" aria-label="Ticket presence and endpoint context">
@@ -1013,123 +1128,6 @@ export default function TicketDetailPage() {
           ))}
         </section>
       ) : null}
-
-      <section className="ticket-links">
-        <div className="ticket-links-head">
-          <div className="ticket-links-title">
-            <span className="ticket-links-icon" aria-hidden="true"><Icon name="link" size={16} /></span>
-            <div>
-              <span className="etch">Linked items</span>
-              <span className="ticket-links-summary">{links.length === 0 ? 'Connect this ticket to related work' : `${links.length} linked item${links.length === 1 ? '' : 's'}`}</span>
-            </div>
-          </div>
-          <button
-            type="button"
-            className={`btn btn-ghost btn-sm ticket-link-trigger${showLinkForm ? ' active' : ''}`}
-            onClick={() => setShowLinkForm((open) => !open)}
-            aria-expanded={showLinkForm}
-            aria-controls="ticket-link-form"
-            aria-label={showLinkForm ? 'Close linking form' : 'Link a ticket or item'}
-            title={showLinkForm ? 'Close linking form' : 'Link a ticket or item'}
-            data-tooltip={showLinkForm ? 'Close linking form' : 'Link a ticket or item'}
-            disabled={readOnlyForLock}
-          >
-            <Icon name="link" size={16} />
-            <span>{showLinkForm ? 'Close' : 'Link item'}</span>
-          </button>
-        </div>
-        {links.length === 0 ? (
-          <div className="ticket-links-empty">
-            <Icon name="link" size={18} />
-            <span>No tickets or items linked yet.</span>
-          </div>
-        ) : (
-          <ul className="attachments-list">
-            {links.map((l) => (
-              <li key={l.id} className="attachment-row">
-                <span className="mono muted">{l.link_type}</span>
-                <span className="attachment-name">
-                  {l.target_type === 'ticket' ? (
-                    <Link to={`/tickets/${l.target_id}`} className="ticket-link-item">
-                      #{l.target_number} {l.target_subject ?? ''}
-                    </Link>
-                  ) : l.target_type === 'asset'
-                    ? (l.target_asset_name ?? 'asset')
-                    : l.target_type === 'kb'
-                      ? (
-                          <a href={`/kb/${l.target_id}`} className="ticket-link-item">
-                            {l.target_kb_title ?? 'KB article'}
-                          </a>
-                        )
-                      : 'session'}
-                </span>
-                <span className="muted mono">{l.target_type}</span>
-                <button className="btn btn-ghost btn-sm" disabled={readOnlyForLock} onClick={() => void removeLink(l)}>Unlink</button>
-              </li>
-            ))}
-          </ul>
-        )}
-        {showLinkForm ? (
-          <div className="ticket-link-form-panel" id="ticket-link-form">
-            <div className="ticket-link-form-intro">
-              <span className="ticket-links-icon" aria-hidden="true"><Icon name="link" size={15} /></span>
-              <div>
-                <strong>Link related work</strong>
-                <span>Search and connect this ticket to another ticket, asset, or knowledge article.</span>
-              </div>
-            </div>
-            <div className="ticket-link-form">
-              <select className="field-input select-sm" value={linkType} onChange={(e) => setLinkType(e.target.value)} disabled={readOnlyForLock} aria-label="Link type">
-                <option value="related">Related</option>
-                <option value="caused_by">Caused by</option>
-                <option value="parent">Parent</option>
-                <option value="child">Child</option>
-                <option value="duplicates">Duplicates</option>
-              </select>
-              <select className="field-input select-sm" value={linkTargetType} onChange={(e) => changeLinkTargetType(e.target.value)} disabled={readOnlyForLock} aria-label="Target type">
-                <option value="ticket">Ticket</option>
-                <option value="asset">Asset</option>
-                <option value="kb">KB article</option>
-              </select>
-              <div className="link-target-search">
-                {linkTargetLabel ? (
-                  <div className="link-target-chip">
-                    <span className="mono" title={linkTargetLabel}>{linkTargetLabel}</span>
-                    <button type="button" className="link-target-chip-clear" onClick={clearLinkTarget} aria-label="Clear selection"><Icon name="close" size={13} /></button>
-                  </div>
-                ) : (
-                  <>
-                    <input
-                      className="field-input mono"
-                      value={linkQuery}
-                      onChange={(e) => setLinkQuery(e.target.value)}
-                      disabled={readOnlyForLock}
-                      placeholder={`Search ${linkTargetType === 'kb' ? 'articles' : linkTargetType === 'asset' ? 'assets' : 'tickets'}…`}
-                      aria-label="Search target"
-                      onFocus={() => { if (linkResults.length > 0) setLinkSearchOpen(true) }}
-                    />
-                    {linkSearchOpen ? (
-                      <div className="link-target-results">
-                        {linkSearching ? <div className="link-target-state">Searching…</div> : null}
-                        {!linkSearching && linkResults.length === 0 ? <div className="link-target-state">No matches</div> : null}
-                        {linkResults.map((result) => (
-                          <button type="button" key={`${result.type}-${result.id}`} className="link-target-result" onClick={() => selectLinkTarget(result)}>
-                            <span className="link-target-result-type">{result.type}</span>
-                            <span className="link-target-result-label">{result.label}</span>
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                  </>
-                )}
-              </div>
-              <button className="btn btn-primary btn-sm" disabled={readOnlyForLock || !linkTargetId.trim()} onClick={() => void addLink()}>
-                <Icon name="link" size={15} /> Link
-              </button>
-            </div>
-          </div>
-        ) : null}
-      </section>
 
       {canUseAi ? (
         <section className="ticket-links ai-panel">
@@ -1256,7 +1254,6 @@ export default function TicketDetailPage() {
             <input type="file" multiple hidden disabled={readOnlyForLock} onChange={(e) => onUpload(e)} />
           </label>
         </div>
-        {uploadError ? <div className="alert alert-error" style={{ margin: '8px 0' }}>{uploadError}</div> : null}
         {attachments.length === 0 ? (
           <div className="muted" style={{ padding: '4px 0' }}>No files attached.</div>
         ) : (
@@ -1289,6 +1286,287 @@ export default function TicketDetailPage() {
           </ul>
         )}
       </div>
+      </div>{/* end ticket-detail-main */}
+
+      <aside className={`ticket-side-rail${railCollapsed ? ' collapsed' : ''}`}>
+        {railCollapsed ? (
+          <button
+            type="button"
+            className="ticket-rail-expand"
+            onClick={toggleRailCollapsed}
+            aria-label="Show side panel"
+            title="Show side panel"
+            data-tooltip="Show side panel"
+          >
+            <Icon name="chevron-left" size={15} />
+          </button>
+        ) : (
+        <>
+        <section className="ticket-links">
+          <div className="ticket-links-head">
+            <div className="ticket-links-title">
+              <span className="ticket-links-icon" aria-hidden="true"><Icon name="link" size={16} /></span>
+              <div>
+                <span className="etch">Linked items</span>
+                <span className="ticket-links-summary">{links.length === 0 ? 'Connect this ticket to related work' : `${links.length} linked item${links.length === 1 ? '' : 's'}`}</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              className={`btn btn-ghost btn-sm ticket-link-trigger${showLinkForm ? ' active' : ''}`}
+              onClick={() => setShowLinkForm((open) => !open)}
+              aria-expanded={showLinkForm}
+              aria-controls="ticket-link-form"
+              aria-label={showLinkForm ? 'Close linking form' : 'Link a ticket or item'}
+              title={showLinkForm ? 'Close linking form' : 'Link a ticket or item'}
+              data-tooltip={showLinkForm ? 'Close linking form' : 'Link a ticket or item'}
+              disabled={readOnlyForLock}
+            >
+              <Icon name="link" size={16} />
+              <span>{showLinkForm ? 'Close' : 'Link item'}</span>
+            </button>
+          </div>
+          {links.length === 0 ? (
+            <div className="ticket-links-empty">
+              <Icon name="link" size={18} />
+              <span>No tickets or items linked yet.</span>
+            </div>
+          ) : (
+            <ul className="attachments-list">
+              {links.map((l) => (
+                <li key={l.id} className="attachment-row">
+                  <span className="mono muted">{l.link_type}</span>
+                  <span className="attachment-name">
+                    {l.target_type === 'ticket' ? (
+                      <Link to={`/tickets/${l.target_id}`} className="ticket-link-item">
+                        #{l.target_number} {l.target_subject ?? ''}
+                      </Link>
+                    ) : l.target_type === 'asset'
+                      ? (l.target_asset_name ?? 'asset')
+                      : l.target_type === 'kb'
+                        ? (
+                            <a href={`/kb/${l.target_id}`} className="ticket-link-item">
+                              {l.target_kb_title ?? 'KB article'}
+                            </a>
+                          )
+                        : 'session'}
+                  </span>
+                  <span className="muted mono">{l.target_type}</span>
+                  <button className="btn btn-ghost btn-sm" disabled={readOnlyForLock} onClick={() => void removeLink(l)}>Unlink</button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {showLinkForm ? (
+            <div className="ticket-link-form-panel" id="ticket-link-form">
+              <div className="ticket-link-form-intro">
+                <span className="ticket-links-icon" aria-hidden="true"><Icon name="link" size={15} /></span>
+                <div>
+                  <strong>Link related work</strong>
+                  <span>Search and connect this ticket to another ticket, asset, or knowledge article.</span>
+                </div>
+              </div>
+              <div className="ticket-link-form">
+                <select className="field-input select-sm" value={linkType} onChange={(e) => setLinkType(e.target.value)} disabled={readOnlyForLock} aria-label="Link type">
+                  <option value="related">Related</option>
+                  <option value="caused_by">Caused by</option>
+                  <option value="parent">Parent</option>
+                  <option value="child">Child</option>
+                  <option value="duplicates">Duplicates</option>
+                </select>
+                <select className="field-input select-sm" value={linkTargetType} onChange={(e) => changeLinkTargetType(e.target.value)} disabled={readOnlyForLock} aria-label="Target type">
+                  <option value="ticket">Ticket</option>
+                  <option value="asset">Asset</option>
+                  <option value="kb">KB article</option>
+                </select>
+                <div className="link-target-search">
+                  {linkTargetLabel ? (
+                    <div className="link-target-chip">
+                      <span className="mono" title={linkTargetLabel}>{linkTargetLabel}</span>
+                      <button type="button" className="link-target-chip-clear" onClick={clearLinkTarget} aria-label="Clear selection"><Icon name="close" size={13} /></button>
+                    </div>
+                  ) : (
+                    <>
+                      <input
+                        className="field-input mono"
+                        value={linkQuery}
+                        onChange={(e) => setLinkQuery(e.target.value)}
+                        disabled={readOnlyForLock}
+                        placeholder={`Search ${linkTargetType === 'kb' ? 'articles' : linkTargetType === 'asset' ? 'assets' : 'tickets'}…`}
+                        aria-label="Search target"
+                        onFocus={() => { if (linkResults.length > 0) setLinkSearchOpen(true) }}
+                      />
+                      {linkSearchOpen ? (
+                        <div className="link-target-results">
+                          {linkSearching ? <div className="link-target-state">Searching…</div> : null}
+                          {!linkSearching && linkResults.length === 0 ? <div className="link-target-state">No matches</div> : null}
+                          {linkResults.map((result) => (
+                            <button type="button" key={`${result.type}-${result.id}`} className="link-target-result" onClick={() => selectLinkTarget(result)}>
+                              <span className="link-target-result-type">{result.type}</span>
+                              <span className="link-target-result-label">{result.label}</span>
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </>
+                  )}
+                </div>
+                <button className="btn btn-primary btn-sm" disabled={readOnlyForLock || !linkTargetId.trim()} onClick={() => void addLink()}>
+                  <Icon name="link" size={15} /> Link
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </section>
+
+        <div className="ticket-rail-panel ticket-sla-panel">
+          <span className="etch">SLA status</span>
+          {ticket.sla_response_breached || ticket.sla_resolution_breached ? (
+            <div className="ticket-sla-state sla-crit">
+              <span className="status-pill status-warn">Breached</span>
+              <span className="ticket-sla-note">This ticket has missed one or more SLA targets.</span>
+            </div>
+          ) : (
+            <div className={`ticket-sla-state sla-${sla.tone}`}>
+              <span className={`sla-chip sla-${sla.tone}`}>{sla.label}</span>
+              {ticket.status !== 'resolved' && ticket.status !== 'closed' ? (
+                <span className="ticket-sla-note">
+                  {ticket.due_response_at && !ticket.first_response_at ? `First response due ${formatWhen(ticket.due_response_at)}` : null}
+                  {ticket.due_response_at && !ticket.first_response_at && ticket.due_resolution_at ? ' · ' : null}
+                  {ticket.due_resolution_at && !ticket.resolved_at ? `Resolution due ${formatWhen(ticket.due_resolution_at)}` : null}
+                  {!ticket.due_response_at && !ticket.due_resolution_at ? 'No SLA targets set.' : null}
+                </span>
+              ) : (
+                <span className="ticket-sla-note">{ticket.resolved_at ? `Resolved ${formatWhen(ticket.resolved_at)}` : 'Work complete.'}</span>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="ticket-rail-panel ticket-device-health">
+          <span className="etch">Device health</span>
+          {!ticket.device_id ? (
+            <div className="ticket-rail-empty">No device linked to this ticket.</div>
+          ) : deviceHealthLoading ? (
+            <div className="ticket-rail-empty">Checking device…</div>
+          ) : (
+            <>
+              <div className="ticket-device-health-head">
+                <span className="ticket-device-health-name">{ticketDevice?.name ?? 'Linked device'}</span>
+                <span className={`ticket-device-online ${ticketDevice?.last_seen_at ? 'on' : 'off'}`}>{ticketDevice?.last_seen_at ? 'Online' : 'Offline'}</span>
+              </div>
+              {deviceMetrics ? (
+                <div className="ticket-device-gauges">
+                  {([
+                    ['CPU', Math.round(deviceMetrics.cpu_pct)],
+                    ['Memory', Math.round(deviceMetrics.mem_pct)],
+                    ['Disk', Math.round(deviceMetrics.disk_pct)],
+                  ] as const).map(([label, value]) => (
+                    <div className="ticket-device-gauge" key={label}>
+                      <div className="ticket-device-gauge-top">
+                        <span className="ticket-device-gauge-label">{label}</span>
+                        <span className="ticket-device-gauge-value mono">{value}%</span>
+                      </div>
+                      <div className="bar-track">
+                        <div
+                          className={`bar-fill${value >= 90 ? ' gauge-crit' : value >= 75 ? ' gauge-warn' : ''}`}
+                          style={{ width: `${Math.min(100, value)}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="ticket-rail-empty">No recent telemetry.</div>
+              )}
+              {deviceAlerts.length > 0 ? (
+                <div className="ticket-device-alerts">
+                  {deviceAlerts.map((alert) => (
+                    <div key={alert.id} className={`ticket-device-alert alert-${alert.severity}`}>
+                      <span className="ticket-device-alert-msg">{alert.message}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </>
+          )}
+        </div>
+
+        <div className="ticket-rail-panel ticket-session-history">
+          <span className="etch">Session history</span>
+          {sessionAuditLoading ? (
+            <div className="ticket-rail-empty">Loading session history…</div>
+          ) : !sessionAudit || sessionAudit.sessions.length === 0 ? (
+            <div className="ticket-rail-empty">No remote sessions on this ticket yet.</div>
+          ) : (
+            <>
+              {sessionAudit.sessions.map((session) => {
+                const sessionEvents = sessionAudit.events.filter((event) => event.session_id === session.id)
+                return (
+                  <div key={session.id} className="ticket-session-entry">
+                    <div className="ticket-session-head">
+                      <Link className="ticket-session-link" to={`/sessions/${session.id}`}>
+                        <span className={`status-pill session-state-${session.state}`}>{session.state.replaceAll('_', ' ')}</span>
+                        <span className="ticket-session-device">{session.device_name}</span>
+                      </Link>
+                      <span className="ticket-session-meta mono">{session.type} · {formatWhen(session.created_at)}</span>
+                    </div>
+                    <div className="ticket-session-foot">
+                      <span className="ticket-session-count mono" title="Audit events recorded for this session">
+                        {session.event_count} {session.event_count === 1 ? 'event' : 'events'}
+                      </span>
+                      <Link className="ticket-session-jump" to={`/sessions/${session.id}`}>
+                        View console<Icon name="arrow-right" size={12} />
+                      </Link>
+                    </div>
+                    {sessionEvents.length > 0 ? (
+                      <ul className="ticket-session-events">
+                        {sessionEvents.map((event) => (
+                          <li key={event.id} className={`ticket-session-event actor-${event.actor_type}`}>
+                            <span className="ticket-session-event-label">{sessionEventLabel(event.event)}</span>
+                            <time className="mono">{formatWhen(event.created_at)}</time>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                )
+              })}
+            </>
+          )}
+        </div>
+
+        <div className="ticket-escalation-history">
+          <span className="etch">Escalation history</span>
+          {escalations.length === 0 ? (
+            <div className="ticket-rail-empty">No escalations recorded.</div>
+          ) : (
+            escalations.map((e) => (
+              <div key={e.id} className="ticket-escalation-entry">
+                <span className="ticket-esc-level">Level {e.level}</span>
+                <span className="ticket-esc-reason">{e.reason}</span>
+                <span className="ticket-esc-meta">by {e.escalated_by_name || 'Unknown'} · {formatWhen(e.created_at)}</span>
+              </div>
+            ))
+          )}
+        </div>
+        </>
+        )}
+        {!railCollapsed ? (
+          <button
+            type="button"
+            className="ticket-rail-collapse"
+            onClick={toggleRailCollapsed}
+            aria-label="Hide side panel"
+            aria-expanded="true"
+            title="Hide side panel"
+            data-tooltip="Hide side panel"
+          >
+            <Icon name="chevron-right" size={15} />
+            <span>Hide panel</span>
+          </button>
+        ) : null}
+      </aside>
       </div>{/* end ticket-detail-scroll */}
 
       {previewFullscreen && previewImage ? (

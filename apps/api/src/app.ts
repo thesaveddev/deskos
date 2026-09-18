@@ -90,6 +90,7 @@ import { ticketLinkRoutes } from './modules/tickets/links.routes.js'
 import { escalationRoutes } from './modules/tickets/escalation.routes.js'
 import { ticketLockRoutes } from './modules/tickets/locks.routes.js'
 import { registerReminderRoutes } from './modules/tickets/reminders.routes.js'
+import { registerSessionHistoryRoutes } from './modules/tickets/session-history.routes.js'
 import './types.js'
 
 function friendlyValidationMessage(error: ZodError): string {
@@ -383,6 +384,7 @@ export async function buildApp(config: AppConfig): Promise<FastifyInstance> {
     await v1.register(escalationRoutes)
     await v1.register(ticketLockRoutes)
     await v1.register(registerReminderRoutes)
+    await v1.register(registerSessionHistoryRoutes)
     await v1.register(attachmentRoutes)
     await v1.register(teamRoutes)
     await v1.register(searchRoutes)
