@@ -46,8 +46,15 @@ export default function LandingLayout({ children, title, description, structured
   }, [])
 
   useEffect(() => {
+    if (location.hash) {
+      const id = decodeURIComponent(location.hash.slice(1))
+      const frame = window.requestAnimationFrame(() => {
+        document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      })
+      return () => window.cancelAnimationFrame(frame)
+    }
     window.scrollTo(0, 0)
-  }, [location.pathname])
+  }, [location.pathname, location.hash])
 
   // Update meta tags on mount / route change
   useEffect(() => {

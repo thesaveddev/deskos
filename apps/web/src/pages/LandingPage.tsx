@@ -43,13 +43,14 @@ const HIGHLIGHTS: { icon: IconName; title: string; body: string }[] = [
   },
 ]
 
-const CAPABILITY_GROUPS: { icon: IconName; eyebrow: string; title: string; body: string; items: string[] }[] = [
+const CAPABILITY_GROUPS: { icon: IconName; eyebrow: string; title: string; body: string; items: string[]; to: string }[] = [
   {
     icon: 'sparkles',
     eyebrow: 'AI workers',
     title: 'Move from AI suggestions to governed work',
     body: 'ReyDesk AI workers can read the ticket, inspect the linked device and knowledge, propose a diagnosis, and take approved actions. Humans remain in control of risky steps.',
     items: ['L1 playbooks for common support issues', 'Confidence scoring and escalation paths', 'Approval gates before tool calls', 'Per-run activity, token, cost, and outcome tracking'],
+    to: '/features#ai',
   },
   {
     icon: 'ticket',
@@ -57,6 +58,7 @@ const CAPABILITY_GROUPS: { icon: IconName; eyebrow: string; title: string; body:
     title: 'Run the service desk, not just a ticket list',
     body: 'Give technicians the workflow around the ticket: triage, assignment, SLA clocks, reminders, approvals, escalation, change, problem, and knowledge management.',
     items: ['Queues, priorities, business-hours SLA math', 'Ticket reminders, snooze, forward, and escalation', 'Service catalogue, approvals, and JIT access', 'Linked users, devices, assets, services, and knowledge'],
+    to: '/features#itsm',
   },
   {
     icon: 'chart',
@@ -64,6 +66,7 @@ const CAPABILITY_GROUPS: { icon: IconName; eyebrow: string; title: string; body:
     title: 'Know which machines need attention before users call',
     body: 'Collect endpoint inventory and health signals in the same system where technicians resolve the work. Turn alerts into context, not another dashboard to monitor.',
     items: ['CPU, memory, disk, OS, software, and check-in state', 'Device alerts and automatic ticket workflows', 'Patches, automations, scripts, and device groups', 'Device Experience scoring and fleet reporting'],
+    to: '/features#rmm',
   },
   {
     icon: 'shield',
@@ -71,6 +74,7 @@ const CAPABILITY_GROUPS: { icon: IconName; eyebrow: string; title: string; body:
     title: 'Make every action explainable',
     body: 'ReyDesk is designed for support teams that need to know who accessed what, which permissions were granted, and how a resolution was reached.',
     items: ['Consent-first remote support sessions', 'Hash-chained audit history and exports', 'AI activity and data-access logging', 'Tool permissions, approvals, and usage alerts'],
+    to: '/features#security',
   },
   {
     icon: 'plug',
@@ -78,6 +82,7 @@ const CAPABILITY_GROUPS: { icon: IconName; eyebrow: string; title: string; body:
     title: 'Fit the way your team already works',
     body: 'Connect identity, notifications, automation, and external AI clients without making ReyDesk a closed island.',
     items: ['Entra ID and Active Directory sync', 'Webhooks, OAuth2 API, and MCP tools', 'Slack and browser push notifications', 'Tenant-aware integrations and connection tests'],
+    to: '/features#integrations',
   },
   {
     icon: 'users',
@@ -85,6 +90,7 @@ const CAPABILITY_GROUPS: { icon: IconName; eyebrow: string; title: string; body:
     title: 'Scale from one helpdesk to many workspaces',
     body: 'Support internal teams, customers, or multiple tenants from a consistent operating model with roles, billing, reporting, and a customer portal.',
     items: ['Multi-tenant MSP administration', 'Customer portal and public support routes', 'Teams, roles, permissions, and approvals', 'Reports for workload, SLA, AI, devices, and outcomes'],
+    to: '/use-cases',
   },
 ]
 
@@ -130,6 +136,7 @@ function ProductWalkthrough() {
             </button>
           ))}
         </div>
+        <Link className="landing-walkthrough-guide" to="/features#remote">Open the full feature guide <span aria-hidden="true">→</span></Link>
       </div>
       <div className="landing-walkthrough-stage" role="tabpanel" aria-live="polite">
         <div className="landing-walkthrough-stage-bar"><span className="mono">REYDESK / WORKFLOW</span><span className="landing-walkthrough-live"><i /> live walkthrough</span></div>
@@ -248,6 +255,7 @@ export default function LandingPage() {
               <h3>{group.title}</h3>
               <p>{group.body}</p>
               <ul>{group.items.map((item) => <li key={item}><span aria-hidden="true">✓</span>{item}</li>)}</ul>
+              <Link className="landing-capability-link" to={group.to}>Explore {group.eyebrow.toLowerCase()} <span aria-hidden="true">→</span></Link>
             </article>
           ))}
         </div>
