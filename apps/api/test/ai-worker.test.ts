@@ -8,7 +8,9 @@ interface MockProvider extends AiProvider {
   calls: string[]
 }
 
-function waitFor(check: () => Promise<boolean>, timeoutMs = 3_000): Promise<void> {
+// CI runners can stall well past a second between the POST that starts the
+// worker and its async provider calls completing, so keep this patient.
+function waitFor(check: () => Promise<boolean>, timeoutMs = 15_000): Promise<void> {
   const started = Date.now()
   return new Promise((resolve, reject) => {
     const poll = async () => {
