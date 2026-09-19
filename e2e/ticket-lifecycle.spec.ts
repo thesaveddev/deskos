@@ -367,10 +367,11 @@ async function mockTicketApi(page: Page) {
             device_name: 'Opeyemi-PC',
             hostname: 'OPEYEMI-PC',
             requested_by_name: user.name,
-            event_count: 2,
+            event_count: 3,
           },
         ],
         events: [
+          { id: 3, session_id: 'session-1', actor_type: 'agent', event: 'session.terminal.started', payload: {}, created_at: new Date(Date.now() - 3000_000).toISOString() },
           { id: 2, session_id: 'session-1', actor_type: 'user', event: 'session.files.downloaded', payload: {}, created_at: new Date(Date.now() - 2900_000).toISOString() },
           { id: 1, session_id: 'session-1', actor_type: 'agent', event: 'webrtc.ice_connected', payload: {}, created_at: new Date(Date.now() - 3500_000).toISOString() },
         ],
@@ -528,10 +529,20 @@ test.describe('ticket lifecycle', () => {
     await expect(page.getByText('Session history')).toBeVisible()
     await expect(page.locator('.ticket-session-entry').first()).toBeVisible()
     await expect(page.locator('.ticket-session-device')).toHaveText('Opeyemi-PC')
-    await expect(page.locator('.ticket-session-count')).toHaveText('2 events')
+    await expect(page.locator('.ticket-session-count')).toHaveText('3 events')
     await expect(page.locator('.ticket-session-jump', { hasText: 'View console' })).toBeVisible()
     await expect(page.locator('.ticket-session-event', { hasText: 'files downloaded' })).toBeVisible()
     await expect(page.locator('.ticket-session-event', { hasText: 'ice connected' })).toBeVisible()
+
+    // Elevated-only filter narrows the feed to terminal/service/process events.
+    await page.locator('.ticket-session-filter input').check()
+    await expect(page.locator('.ticket-session-event', { hasText: 'terminal started' })).toBeVisible()
+    await expect(page.locator('.ticket-session-event', { hasText: 'files downloaded' })).toHaveCount(0)
+    await expect(page.locator('.ticket-session-event', { hasText: 'ice connected' })).toHaveCount(0)
+    // The count chip keeps reporting the full audit total.
+    await expect(page.locator('.ticket-session-count')).toHaveText('3 events')
+    await page.locator('.ticket-session-filter input').uncheck()
+    await expect(page.locator('.ticket-session-event', { hasText: 'files downloaded' })).toBeVisible()
 
     // ── Remind ─────────────────────────────────────────────────
     await page.getByRole('button', { name: /Reminder/ }).click()

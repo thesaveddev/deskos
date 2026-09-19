@@ -23,7 +23,7 @@ import {
 import { listCannedResponses, type CannedResponse } from '../lib/canned.js'
 import '../styles/ticket-lock.css'
 import { listDevices, getDevice, type Device, type DeviceMetric, type DeviceAlert } from '../lib/devices.js'
-import { listTicketSessions, type TicketSessionSummary, type TicketSessionEvent } from '../lib/sessions.js'
+import { isElevatedSessionEvent, listTicketSessions, type TicketSessionSummary, type TicketSessionEvent } from '../lib/sessions.js'
 import { draftKbArticle, getTriageState, listSimilarTickets, retryTriage, stopTriage, summarizeTicket, type KbDraftArticle, type SimilarTicket, type TriageState } from '../lib/ai.js'
 
 const STATUS_OPTIONS = ['new', 'open', 'in_progress', 'pending_user', 'pending_vendor', 'escalated', 'resolved', 'closed']
@@ -205,6 +205,9 @@ export default function TicketDetailPage() {
   // recent audit events, shown in the side rail.
   const [sessionAudit, setSessionAudit] = useState<{ sessions: TicketSessionSummary[]; events: TicketSessionEvent[] } | null>(null)
   const [sessionAuditLoading, setSessionAuditLoading] = useState(false)
+  // Elevated-only view of the session audit feed: filters to terminal,
+  // process-termination, service-change, and elevation-refusal events.
+  const [elevatedOnly, setElevatedOnly] = useState(false)
 
   // Collapsible side rail. The preference persists in localStorage so a
   // technician who prefers the focused conversation view keeps it across
@@ -1494,6 +1497,16 @@ export default function TicketDetailPage() {
 
         <div className="ticket-rail-panel ticket-session-history">
           <span className="etch">Session history</span>
+          {!sessionAuditLoading && sessionAudit && sessionAudit.sessions.length > 0 ? (
+            <label className="ticket-session-filter">
+              <input
+                type="checkbox"
+                checked={elevatedOnly}
+                onChange={(event) => setElevatedOnly(event.target.checked)}
+              />
+              <span title="Terminal activity, process termination, service changes, and refused elevations">Elevated actions only</span>
+            </label>
+          ) : null}
           {sessionAuditLoading ? (
             <div className="ticket-rail-empty">Loading session history…</div>
           ) : !sessionAudit || sessionAudit.sessions.length === 0 ? (
@@ -1501,7 +1514,8 @@ export default function TicketDetailPage() {
           ) : (
             <>
               {sessionAudit.sessions.map((session) => {
-                const sessionEvents = sessionAudit.events.filter((event) => event.session_id === session.id)
+                const allEvents = sessionAudit.events.filter((event) => event.session_id === session.id)
+                const sessionEvents = elevatedOnly ? allEvents.filter((event) => isElevatedSessionEvent(event.event)) : allEvents
                 return (
                   <div key={session.id} className="ticket-session-entry">
                     <div className="ticket-session-head">
@@ -1528,6 +1542,8 @@ export default function TicketDetailPage() {
                           </li>
                         ))}
                       </ul>
+                    ) : elevatedOnly && allEvents.length > 0 ? (
+                      <div className="ticket-rail-empty">No elevated actions recorded for this session.</div>
                     ) : null}
                   </div>
                 )

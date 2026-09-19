@@ -3,12 +3,14 @@ import { Link } from 'react-router-dom'
 import { Shell } from '../components/Shell.js'
 import { Pagination, useOffsetPagination } from '../components/Pagination.js'
 import { Alert, Modal } from '../components/ui.js'
+import { useToast } from '../components/Toasts.js'
 import { Icon } from '../components/Icons.js'
 import { useAuth } from '../lib/auth.js'
 import {
   getEnrolToken,
   listDeviceGroups,
   listDevices,
+  restoreDevice,
   rotateEnrolToken,
   type Device,
   type DeviceGroup,
@@ -88,6 +90,9 @@ export default function DevicesPage() {
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [groupsError, setGroupsError] = useState<string | null>(null)
+  const [retiredCount, setRetiredCount] = useState<number | null>(null)
+  const [restoringId, setRestoringId] = useState<string | null>(null)
+  const toast = useToast()
 
   const loadDevices = useCallback(async () => {
     setLoading(true)
@@ -108,6 +113,7 @@ export default function DevicesPage() {
 
   useEffect(() => {
     void listDeviceGroups().then((response) => setGroups(response.groups)).catch((err) => setGroupsError(err instanceof Error ? err.message : 'Groups unavailable'))
+    void listDevices({ status: 'retired', limit: 1 }).then((response) => setRetiredCount(response.total ?? 0)).catch(() => setRetiredCount(null))
     if (canManage) {
       void getEnrolToken().then((response) => {
         setTokenCreatedAt(response.activeCode?.createdAt ?? response.activeToken?.createdAt ?? null)
@@ -152,6 +158,21 @@ export default function DevicesPage() {
     pagination.reset()
   }
 
+  const restore = async (device: Device) => {
+    if (!canManage || restoringId) return
+    setRestoringId(device.id)
+    try {
+      await restoreDevice(device.id)
+      toast.success(`${device.name} restored to the active inventory. Re-enrol the agent to bring it back online.`)
+      setRetiredCount((count) => (count == null ? count : Math.max(0, count - 1)))
+      await loadDevices()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not restore device')
+    } finally {
+      setRestoringId(null)
+    }
+  }
+
   const onlineOnPage = useMemo(() => devices.filter((device) => device.status === 'online').length, [devices])
   const offlineOnPage = useMemo(() => devices.filter((device) => device.status === 'offline').length, [devices])
   const mobileOnPage = useMemo(() => devices.filter((device) => isMobile(device)).length, [devices])
@@ -161,8 +182,13 @@ export default function DevicesPage() {
     { label: 'Online', count: status === 'online' ? total : undefined, active: status === 'online' },
     { label: 'Offline', count: status === 'offline' ? total : undefined, active: status === 'offline' },
     { label: 'Never checked in', count: status === 'never' ? total : undefined, active: status === 'never' },
-    { label: 'Retired', count: status === 'retired' ? total : undefined, active: status === 'retired' },
+    { label: 'Retired', count: status === 'retired' ? total : retiredCount ?? undefined, active: status === 'retired' },
   ] as const
+
+  const selectStatus = (next: '' | DeviceStatus) => {
+    setStatus(next)
+    pagination.goToPage(0)
+  }
 
   return (
     <Shell>
@@ -179,10 +205,15 @@ export default function DevicesPage() {
         <div className="device-summary-card device-summary-offline"><span className="device-summary-label">Needs attention</span><strong>{offlineOnPage}</strong><small>On this page</small></div>
         <div className="device-summary-card"><span className="device-summary-label">Mobile endpoints</span><strong>{mobileOnPage}</strong><small>On this page</small></div>
         <div className="device-summary-card"><span className="device-summary-label">Device groups</span><strong>{groups.length}</strong><small>For filtering</small></div>
+        <button type="button" className="device-summary-card device-summary-retired" onClick={() => selectStatus('retired')} title="Show retired devices">
+          <span className="device-summary-label">Retired</span>
+          <strong>{retiredCount ?? '—'}</strong>
+          <small>{retiredCount ? 'Review or restore' : 'Nothing retired'}</small>
+        </button>
       </div>
 
       <nav className="workspace-tabs device-workspace-tabs" aria-label="Endpoint views">
-        {deviceTabs.map((tab) => <button key={tab.label} type="button" className={`workspace-tab${tab.active ? ' active' : ''}`} onClick={() => { setStatus(tab.label === 'All endpoints' ? '' : tab.label === 'Online' ? 'online' : tab.label === 'Offline' ? 'offline' : tab.label === 'Never checked in' ? 'never' : 'retired'); pagination.goToPage(0) }}>{tab.label}{tab.count !== undefined ? <span>{tab.count}</span> : null}</button>)}
+        {deviceTabs.map((tab) => <button key={tab.label} type="button" className={`workspace-tab${tab.active ? ' active' : ''}`} onClick={() => selectStatus(tab.label === 'All endpoints' ? '' : tab.label === 'Online' ? 'online' : tab.label === 'Offline' ? 'offline' : tab.label === 'Never checked in' ? 'never' : 'retired')}>{tab.label}{tab.count !== undefined ? <span>{tab.count}</span> : null}</button>)}
         <Link className="workspace-tab-link" to="/devices/groups"><Icon name="folder" size={14} />Groups</Link>
       </nav>
       <div className="device-toolbar">
@@ -197,7 +228,7 @@ export default function DevicesPage() {
 
       <div className="device-list-head"><div><h2>Endpoint inventory</h2><p>{loading ? 'Refreshing device inventory…' : `${devices.length} shown${total !== devices.length ? ` of ${total}` : ''}`}</p></div><span className="device-list-context">{activeFilters ? 'Filtered inventory' : 'Live inventory'}</span></div>
 
-      {loading ? <div className="device-loading"><span className="etch">Loading devices…</span></div> : devices.length === 0 ? <div className="empty-state"><Icon name="monitor" size={24} /><strong>No devices found</strong><span>{activeFilters ? 'Try changing or clearing your filters.' : 'Enroll your first endpoint to start managing your estate.'}</span>{canManage && !activeFilters ? <button className="btn btn-primary btn-sm" onClick={() => setEnrolOpen(true)}><Icon name="upload" size={14} />Deploy / enrol device</button> : null}</div> : <div className="device-table-wrap"><table className="device-table"><thead><tr><th>Endpoint</th><th>Platform</th><th>Asset tag</th><th>Assigned to</th><th>IP address</th><th>Status</th><th>Group</th><th>Agent</th><th>Last seen</th></tr></thead><tbody>{devices.map((device) => <tr key={device.id}><td><Link to={`/devices/${device.id}`} className="device-name-link"><span className={`device-avatar${isMobile(device) ? ' device-avatar-mobile' : ''}`}>{isMobile(device) ? <Icon name="phone" size={15} /> : device.name.slice(0, 1).toUpperCase()}</span><span><strong>{device.name}</strong><small>{device.hostname || 'No hostname'}</small></span></Link></td><td>{platformLabel(device)}<span className="device-ip">{device.arch || '—'}</span>{isMobile(device) && batteryBadge(device) ? <span className={`device-battery battery-${batteryBadge(device)!.tone}`} title="Battery level">{batteryBadge(device)!.text}</span> : null}</td><td className="mono">{device.asset_tag || '—'}</td><td>{device.assigned_user_name || (device.assignment_status === 'shared' ? 'Shared device' : <span className="muted">Unassigned</span>)}</td><td className="mono device-ip-cell">{device.ip_address || '—'}</td><td><span className={`status-pill status-${device.status}`}>{statusLabel(device.status)}</span></td><td>{device.group_name ?? <span className="muted">Unassigned</span>}</td><td className="mono">{device.source === 'directory' ? <span className="device-badges"><span className="directory-device-badge">{directoryLabel(device.managed_by)}</span>{device.agent_device_id ? <span className="directory-device-badge directory-device-matched" title={`Linked to ${device.linked_agent_name || 'enrolled agent'}`}>Agent-linked</span> : null}</span> : device.agent_version || '—'}</td><td className="mono">{device.last_seen_at ? formatWhen(device.last_seen_at) : 'Never'}</td></tr>)}</tbody></table></div>}
+      {loading ? <div className="device-loading"><span className="etch">Loading devices…</span></div> : devices.length === 0 ? <div className="empty-state"><Icon name="monitor" size={24} /><strong>No devices found</strong><span>{activeFilters ? 'Try changing or clearing your filters.' : 'Enroll your first endpoint to start managing your estate.'}</span>{canManage && !activeFilters ? <button className="btn btn-primary btn-sm" onClick={() => setEnrolOpen(true)}><Icon name="upload" size={14} />Deploy / enrol device</button> : null}</div> : <div className="device-table-wrap"><table className="device-table"><thead><tr><th>Endpoint</th><th>Platform</th><th>Asset tag</th><th>Assigned to</th><th>IP address</th><th>Status</th><th>Group</th><th>Agent</th><th>Last seen</th>{status === 'retired' && canManage ? <th>Actions</th> : null}</tr></thead><tbody>{devices.map((device) => <tr key={device.id}><td><Link to={`/devices/${device.id}`} className="device-name-link"><span className={`device-avatar${isMobile(device) ? ' device-avatar-mobile' : ''}`}>{isMobile(device) ? <Icon name="phone" size={15} /> : device.name.slice(0, 1).toUpperCase()}</span><span><strong>{device.name}</strong><small>{device.hostname || 'No hostname'}</small></span></Link></td><td>{platformLabel(device)}<span className="device-ip">{device.arch || '—'}</span>{isMobile(device) && batteryBadge(device) ? <span className={`device-battery battery-${batteryBadge(device)!.tone}`} title="Battery level">{batteryBadge(device)!.text}</span> : null}</td><td className="mono">{device.asset_tag || '—'}</td><td>{device.assigned_user_name || (device.assignment_status === 'shared' ? 'Shared device' : <span className="muted">Unassigned</span>)}</td><td className="mono device-ip-cell">{device.ip_address || '—'}</td><td><span className={`status-pill status-${device.status}`}>{statusLabel(device.status)}</span></td><td>{device.group_name ?? <span className="muted">Unassigned</span>}</td><td className="mono">{device.source === 'directory' ? <span className="device-badges"><span className="directory-device-badge">{directoryLabel(device.managed_by)}</span>{device.agent_device_id ? <span className="directory-device-badge directory-device-matched" title={`Linked to ${device.linked_agent_name || 'enrolled agent'}`}>Agent-linked</span> : null}</span> : device.agent_version || '—'}</td><td className="mono">{device.last_seen_at ? formatWhen(device.last_seen_at) : 'Never'}</td>{status === 'retired' && canManage ? <td><button type="button" className="btn btn-ghost btn-xs" disabled={restoringId === device.id} onClick={() => void restore(device)}><Icon name="refresh" size={13} />{restoringId === device.id ? 'Restoring…' : 'Restore'}</button></td> : null}</tr>)}</tbody></table></div>}
 
       {devices.length > 0 ? <Pagination page={pagination.page} pageSize={pagination.pageSize} totalItems={total} loading={loading} onPageChange={pagination.goToPage} onPageSizeChange={pagination.changeSize} /> : null}
 

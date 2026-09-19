@@ -19,7 +19,7 @@ import { formatWhen, STATUS_LABELS } from '../lib/tickets.js'
 import { useAuth } from '../lib/auth.js'
 import { api } from '../lib/api.js'
 import { MfaQrCode } from '../components/MfaQrCode.js'
-import { createSession, type RemoteSessionType } from '../lib/sessions.js'
+import { createSession, listSessions, type RemoteSession, type RemoteSessionType } from '../lib/sessions.js'
 import { retireDevice, restoreDevice } from '../lib/devices.js'
 import { getDeviceDex, type DeviceDex } from '../lib/dex.js'
 import { Shell } from '../components/Shell.js'
@@ -71,6 +71,8 @@ export default function DeviceDetailPage() {
   const [metrics, setMetrics] = useState<DeviceMetric[]>([])
   const [alerts, setAlerts] = useState<DeviceAlert[]>([])
   const [tickets, setTickets] = useState<Array<{ id: string; number: number; subject: string; status: string; priority: string; created_at: string }>>([])
+  const [deviceSessions, setDeviceSessions] = useState<RemoteSession[]>([])
+  const [deviceSessionsError, setDeviceSessionsError] = useState(false)
   const [dex, setDex] = useState<DeviceDex | null>(null)
   const [groups, setGroups] = useState<DeviceGroup[]>([])
   const [name, setName] = useState('')
@@ -109,6 +111,18 @@ export default function DeviceDetailPage() {
   useEffect(() => {
     setAllowControlInput(sessionType !== 'inspection' && canRemoteControl)
   }, [canRemoteControl, sessionType])
+
+  // Device-level session history. Read-only and self-degrading: a permission
+  // gap must not disturb the rest of the device page.
+  useEffect(() => {
+    if (!id || !canRemote) return
+    setDeviceSessionsError(false)
+    let cancelled = false
+    void listSessions({ deviceId: id, limit: 10 })
+      .then((response) => { if (!cancelled) setDeviceSessions(response.sessions) })
+      .catch(() => { if (!cancelled) setDeviceSessionsError(true) })
+    return () => { cancelled = true }
+  }, [id, canRemote])
 
   const load = useCallback(async () => {
     if (!id) return
@@ -497,6 +511,36 @@ export default function DeviceDetailPage() {
               </div>
             )}
           </section>
+
+          {canRemote ? (
+          <section className="detail-card">
+            <div className="detail-card-head"><h2>Remote sessions</h2><span className="muted mono">support history on this device</span></div>
+            {deviceSessionsError ? <div className="detail-empty">Session history is unavailable for your role.</div>
+              : deviceSessions.length === 0 ? <div className="detail-empty">No remote sessions have been started on this device.</div> : (
+              <div className="device-session-list">
+                {deviceSessions.map((session) => (
+                  <div key={session.id} className="device-session-entry">
+                    <div className="device-session-head">
+                      <Link className="device-session-link" to={`/sessions/${session.id}`}>
+                        <span className={`status-pill session-state-${session.state}`}>{session.state.replaceAll('_', ' ')}</span>
+                        <strong>{session.type.replaceAll('_', ' ')}</strong>
+                      </Link>
+                      <span className="device-session-meta mono">
+                        {session.ticket_id ? <Link to={`/tickets/${session.ticket_id}`}>#{session.ticket_number ?? '—'}</Link> : <span className="muted">no ticket</span>}
+                        {' · '}{formatWhen(session.created_at)}
+                      </span>
+                    </div>
+                    <div className="device-session-foot">
+                      <span className="muted">{session.requested_by_name ? `Requested by ${session.requested_by_name}` : 'Requester unknown'}</span>
+                      <span className="device-session-count mono" title="Audit events recorded for this session">{typeof session.event_count === 'number' ? `${session.event_count} ${session.event_count === 1 ? 'event' : 'events'}` : null}</span>
+                      <Link className="device-session-jump" to={`/sessions/${session.id}`}>View console →</Link>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+          ) : null}
 
           <section className="detail-card">
             <div className="detail-card-head"><h2>Linked tickets</h2><span className="muted mono">device context</span></div>

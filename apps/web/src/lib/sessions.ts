@@ -68,6 +68,8 @@ export interface RemoteSession {
   hostname?: string
   ticket_id: string | null
   ticket_number?: number | null
+  /** Total audit events for the session (device/ticket history views). */
+  event_count?: number | null
   type: RemoteSessionType
   state: RemoteSessionState
   permissions: string[]
@@ -276,6 +278,18 @@ export interface TicketSessionEvent {
   event: string
   payload: Record<string, unknown>
   created_at: string
+}
+
+/**
+ * Session events that represent elevated, potentially impactful endpoint
+ * actions: terminal sessions, process termination, service state changes,
+ * and elevation refusals. Read-only reconnaissance (listing processes,
+ * services, files) is deliberately not elevated.
+ */
+const ELEVATED_SESSION_EVENT = /^session\.(terminal\.|processes\.terminated|services\.(started|stopped)|system\.rejected|elevation_denied)/
+
+export function isElevatedSessionEvent(event: string): boolean {
+  return ELEVATED_SESSION_EVENT.test(event)
 }
 
 export function listTicketSessions(ticketId: string): Promise<{ sessions: TicketSessionSummary[]; events: TicketSessionEvent[] }> {

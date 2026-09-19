@@ -788,7 +788,7 @@ export default function SessionConsolePage() {
 
   return (
     <Shell>
-      <div className="console-breadcrumb"><Link to="/sessions">Sessions</Link><span>/</span><span>{session?.device_name ?? 'Remote session'}</span></div>        {recoveredAfterReload ? <Alert kind="info">This console was reopened from your active-session dock. ReyDesk fetched a fresh secure connection ticket and is restoring the session.</Alert> : null}
+      <div className="console-breadcrumb"><Link to="/sessions">Sessions</Link><span>/</span><span>{session?.device_name ?? 'Remote session'}</span>{session?.ticket_id ? <><span>/</span><Link to={`/tickets/${session.ticket_id}`} className="console-ticket-link">Ticket #{session.ticket_number ?? '—'}</Link></> : null}</div>        {recoveredAfterReload ? <Alert kind="info">This console was reopened from your active-session dock. ReyDesk fetched a fresh secure connection ticket and is restoring the session.</Alert> : null}
 
       <div className="console-head">
 
@@ -799,6 +799,7 @@ export default function SessionConsolePage() {
         </div>
         <div className="console-actions">
           <button className="btn btn-ghost btn-sm" onClick={toggleImmersive}>{immersive ? 'Exit full screen' : 'Full screen'}</button>
+          {session?.ticket_id ? <Link to={`/tickets/${session.ticket_id}`} className="btn btn-ghost btn-sm console-ticket-link" title="Open the ticket this session is linked to">Ticket #{session.ticket_number ?? '—'}</Link> : null}
           <Link to="/sessions" className="btn btn-ghost btn-sm">All sessions</Link>
           {session && !['ended', 'denied', 'expired'].includes(session.state) ? <button className="btn btn-danger btn-sm" onClick={() => void stop()} disabled={ending}>{ending ? 'Ending…' : 'End session'}</button> : null}
         </div>
