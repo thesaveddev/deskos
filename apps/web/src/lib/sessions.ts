@@ -269,6 +269,10 @@ export interface TicketSessionSummary {
   requested_by_name: string | null
   /** Total audit events for the session; the panel itself shows a recent window. */
   event_count: number
+  /** Denormalised recording aggregates for the outcome summary. */
+  recording_count?: number | null
+  recording_bytes?: number | null
+  recording_duration_sec?: number | null
 }
 
 export interface TicketSessionEvent {
@@ -294,4 +298,104 @@ export function isElevatedSessionEvent(event: string): boolean {
 
 export function listTicketSessions(ticketId: string): Promise<{ sessions: TicketSessionSummary[]; events: TicketSessionEvent[] }> {
   return api(`/tickets/${ticketId}/sessions`)
+}
+
+// ── Session outcome summaries ─────────────────────────────────────────
+// Shared by the ticket side rail and the device detail panel so both
+// audit views describe a session the same way: how long it ran, which
+// permissions it operated under, and what media it produced.
+
+/** Recording aggregates joined onto session history payloads. */
+export interface SessionRecordingSummary {
+  count: number
+  size_bytes: number
+  duration_sec: number
+}
+
+export interface SessionOutcomeFields {
+  permissions: string[]
+  consented_at: string | null
+  started_at: string | null
+  ended_at: string | null
+  state: string
+  /** Denormalised recording aggregates (API-provided; optional for mocks). */
+  recording_count?: number | null
+  recording_bytes?: number | null
+  recording_duration_sec?: number | null
+}
+
+const PERMISSION_LABELS: Record<string, string> = {
+  view_screen: 'View screen',
+  control_input: 'Remote control',
+  clipboard: 'Clipboard sync',
+  elevated_terminal: 'Elevated terminal',
+  file_transfer: 'File transfer',
+  processes: 'Process management',
+  services: 'Service management',
+  reboot: 'Reboot',
+}
+
+export function sessionPermissionLabel(permission: string): string {
+  return PERMISSION_LABELS[permission] ?? permission.replaceAll('_', ' ')
+}
+
+/**
+ * Human duration for an ended session (minutes rounded, seconds under a
+ * minute), or null while it has not ended.
+ */
+export function sessionDurationText(outcome: Pick<SessionOutcomeFields, 'started_at' | 'ended_at' | 'state'>): string | null {
+  if (!outcome.started_at || !outcome.ended_at) return null
+  const started = new Date(outcome.started_at).getTime()
+  const ended = new Date(outcome.ended_at).getTime()
+  if (!Number.isFinite(started) || !Number.isFinite(ended) || ended < started) return null
+  const seconds = Math.round((ended - started) / 1000)
+  if (seconds < 60) return `${seconds}s`
+  return `${Math.round(seconds / 60)}m`
+}
+
+/** Byte count rendered compactly (KB under 1 MB, MB thereafter). */
+export function sessionBytesText(bytes: number | null | undefined): string | null {
+  if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes <= 0) return null
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+/**
+ * The one-line outcome summary rendered under each session entry:
+ * "18m · View screen, Remote control · 2 recordings (12.3 MB)".
+ * Segments without data are omitted; sessions still in progress show
+ * state-appropriate fragments instead of durations.
+ */
+export function sessionOutcomeSegments(outcome: SessionOutcomeFields): string[] {
+  const segments: string[] = []
+  const duration = sessionDurationText(outcome)
+  if (duration) {
+    segments.push(duration)
+  } else if (outcome.state === 'active' || outcome.state === 'reconnecting') {
+    segments.push('in progress')
+  } else if (outcome.state === 'denied') {
+    segments.push('access denied')
+  } else if (outcome.state === 'expired') {
+    segments.push('expired unclaimed')
+  }
+
+  const permissions = outcome.permissions ?? []
+  if (permissions.length > 0) {
+    segments.push(permissions.map(sessionPermissionLabel).join(', '))
+  }
+
+  const recordings = outcome.recording_count ?? 0
+  if (recordings > 0) {
+    const bytes = sessionBytesText(outcome.recording_bytes)
+    const durationSec = outcome.recording_duration_sec
+    const parts = [`${recordings} ${recordings === 1 ? 'recording' : 'recordings'}`]
+    if (bytes) parts.push(bytes)
+    if (typeof durationSec === 'number' && durationSec > 0) {
+      const minutes = Math.round(durationSec / 60)
+      if (minutes > 0) parts.push(`${minutes}m`)
+      else parts.push(`${durationSec}s`)
+    }
+    segments.push(parts.join(' (')) + ')'
+  }
+  return segments
 }

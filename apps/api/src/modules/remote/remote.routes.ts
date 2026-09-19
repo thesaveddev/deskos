@@ -299,7 +299,10 @@ export async function remoteRoutes(app: FastifyInstance): Promise<void> {
 
       const sessions = await client.query(
         `SELECT s.*, d.name AS device_name, d.hostname, t.number AS ticket_number, u.name AS requested_by_name,
-                (SELECT count(*)::int FROM session_events e WHERE e.session_id = s.id) AS event_count
+                (SELECT count(*)::int FROM session_events e WHERE e.session_id = s.id) AS event_count,
+                (SELECT count(*)::int FROM session_recordings r WHERE r.session_id = s.id) AS recording_count,
+                (SELECT COALESCE(sum(r.size_bytes), 0)::bigint FROM session_recordings r WHERE r.session_id = s.id) AS recording_bytes,
+                (SELECT COALESCE(sum(r.duration_sec), 0)::int FROM session_recordings r WHERE r.session_id = s.id) AS recording_duration_sec
            FROM remote_sessions s
            JOIN devices d ON d.id = s.device_id
            LEFT JOIN tickets t ON t.id = s.ticket_id

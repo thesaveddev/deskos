@@ -5,6 +5,7 @@ import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { FastifyInstance } from 'fastify'
 import { authHeaders, createTestApp, seedActiveMember, signupOwner, type Session } from './helpers.js'
+import { expireStaleAdhocCodes } from '../src/modules/remote/adhoc.routes.js'
 import { withTenant } from '../src/db/pool.js'
 
 describe('ad-hoc (unmanaged) support sessions', () => {
@@ -331,6 +332,80 @@ describe('ad-hoc (unmanaged) support sessions', () => {
     expect(record).toBeTruthy()
     expect(record.remote_session_state).toBe('consent_pending')
     expect(record.state).toBe('claimed')
+  })
+
+  it('caps support-code expiry at 24 hours regardless of requested lifetime', async () => {
+    // Explicit request beyond the cap is clamped at creation.
+    const clamped = await app.inject({
+      method: 'POST',
+      url: '/api/v1/adhoc-sessions',
+      headers: authHeaders(owner),
+      payload: { permissions: ['view_screen'], expiresInMin: 10_080 },
+    })
+    expect(clamped.statusCode).toBe(201)
+    const clampedExpires = new Date(clamped.json().expiresAt).getTime()
+    expect(clampedExpires).toBeLessThanOrEqual(Date.now() + 24 * 60 * 60 * 1000)
+
+    // A tenant default beyond the cap (legacy settings row) is clamped too.
+    await withTenant(app.db, owner.tenantId!, (client) =>
+      client.query("UPDATE tenants SET settings = jsonb_set(settings, '{remote_support}', jsonb_set(COALESCE(settings->'remote_support', '{}'::jsonb), '{default_expiry_minutes}', '10080', true)) WHERE id = $1", [owner.tenantId!]),
+    )
+    const legacyDefault = await app.inject({
+      method: 'POST',
+      url: '/api/v1/adhoc-sessions',
+      headers: authHeaders(owner),
+      payload: { permissions: ['view_screen'] },
+    })
+    expect(legacyDefault.statusCode).toBe(201)
+    const legacyExpires = new Date(legacyDefault.json().expiresAt).getTime()
+    expect(legacyExpires).toBeLessThanOrEqual(Date.now() + 24 * 60 * 60 * 1000)
+    expect(legacyExpires).toBeGreaterThan(Date.now() + 23 * 60 * 60 * 1000)
+
+    // Restore the default for the other tests.
+    await withTenant(app.db, owner.tenantId!, (client) =>
+      client.query("UPDATE tenants SET settings = jsonb_set(settings, '{remote_support}', jsonb_set(COALESCE(settings->'remote_support', '{}'::jsonb), '{default_expiry_minutes}', '30', true)) WHERE id = $1", [owner.tenantId!]),
+    )
+
+    // Within the cap the request is honoured.
+    const normal = await app.inject({
+      method: 'POST',
+      url: '/api/v1/adhoc-sessions',
+      headers: authHeaders(owner),
+      payload: { permissions: ['view_screen'], expiresInMin: 30 },
+    })
+    expect(normal.statusCode).toBe(201)
+    const normalExpires = new Date(normal.json().expiresAt).getTime()
+    expect(normalExpires).toBeLessThanOrEqual(Date.now() + 31 * 60 * 1000)
+    expect(normalExpires).toBeGreaterThan(Date.now() + 29 * 60 * 1000)
+  })
+
+  it('sweeps passed-expiry open codes to expired state', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/v1/adhoc-sessions',
+      headers: authHeaders(owner),
+      payload: { permissions: ['view_screen'], reason: 'Sweep test' },
+    })
+    const { code, id } = created.json()
+
+    await withTenant(app.db, owner.tenantId!, (client) =>
+      client.query("UPDATE adhoc_sessions SET expires_at = now() - interval '1 minute' WHERE id = $1", [id]),
+    )
+
+    // Before the sweep the list still shows the stale open row.
+    const listedBefore = await app.inject({ method: 'GET', url: '/api/v1/adhoc-sessions', headers: authHeaders(owner) })
+    expect(listedBefore.statusCode).toBe(200)
+    expect(listedBefore.json().sessions.find((s: { id: string }) => s.id === id)?.state).toBe('open')
+
+    const swept = await expireStaleAdhocCodes(app.db)
+    expect(swept).toBeGreaterThan(0)
+
+    const listedAfter = await app.inject({ method: 'GET', url: '/api/v1/adhoc-sessions', headers: authHeaders(owner) })
+    expect(listedAfter.json().sessions.find((s: { id: string }) => s.id === id)?.state).toBe('expired')
+
+    // The code is dead either way — sweep or not, claiming fails.
+    const claim = await app.inject({ method: 'POST', url: `/api/connect/${code}/claim`, payload: { name: 'late' } })
+    expect(claim.statusCode).toBe(404)
   })
 
   it('expires codes that are no longer valid', async () => {

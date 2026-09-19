@@ -172,7 +172,7 @@ jobs:
           path: artifacts/windows
 
       - name: Download Android agent APK when available
-        if: ${{ false }}
+        if: ${{ needs.build-android-agent.result == 'success' }}
         uses: actions/download-artifact@v4
         with:
           name: reydesk-android-apk
@@ -182,7 +182,7 @@ jobs:
         run: cp artifacts/windows/reydesk-helper.exe ./reydesk-helper.exe
 
       - name: Stage APK for upload when available
-        if: ${{ false }}
+        if: ${{ needs.build-android-agent.result == 'success' }}
         run: cp artifacts/android/reydesk-agent.apk ./reydesk-agent.apk
 
       - name: Prepare helper directories on VPS
@@ -205,7 +205,7 @@ jobs:
           target: /root/reydesk-app/artifacts/windows
 
       - name: Upload Android agent APK to VPS when available
-        if: ${{ false }}
+        if: ${{ needs.build-android-agent.result == 'success' }}
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.VPS_HOST }}

@@ -99,6 +99,33 @@ function RenewalsCard({ warranties, licences }: { warranties: WarrantyWatchItem[
   )
 }
 
+/* ── Renewals KPI card ─────────────────────────────────────────── */
+
+/**
+ * Dashboard KPI card for upcoming renewals: total expiring items inside the
+ * 90-day watch window, with the urgent subset (30-day window / already
+ * expired) broken out. Links into the Assets page's renewals view. Expiry
+ * dates muted for email still count here — muting silences notices, not
+ * the underlying expiry.
+ */
+function RenewalsKpi({ renewals }: { renewals: { warranties: WarrantyWatchItem[]; licences: WarrantyWatchItem[] } }) {
+  const all = [
+    ...renewals.warranties.map((w) => w.warranty_until),
+    ...renewals.licences.map((l) => l.expires_at),
+  ].filter((d): d is string => Boolean(d))
+  const urgent = all.filter((d) => (daysUntil(d) ?? Infinity) <= 30).length
+
+  return (
+    <div className="dash-kpi">
+      <span className="dash-kpi-value">{all.length}</span>
+      <span className="dash-kpi-label">Renewals due (90d)</span>
+      {urgent > 0
+        ? <Link to="/assets?view=renewals" className="dash-kpi-warn dash-kpi-link">{urgent} urgent · review →</Link>
+        : <Link to="/assets?view=renewals" className="dash-kpi-link">Review schedule →</Link>}
+    </div>
+  )
+}
+
 /* ── Owner / Manager dashboard ─────────────────────────────────── */
 
 function ManagerDashboard({ report, devices, sessions, incidents, myTicketCount, renewals }: {
@@ -136,6 +163,7 @@ function ManagerDashboard({ report, devices, sessions, incidents, myTicketCount,
           <span className="dash-kpi-label">Active sessions</span>
           <Link to="/sessions" className="dash-kpi-link">View →</Link>
         </div>
+        <RenewalsKpi renewals={renewals} />
       </div>
 
       {/* Second row */}
@@ -265,6 +293,7 @@ function AnalystDashboard({ myTickets, report, devices, sessions, renewals }: {
           <span className="dash-kpi-value">{report ? formatMinutes(report.resolution.avg_minutes) : '—'}</span>
           <span className="dash-kpi-label">Avg resolution time</span>
         </div>
+        <RenewalsKpi renewals={renewals} />
       </div>
 
       {/* My tickets */}

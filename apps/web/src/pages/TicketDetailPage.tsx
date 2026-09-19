@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
+/** Human labels for link semantics and target kinds (rail linked-items list). */
+const LINK_TYPE_LABELS: Record<string, string> = {
+  related: 'Related', caused_by: 'Caused by', parent: 'Parent', child: 'Child', duplicates: 'Duplicate',
+}
+const LINK_TARGET_LABELS: Record<string, string> = {
+  ticket: 'Ticket', asset: 'Asset', kb: 'KB article', session: 'Session',
+}
+
 import { Shell } from '../components/Shell.js'
 import { Alert, Modal } from '../components/ui.js'
 import { useToast } from '../components/Toasts.js'
@@ -14,7 +22,7 @@ import {
   listLockReleaseRequests, requestTicketLockRelease, resolveLockReleaseRequest,
   listActiveTicketLocks,
   startViewingTicket, stopViewingTicket, heartbeatViewing, getTicketViewers,
-  slaSummary, STATUS_LABELS, formatWhen, fetchAttachmentBlob, searchLinkTargets,
+  slaSummary, STATUS_LABELS, formatWhen, fetchAttachmentBlob, searchLinkTargets, timeInStatusText,
   listTicketReminders, createTicketReminder, updateTicketReminder, dismissTicketReminder, deleteTicketReminder,
   type Attachment, type Thread, type Ticket, type TicketDevice, type TicketLink, type LinkSearchResult,
   type Escalation, type EscalationPath, type Team, type TicketLockInfo, type LockReleaseRequest, type LockedTicketSummary,
@@ -23,7 +31,7 @@ import {
 import { listCannedResponses, type CannedResponse } from '../lib/canned.js'
 import '../styles/ticket-lock.css'
 import { listDevices, getDevice, type Device, type DeviceMetric, type DeviceAlert } from '../lib/devices.js'
-import { isElevatedSessionEvent, listTicketSessions, type TicketSessionSummary, type TicketSessionEvent } from '../lib/sessions.js'
+import { isElevatedSessionEvent, listTicketSessions, sessionOutcomeSegments, type TicketSessionSummary, type TicketSessionEvent } from '../lib/sessions.js'
 import { draftKbArticle, getTriageState, listSimilarTickets, retryTriage, stopTriage, summarizeTicket, type KbDraftArticle, type SimilarTicket, type TriageState } from '../lib/ai.js'
 
 const STATUS_OPTIONS = ['new', 'open', 'in_progress', 'pending_user', 'pending_vendor', 'escalated', 'resolved', 'closed']
@@ -1335,29 +1343,41 @@ export default function TicketDetailPage() {
               <span>No tickets or items linked yet.</span>
             </div>
           ) : (
-            <ul className="attachments-list">
-              {links.map((l) => (
-                <li key={l.id} className="attachment-row">
-                  <span className="mono muted">{l.link_type}</span>
-                  <span className="attachment-name">
-                    {l.target_type === 'ticket' ? (
-                      <Link to={`/tickets/${l.target_id}`} className="ticket-link-item">
-                        #{l.target_number} {l.target_subject ?? ''}
-                      </Link>
-                    ) : l.target_type === 'asset'
-                      ? (l.target_asset_name ?? 'asset')
-                      : l.target_type === 'kb'
-                        ? (
-                            <a href={`/kb/${l.target_id}`} className="ticket-link-item">
-                              {l.target_kb_title ?? 'KB article'}
-                            </a>
-                          )
-                        : 'session'}
-                  </span>
-                  <span className="muted mono">{l.target_type}</span>
-                  <button className="btn btn-ghost btn-sm" disabled={readOnlyForLock} onClick={() => void removeLink(l)}>Unlink</button>
-                </li>
-              ))}
+            <ul className="ticket-links-list">
+              {links.map((l) => {
+                const title = l.target_type === 'ticket'
+                  ? `#${l.target_number} ${l.target_subject ?? ''}`
+                  : l.target_type === 'asset'
+                    ? (l.target_asset_name ?? 'Asset')
+                    : l.target_type === 'kb'
+                      ? (l.target_kb_title ?? 'KB article')
+                      : 'Remote session'
+                return (
+                  <li key={l.id} className="ticket-link-row">
+                    <span className={`ticket-link-badge kind-${l.link_type}`}>{LINK_TYPE_LABELS[l.link_type] ?? l.link_type}</span>
+                    <div className="ticket-link-main">
+                      {l.target_type === 'ticket' ? (
+                        <Link to={`/tickets/${l.target_id}`} className="ticket-link-title" title={title}>{title}</Link>
+                      ) : l.target_type === 'kb' ? (
+                        <a href={`/kb/${l.target_id}`} className="ticket-link-title" title={title}>{title}</a>
+                      ) : (
+                        <span className="ticket-link-title" title={title}>{title}</span>
+                      )}
+                      <span className="ticket-link-kind">{LINK_TARGET_LABELS[l.target_type] ?? l.target_type}</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="ticket-link-unlink"
+                      disabled={readOnlyForLock}
+                      onClick={() => void removeLink(l)}
+                      aria-label={`Unlink ${title}`}
+                      title="Unlink"
+                    >
+                      <Icon name="close" size={13} />
+                    </button>
+                  </li>
+                )
+              })}
             </ul>
           )}
           {showLinkForm ? (
@@ -1444,6 +1464,33 @@ export default function TicketDetailPage() {
               )}
             </div>
           )}
+        </div>
+
+        <div className="ticket-rail-panel ticket-status-duration">
+          <span className="etch">Status duration</span>
+          {(() => {
+            const inStatus = timeInStatusText(ticket)
+            const isTerminal = ticket.status === 'resolved' || ticket.status === 'closed'
+            const since = ticket.status_changed_at ?? ticket.created_at
+            if (isTerminal) {
+              return (
+                <div className="ticket-status-duration-state">
+                  <span className="sla-chip sla-muted">{STATUS_LABELS[ticket.status] ?? ticket.status}</span>
+                  <span className="ticket-sla-note">No longer counting — the clock stops on resolved/closed.</span>
+                </div>
+              )
+            }
+            // Warn tone once a ticket outlasts a typical working day in one
+            // status; the escalation scheduler starts caring at policy
+            // thresholds, this is the human-facing early signal.
+            const stale = inStatus !== null && inStatus !== 'just now' && /h|d$/.test(inStatus) && (inStatus.endsWith('h') ? parseInt(inStatus) >= 8 : inStatus.endsWith('d'))
+            return (
+              <div className={`ticket-status-duration-state${stale ? ' stale' : ''}`}>
+                <span className={`ticket-status-duration-value${stale ? ' warn' : ''}`}>{inStatus ?? '—'}</span>
+                <span className="ticket-sla-note">in {STATUS_LABELS[ticket.status] ?? ticket.status} · since {formatWhen(since)}</span>
+              </div>
+            )
+          })()}
         </div>
 
         <div className="ticket-rail-panel ticket-device-health">
@@ -1533,6 +1580,16 @@ export default function TicketDetailPage() {
                         View console<Icon name="arrow-right" size={12} />
                       </Link>
                     </div>
+                    {(() => {
+                      const outcome = sessionOutcomeSegments(session)
+                      return outcome.length > 0 ? (
+                        <div className="ticket-session-outcome mono" title="Session outcome: duration, permissions granted, and recordings produced">
+                          {outcome.map((segment, index) => (
+                            <span key={index} className="ticket-session-outcome-seg">{segment}</span>
+                          ))}
+                        </div>
+                      ) : null
+                    })()}
                     {sessionEvents.length > 0 ? (
                       <ul className="ticket-session-events">
                         {sessionEvents.map((event) => (

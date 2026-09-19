@@ -19,7 +19,7 @@ import { formatWhen, STATUS_LABELS } from '../lib/tickets.js'
 import { useAuth } from '../lib/auth.js'
 import { api } from '../lib/api.js'
 import { MfaQrCode } from '../components/MfaQrCode.js'
-import { createSession, listSessions, type RemoteSession, type RemoteSessionType } from '../lib/sessions.js'
+import { createSession, listSessions, sessionOutcomeSegments, type RemoteSession, type RemoteSessionType } from '../lib/sessions.js'
 import { retireDevice, restoreDevice } from '../lib/devices.js'
 import { getDeviceDex, type DeviceDex } from '../lib/dex.js'
 import { Shell } from '../components/Shell.js'
@@ -535,6 +535,16 @@ export default function DeviceDetailPage() {
                       <span className="device-session-count mono" title="Audit events recorded for this session">{typeof session.event_count === 'number' ? `${session.event_count} ${session.event_count === 1 ? 'event' : 'events'}` : null}</span>
                       <Link className="device-session-jump" to={`/sessions/${session.id}`}>View console →</Link>
                     </div>
+                    {(() => {
+                      const outcome = sessionOutcomeSegments(session)
+                      return outcome.length > 0 ? (
+                        <div className="device-session-outcome mono" title="Session outcome: duration, permissions granted, and recordings produced">
+                          {outcome.map((segment, index) => (
+                            <span key={index} className="device-session-outcome-seg">{segment}</span>
+                          ))}
+                        </div>
+                      ) : null
+                    })()}
                   </div>
                 ))}
               </div>

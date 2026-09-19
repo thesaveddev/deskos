@@ -112,7 +112,9 @@ export async function aiWorkerRoutes(app: FastifyInstance): Promise<void> {
   app.post('/ai-worker/runs/:id/approve', { preHandler: manage }, async (request) => {
     const ctx = request.tenantCtx!
     const { id } = request.params as { id: string }
-    const { run } = await approveWorkerStep(app.db, ctx.tenantId, id, request.user!.id)
+    const tenantAi = await createTenantAiProvider(app.db, app.config, ctx.tenantId, app.aiProvider, true).catch(() => null)
+    const deps = tenantAi ? { pool: app.db, provider: tenantAi.provider, model: tenantAi.model, webhookKey: app.config.emailKey, config: app.config } : undefined
+    const { run } = await approveWorkerStep(app.db, ctx.tenantId, id, request.user!.id, deps)
     await withTenant(app.db, ctx.tenantId, async (client) => {
       await recordAudit(client, ctx.tenantId, {
         actorType: 'user',
@@ -129,7 +131,9 @@ export async function aiWorkerRoutes(app: FastifyInstance): Promise<void> {
   app.post('/ai-worker/runs/:id/deny', { preHandler: manage }, async (request) => {
     const ctx = request.tenantCtx!
     const { id } = request.params as { id: string }
-    const { run } = await denyWorkerStep(app.db, ctx.tenantId, id, request.user!.id)
+    const tenantAi = await createTenantAiProvider(app.db, app.config, ctx.tenantId, app.aiProvider, true).catch(() => null)
+    const deps = tenantAi ? { pool: app.db, provider: tenantAi.provider, model: tenantAi.model, webhookKey: app.config.emailKey, config: app.config } : undefined
+    const { run } = await denyWorkerStep(app.db, ctx.tenantId, id, request.user!.id, deps)
     await withTenant(app.db, ctx.tenantId, async (client) => {
       await recordAudit(client, ctx.tenantId, {
         actorType: 'user',

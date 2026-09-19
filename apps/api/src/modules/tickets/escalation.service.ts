@@ -37,6 +37,100 @@ export interface TicketEscalation {
   created_at: string
 }
 
+export interface EscalationSimulationMatch {
+  ticket_id: string
+  number: number
+  subject: string
+  priority: string
+  status: string
+  /** How long the ticket has been in the policy's source status. */
+  minutes_in_status: number
+  assignee_name: string | null
+  team_name: string | null
+  /** True when the policy would also reassign this ticket to its target team. */
+  would_reassign: boolean
+}
+
+export interface EscalationSimulationResult {
+  matches: EscalationSimulationMatch[]
+  total: number
+  /** Matches truncated by the response cap; the scheduler would still act on these. */
+  truncated: boolean
+  /** The effective matching rules echoed back so the UI can show what was tested. */
+  effective: {
+    source_status: string
+    target_status: string
+    trigger_after_minutes: number
+    priorities: string[]
+  }
+}
+
+/**
+ * Dry-run a policy draft against the live queue without writing anything.
+ * Mirrors applyPolicy()'s matching semantics exactly — time-in-status via
+ * COALESCE(status_changed_at, created_at), priority filter, episode guard,
+ * terminal exclusion — so "0 matches" in simulation means 0 escalations on
+ * the next scheduler sweep.
+ */
+export async function simulateEscalationPolicy(
+  db: DbClient | DbPool,
+  tenantId: string,
+  draft: Partial<EscalationPolicy>,
+): Promise<EscalationSimulationResult> {
+  const sourceStatus = draft.source_status || 'open'
+  const targetStatus = draft.target_status || 'escalated'
+  const triggerAfterMinutes = Math.max(1, Number(draft.trigger_after_minutes ?? 60))
+  const priorities = draft.trigger_on_priority ?? []
+  const targetTeamId = draft.target_team_id ?? null
+
+  const timeInStatus = `COALESCE(t.status_changed_at, t.created_at)`
+  const { rows } = await db.query(
+    `SELECT t.id, t.number, t.subject, t.priority, t.status, t.team_id,
+            ${timeInStatus} AS status_anchor,
+            EXTRACT(EPOCH FROM (now() - ${timeInStatus})) / 60 AS minutes_in_status,
+            au.name AS assignee_name, tm.name AS team_name
+       FROM tickets t
+       LEFT JOIN users au ON au.id = t.assignee_id
+       LEFT JOIN teams tm ON tm.id = t.team_id
+      WHERE t.tenant_id = $1
+        AND t.status = $2
+        AND ${timeInStatus} < now() - ($3 * interval '1 minute')
+        AND t.status NOT IN ('resolved', 'closed')
+        AND ($4::text[] = '{}' OR t.priority = ANY($4::text[]))
+        AND NOT EXISTS (
+          SELECT 1 FROM ticket_escalations e
+           WHERE e.ticket_id = t.id AND e.reason LIKE 'Auto:%' AND e.created_at > t.status_changed_at
+        )
+      ORDER BY ${timeInStatus} ASC
+      LIMIT 51`,
+    [tenantId, sourceStatus, triggerAfterMinutes, priorities],
+  )
+
+  const matches: EscalationSimulationMatch[] = rows.map((row) => ({
+    ticket_id: row.id,
+    number: Number(row.number),
+    subject: String(row.subject ?? ''),
+    priority: String(row.priority ?? 'p3'),
+    status: String(row.status ?? sourceStatus),
+    minutes_in_status: Math.max(0, Math.round(Number(row.minutes_in_status ?? 0))),
+    assignee_name: row.assignee_name ?? null,
+    team_name: row.team_name ?? null,
+    would_reassign: Boolean(targetTeamId) && row.team_id !== targetTeamId,
+  }))
+
+  return {
+    matches: matches.slice(0, 50),
+    total: matches.length,
+    truncated: matches.length > 50,
+    effective: {
+      source_status: sourceStatus,
+      target_status: targetStatus,
+      trigger_after_minutes: triggerAfterMinutes,
+      priorities,
+    },
+  }
+}
+
 export async function listEscalationPolicies(db: DbClient | DbPool, tenantId: string): Promise<EscalationPolicy[]> {
   const { rows } = await db.query(
     `SELECT * FROM escalation_policies WHERE tenant_id = $1 ORDER BY trigger_after_minutes ASC`,

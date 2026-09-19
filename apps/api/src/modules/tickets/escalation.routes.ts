@@ -5,7 +5,7 @@ import { requireTenant } from '../../middleware/requireTenant.js'
 import { requirePermission } from '../../middleware/requirePermission.js'
 import { withTenant } from '../../db/pool.js'
 import {
-  listEscalationPolicies, createEscalationPolicy, updateEscalationPolicy, deleteEscalationPolicy,
+  listEscalationPolicies, createEscalationPolicy, updateEscalationPolicy, deleteEscalationPolicy, simulateEscalationPolicy,
   listEscalationPaths, createEscalationPath, updateEscalationPath, deleteEscalationPath, matchEscalationPaths,
   escalateTicket, getTicketEscalations,
   forwardTicket, mergeTickets,
@@ -32,6 +32,20 @@ export async function escalationRoutes(app: FastifyInstance) {
     const body = (req.body ?? {}) as Partial<EscalationPolicy>
     const policy = await withTenant(app.db, ctx.tenantId, (client) => createEscalationPolicy(client, ctx.tenantId, body))
     return reply.code(201).send({ policy })
+  })
+
+  /**
+   * Dry-run a policy draft against the live queue: returns the tickets that
+   * would match right now, using the same matching semantics as the
+   * scheduler (time-in-status, priority filter, episode guard, terminal
+   * exclusion) — but changes nothing. Lets admins see a policy's blast
+   * radius before enabling it.
+   */
+  app.post('/escalation-policies/simulate', { preHandler: requirePermission('ticket.write') }, async (req, reply) => {
+    const ctx = req.tenantCtx!
+    const body = (req.body ?? {}) as Partial<EscalationPolicy>
+    const result = await withTenant(app.db, ctx.tenantId, (client) => simulateEscalationPolicy(client, ctx.tenantId, body))
+    return reply.send(result)
   })
 
   app.patch('/escalation-policies/:id', { preHandler: requirePermission('ticket.write') }, async (req, reply) => {

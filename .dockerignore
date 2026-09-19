@@ -12,6 +12,8 @@ artifacts/*
 !artifacts/
 !artifacts/windows/
 !artifacts/windows/reydesk-helper.exe
+!artifacts/android/
+!artifacts/android/reydesk-agent.apk
 .recordings
 .uploads
 .vscode

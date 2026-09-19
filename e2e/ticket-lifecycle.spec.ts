@@ -104,6 +104,7 @@ interface TicketRow {
   first_response_at: string | null
   sla_response_breached: boolean
   sla_resolution_breached: boolean
+  status_changed_at: string
   resolved_at: string | null
   service_id: string | null
   ext: Record<string, unknown> | null
@@ -134,6 +135,8 @@ function baseTicket(): TicketRow {
     first_response_at: null,
     sla_response_breached: false,
     sla_resolution_breached: false,
+    // Entered 'new' 25 minutes ago; the rail should show "25m".
+    status_changed_at: new Date(Date.now() - 25 * 60 * 1000).toISOString(),
     resolved_at: null,
     service_id: null,
     ext: {
@@ -263,6 +266,15 @@ async function mockTicketApi(page: Page) {
         licences: [],
       })
     }
+    if (path === '/assets' && method === 'GET') {
+      const mutedOnly = new URL(request.url()).searchParams.get('muted') === 'true'
+      const allAssets = [
+        { id: 'asset-1', tag: 'LT-100', name: 'Field laptop', type: 'hardware', status: 'in_use', warranty_until: new Date(Date.now() + 20 * 86_400_000).toISOString().slice(0, 10), expiry_emails_muted: false, device_name: 'Opeyemi-PC' },
+        { id: 'asset-2', tag: 'LT-200', name: 'Loaner laptop', type: 'hardware', status: 'available', warranty_until: new Date(Date.now() + 15 * 86_400_000).toISOString().slice(0, 10), expiry_emails_muted: true, device_name: null },
+        { id: 'asset-3', tag: 'LT-300', name: 'Spare monitor', type: 'peripheral', status: 'available', warranty_until: null, expiry_emails_muted: false, device_name: null },
+      ]
+      return json(route, { assets: mutedOnly ? allAssets.filter((a) => a.expiry_emails_muted) : allAssets })
+    }
 
     // ── Ticket collection ──────────────────────────────────────
     if (path === '/tickets' && method === 'GET') {
@@ -388,6 +400,9 @@ async function mockTicketApi(page: Page) {
             hostname: 'OPEYEMI-PC',
             requested_by_name: user.name,
             event_count: 3,
+            recording_count: 1,
+            recording_bytes: 12.6 * 1024 * 1024,
+            recording_duration_sec: 700,
           },
         ],
         events: [
@@ -448,7 +463,15 @@ async function mockTicketApi(page: Page) {
     if (path.match(/^\/tickets\/([^/]+)\/viewers$/) && method === 'GET') return json(route, { viewers: [] })
     if (path.match(/^\/tickets\/([^/]+)\/lock\/release-requests$/) && method === 'GET') return json(route, { requests: [] })
     if (path.match(/^\/tickets\/([^/]+)\/attachments$/) && method === 'GET') return json(route, { attachments: [] })
-    if (path.match(/^\/tickets\/([^/]+)\/links$/) && method === 'GET') return json(route, { links: [] })
+    if (path.match(/^\/tickets\/([^/]+)\/links$/) && method === 'GET') {
+      return json(route, {
+        links: [
+          { id: 'link-1', link_type: 'caused_by', target_type: 'ticket', target_id: 'ticket-2', target_number: 1041, target_subject: 'VPN gateway flapping after firmware update', target_asset_name: null, target_kb_title: null, created_at: new Date().toISOString() },
+          { id: 'link-2', link_type: 'related', target_type: 'asset', target_id: 'asset-1', target_number: null, target_subject: null, target_asset_name: 'Field laptop', target_kb_title: null, created_at: new Date().toISOString() },
+          { id: 'link-3', link_type: 'parent', target_type: 'kb', target_id: 'kb-9', target_number: null, target_subject: null, target_asset_name: null, target_kb_title: 'VPN troubleshooting runbook', created_at: new Date().toISOString() },
+        ],
+      })
+    }
     if (path === '/links/search' && method === 'GET') return json(route, { results: [] })
     if (path.match(/^\/tickets\/([^/]+)\/activity$/) && method === 'GET') return json(route, { activity: [] })
 
@@ -471,6 +494,38 @@ async function mockTicketApi(page: Page) {
       })
     }
     if (path === '/escalation-paths' && method === 'GET') return json(route, { paths: [] })
+
+    // ── Ticket settings (escalation policy simulation) ────────
+    if (path === '/tenant/settings' && method === 'GET') {
+      return json(route, { settings: { ticket_prefix: 'TKT', default_priority: 'p3', default_type: 'incident' } })
+    }
+    if (path === '/sla-policies' && method === 'GET') return json(route, { policies: [] })
+    if (path === '/categories' && method === 'GET') return json(route, { categories: [] })
+    if (path === '/escalation-policies' && method === 'GET') {
+      return json(route, {
+        policies: [
+          { id: 1, name: 'Stale open tickets', description: '', source_status: 'open', target_status: 'escalated', trigger_after_minutes: 240, trigger_on_priority: ['p1'], target_team_id: null, target_role: null, auto_assign: false, enabled: false },
+        ],
+      })
+    }
+    if (path === '/escalation-policies/simulate' && method === 'POST') {
+      const body = request.postDataJSON() as { trigger_after_minutes?: number; source_status?: string }
+      const minutes = Math.max(1, Number(body.trigger_after_minutes ?? 60))
+      return json(route, {
+        matches: [
+          { ticket_id: 'ticket-1', number: 1042, subject: 'VPN drops every hour', priority: 'p1', status: body.source_status ?? 'open', minutes_in_status: minutes + 35, assignee_name: 'James Adeyemi', team_name: 'Service Desk', would_reassign: false },
+          { ticket_id: 'ticket-2', number: 1039, subject: 'Printer offline in accounts', priority: 'p1', status: body.source_status ?? 'open', minutes_in_status: minutes + 12, assignee_name: null, team_name: 'Service Desk', would_reassign: false },
+        ],
+        total: 2,
+        truncated: false,
+        effective: {
+          source_status: body.source_status ?? 'open',
+          target_status: 'escalated',
+          trigger_after_minutes: minutes,
+          priorities: ['p1'],
+        },
+      })
+    }
 
     // Anything else the shell touches stays inert.
     return json(route, {})
@@ -525,6 +580,13 @@ test.describe('ticket lifecycle', () => {
     // …and a public reply to a new ticket auto-moves it to open.
     await expect(page.locator('.ticket-head .status-pill')).toHaveText('Open')
 
+    // Status duration rail panel: the mock ticket entered its (new) status
+    // 25 minutes ago, so the panel shows minutes not hours.
+    const durationPanel = page.locator('.ticket-status-duration')
+    await expect(durationPanel).toBeVisible()
+    await expect(durationPanel.locator('.ticket-status-duration-value')).toHaveText(/^(2[4-9]|3[0-5])m$/)
+    await expect(durationPanel).toContainText('in Open')
+
     // ── Internal note ──────────────────────────────────────────
     await page.getByRole('button', { name: 'Internal note' }).click()
     await page.getByPlaceholder('Add a private note for technicians…').fill('Spooler restart fixed it — queued a permanent fix via GPO.')
@@ -553,6 +615,16 @@ test.describe('ticket lifecycle', () => {
     await expect(page.locator('.ticket-session-jump', { hasText: 'View console' })).toBeVisible()
     await expect(page.locator('.ticket-session-event', { hasText: 'files downloaded' })).toBeVisible()
     await expect(page.locator('.ticket-session-event', { hasText: 'ice connected' })).toBeVisible()
+
+    // Outcome summary: duration + granted permissions + recording aggregates.
+    const outcome = page.locator('.ticket-session-outcome')
+    await expect(outcome).toBeVisible()
+    await expect(outcome).toContainText('12m')
+    await expect(outcome).toContainText('View screen')
+    await expect(outcome).toContainText('Remote control')
+    await expect(outcome).toContainText('1 recording')
+    await expect(outcome).toContainText('12.6 MB')
+    await expect(outcome).toContainText('12m')
 
     // Elevated-only filter narrows the feed to terminal/service/process events.
     await page.locator('.ticket-session-filter input').check()
@@ -656,6 +728,34 @@ test.describe('ticket lifecycle', () => {
     await expect(page.locator('.ticket-subject')).toBeVisible()
   })
 
+  test('linked items render as a readable connected-work list in the rail', async ({ page }) => {
+    await page.goto(`/tickets/${ticket.id}`)
+    await expect(page.locator('.ticket-side-rail')).toBeVisible()
+
+    // Three links, each with a semantic badge, a titled target and a kind note.
+    const rows = page.locator('.ticket-link-row')
+    await expect(rows).toHaveCount(3)
+
+    const first = rows.filter({ hasText: 'Caused by' })
+    await expect(first).toHaveCount(1)
+    await expect(first.locator('.ticket-link-title')).toContainText('#1041 VPN gateway flapping')
+    await expect(first.locator('.ticket-link-title')).toHaveAttribute('href', /\/tickets\/ticket-2$/)
+    await expect(first.locator('.ticket-link-kind')).toHaveText('Ticket')
+
+    const assetRow = rows.filter({ hasText: 'Related' }).filter({ hasText: 'Field laptop' })
+    await expect(assetRow).toHaveCount(1)
+    await expect(assetRow.locator('.ticket-link-kind')).toHaveText('Asset')
+
+    const kbRow = rows.filter({ hasText: 'Parent' })
+    await expect(kbRow.locator('.ticket-link-title')).toContainText('VPN troubleshooting runbook')
+    await expect(kbRow.locator('.ticket-link-kind')).toHaveText('KB article')
+
+    // Each row exposes a compact unlink affordance.
+    await expect(rows.first().locator('.ticket-link-unlink')).toBeVisible()
+    // The old attachment-style rendering is gone.
+    await expect(page.locator('.ticket-side-rail .attachment-row')).toHaveCount(0)
+  })
+
   test('the dashboard surfaces upcoming renewals for asset readers', async ({ page }) => {
     await page.goto('/')
 
@@ -666,5 +766,72 @@ test.describe('ticket lifecycle', () => {
     await expect(page.locator('.dash-renewal-kind').first()).toHaveText('Warranty')
     // 20 days out lands in the amber window.
     await expect(page.locator('.dash-renewal-pill').first()).toHaveText('20d')
+
+    // Renewals KPI: one item inside the 90-day watch, and it is urgent
+    // (within 30 days), so the card shows the urgent-count link.
+    const kpi = page.locator('.dash-kpi', { hasText: 'Renewals due (90d)' })
+    await expect(kpi.locator('.dash-kpi-value')).toHaveText('1')
+    await expect(kpi.getByRole('link', { name: /urgent/ })).toBeVisible()
+
+    // The KPI deep-links into the Assets renewals view.
+    await kpi.getByRole('link').click()
+    await expect(page).toHaveURL(/\/assets\?view=renewals/)
+    await expect(page.locator('.renewals-watch')).toBeVisible()
+    await expect(page.locator('.renewals-watch-row')).toHaveCount(1)
+    await expect(page.locator('.renewals-watch-row').first()).toContainText('Field laptop')
+    await expect(page.locator('.renewals-watch-row').first()).toContainText('20d')
+  })
+
+  test('escalation policy simulation previews matching tickets before enabling', async ({ page }) => {
+    await page.goto('/settings/tickets')
+
+    // Switch to the Escalation policies tab and open the draft form.
+    await page.getByRole('button', { name: 'Escalation policies' }).click()
+    await expect(page.getByText('Stale open tickets')).toBeVisible()
+    await page.getByRole('button', { name: 'New policy' }).click()
+
+    // Dry-run the draft against the live queue — the mock reports two P1s
+    // past the threshold. Nothing is written.
+    await page.getByRole('button', { name: 'Simulate on live queue' }).click()
+    const region = page.getByRole('region', { name: 'Simulation results' })
+    await expect(region.getByText(/2 tickets would escalate/)).toBeVisible()
+
+    // Match rows carry ticket identity, priority and time-in-status.
+    const rows = region.locator('.esc-sim-row')
+    await expect(rows).toHaveCount(2)
+    await expect(rows.first()).toContainText('#1042')
+    await expect(rows.first()).toContainText('VPN drops every hour')
+    await expect(rows.first()).toContainText('P1')
+    await expect(rows.first()).toContainText('m in status')
+    await expect(rows.nth(1)).toContainText('#1039')
+
+    // The modal stays open for further editing; the policy list is unchanged.
+    await expect(page.getByText('Stale open tickets')).toBeVisible()
+  })
+
+  test('muted expiry notices are auditable as a filtered view on Assets', async ({ page }) => {
+    await page.goto('/assets')
+
+    // Full inventory: three assets, one of them muted (badge visible in the warranty cell).
+    await expect(page.locator('.ops-table tbody tr')).toHaveCount(3)
+    await expect(page.locator('.ops-kpi-muted .ops-kpi-value')).toHaveText('1')
+
+    // The muted KPI card is a toggle: clicking it filters to silenced assets only.
+    await page.locator('button.ops-kpi-muted').click()
+    await expect(page.locator('.ops-table tbody tr')).toHaveCount(1)
+    await expect(page.locator('.ops-table tbody tr').first()).toContainText('Loaner laptop')
+    await expect(page.locator('.ops-table tbody tr').first()).toContainText('muted')
+    await expect(page.locator('button.ops-kpi-muted')).toHaveAttribute('aria-pressed', 'true')
+
+    // The toolbar checkbox mirrors the KPI toggle.
+    await page.locator('.ops-toggle-muted input').uncheck()
+    await expect(page.locator('.ops-table tbody tr')).toHaveCount(3)
+    await expect(page.locator('button.ops-kpi-muted')).toHaveAttribute('aria-pressed', 'false')
+
+    // Re-filter and clear via the checkbox this time.
+    await page.locator('.ops-toggle-muted input').check()
+    await expect(page.locator('.ops-table tbody tr')).toHaveCount(1)
+    await page.locator('button.ops-kpi-muted').click()
+    await expect(page.locator('.ops-table tbody tr')).toHaveCount(3)
   })
 })

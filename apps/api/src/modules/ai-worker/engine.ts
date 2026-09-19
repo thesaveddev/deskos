@@ -735,6 +735,7 @@ export async function approveWorkerStep(
   tenantId: string,
   runId: string,
   actorId: string,
+  deps?: WorkerDeps,
 ): Promise<{ run: LoadRunRow }> {
   const run = await withTenant(pool, tenantId, async (client) => {
     const { rows } = await client.query('SELECT * FROM ai_worker_runs WHERE id = $1 FOR UPDATE', [runId])
@@ -747,8 +748,12 @@ export async function approveWorkerStep(
   if (index === -1) throw AppError.badRequest('No step is awaiting approval.', 'invalid_state')
   steps[index] = { ...steps[index], status: 'pending', approvedBy: actorId }
   await writeRunSteps(pool, tenantId, runId, steps, 'running')
-  // Resume after the transaction so the approval persists first.
-  return { run: { ...run, steps, status: 'running' } }
+  // Resume execution after the approval persists.
+  const resumed = { ...run, steps, status: 'running' as WorkerRunStatus }
+  if (deps) {
+    void advanceRun(pool, tenantId, runId, 'exec', deps).catch(() => undefined)
+  }
+  return { run: resumed }
 }
 
 export async function denyWorkerStep(
@@ -756,6 +761,7 @@ export async function denyWorkerStep(
   tenantId: string,
   runId: string,
   actorId: string,
+  deps?: WorkerDeps,
 ): Promise<{ run: LoadRunRow }> {
   const run = await withTenant(pool, tenantId, async (client) => {
     const { rows } = await client.query('SELECT * FROM ai_worker_runs WHERE id = $1 FOR UPDATE', [runId])
@@ -768,6 +774,8 @@ export async function denyWorkerStep(
   if (index === -1) throw AppError.badRequest('No step is awaiting approval.', 'invalid_state')
   steps[index] = { ...steps[index], status: 'denied', approvedBy: actorId, error: 'Denied by a technician.' }
   await writeRunSteps(pool, tenantId, runId, steps, 'running')
+  // A denied step means the run cannot proceed — hand off to a human.
+  void handRun(pool, tenantId, runId, `Step "${steps[index].tool}" was denied by a technician.`, deps).catch(() => undefined)
   return { run: { ...run, steps, status: 'running' } }
 }
 
@@ -838,9 +846,12 @@ export async function listWorkerRuns(
     const hasMore = rows.length > limit
     const runs = hasMore ? rows.slice(0, limit) : rows
     const nextCursor = hasMore && runs.length > 0 ? String(runs[runs.length - 1].created_at) : null
+    // Count total matching rows (without cursor filter — cursor is for pagination only).
+    const countWhere = filters.cursor ? whereSql.replace(/ AND r\.created_at < \$\d+::timestamptz/, '') : whereSql
+    const countParams = filters.cursor ? params.slice(0, params.length - 1) : params
     const countResult = await client.query(
-      `SELECT count(*)::int AS total FROM ai_worker_runs r ${whereSql}`,
-      params.slice(0, params.length - (filters.cursor ? 1 : 0)),
+      `SELECT count(*)::int AS total FROM ai_worker_runs r ${countWhere}`,
+      countParams,
     )
     return { runs, nextCursor, total: countResult.rows[0]?.total ?? 0 }
   })

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Shell } from '../components/Shell.js'
 import { Alert, Field, Modal, PageHeader, useConfirm } from '../components/ui.js'
 import { MfaQrCode } from '../components/MfaQrCode.js'
@@ -74,6 +75,10 @@ export default function AssetsPage() {
   const [q, setQ] = useState('')
   const [typeFilter, setTypeFilter] = useState<AssetType | ''>('')
   const [statusFilter, setStatusFilter] = useState<AssetStatus | ''>('')
+  const [mutedOnly, setMutedOnly] = useState(false)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const renewalsRef = useRef<HTMLDivElement | null>(null)
+  const showRenewals = searchParams.get('view') === 'renewals'
   const [form, setForm] = useState<AssetForm>(EMPTY_ASSET)
   const [editing, setEditing] = useState<Asset | null>(null)
   const [assetOpen, setAssetOpen] = useState(false)
@@ -91,22 +96,31 @@ export default function AssetsPage() {
   const load = useCallback(async () => {
     try {
       const [a, l, w] = await Promise.all([
-        listAssets({ q: q || undefined, type: typeFilter || undefined, status: statusFilter || undefined }),
+        listAssets({ q: q || undefined, type: typeFilter || undefined, status: statusFilter || undefined, muted: mutedOnly || undefined }),
         listLicences(),
         listWarrantyWatch(90).catch(() => ({ warranties: [], licences: [] })),
       ])
-      setAssets(a.assets)
-      setLicences(l.licences)
-      setWatch(w)
+      // Normalise on receipt: partial/malformed payloads degrade to empty
+      // panels rather than white-screening the page.
+      setAssets(Array.isArray(a.assets) ? a.assets : [])
+      setLicences(Array.isArray(l.licences) ? l.licences : [])
+      setWatch({ warranties: Array.isArray(w.warranties) ? w.warranties : [], licences: Array.isArray(w.licences) ? w.licences : [] })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load assets')
     }
-  }, [q, typeFilter, statusFilter])
+  }, [q, typeFilter, statusFilter, mutedOnly])
 
   useEffect(() => {
     const timer = setTimeout(() => void load(), 250)
     return () => clearTimeout(timer)
   }, [load])
+
+  // Deep link from the dashboard renewals KPI: once data has loaded, scroll
+  // the renewals watch into view so the arrival feels purposeful.
+  useEffect(() => {
+    if (!showRenewals || assets === null) return
+    renewalsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [showRenewals, assets])
 
   useEffect(() => {
     if (!canManage) return
@@ -114,8 +128,12 @@ export default function AssetsPage() {
       api<{ devices: Array<{ id: string; name: string; hostname: string }> }>('/devices?limit=200'),
       api<{ members: Array<{ user_id: string; name: string | null; email: string }> }>('/members?status=active'),
     ]).then(([devices, members]) => {
-      setDeviceOptions(devices.devices)
-      setMemberOptions(members.members.map((member) => ({ id: member.user_id, name: member.name || member.email, email: member.email })))
+      // Normalise on receipt: a malformed/partial payload must degrade to
+      // empty pickers, not white-screen the page (same class as the
+      // dashboard report fix).
+      setDeviceOptions(Array.isArray(devices.devices) ? devices.devices : [])
+      const membersList = Array.isArray(members.members) ? members.members : []
+      setMemberOptions(membersList.map((member) => ({ id: member.user_id, name: member.name || member.email, email: member.email })))
     }).catch(() => { setDeviceOptions([]); setMemberOptions([]) })
   }, [canManage])
 
@@ -245,6 +263,7 @@ export default function AssetsPage() {
   }
 
   const assetName = (id: string | null) => assets?.find((a) => a.id === id)?.name ?? '—'
+  const mutedCount = (assets ?? []).filter((a) => a.expiry_emails_muted).length
   const count = (s: AssetStatus) => (assets ?? []).filter((a) => a.status === s).length
   const assigneeLabel = (a: Asset) => a.assigned_user_name ?? (a.assignment_status === 'shared' ? 'Shared pool' : a.owner_name ?? '—')
   const dueSoon = watch.warranties.length + watch.licences.length
@@ -292,6 +311,18 @@ export default function AssetsPage() {
           value={dueSoon || '—'}
           sub={dueSoon > 0 ? `${watch.warranties.length} warranties · ${watch.licences.length} licences` : 'Nothing expires in 90 days'}
         />
+        <button
+          type="button"
+          className={`ops-kpi ops-kpi-muted${mutedOnly ? ' active' : ''}`}
+          onClick={() => setMutedOnly((v) => !v)}
+          aria-pressed={mutedOnly}
+          title={mutedOnly ? 'Showing only assets with expiry emails muted — click to show all' : 'Audit assets whose expiry emails have been silenced'}
+        >
+          <div className="ops-kpi-head"><span className="ops-kpi-icon ops-kpi-icon-muted"><Icon name="bell-off" size={16} /></span></div>
+          <span className="ops-kpi-value">{mutedCount}</span>
+          <span className="ops-kpi-label">Expiry muted</span>
+          <span className="ops-kpi-sub">{mutedOnly ? 'Showing silenced only — click to clear' : 'Click to audit silenced notices'}</span>
+        </button>
       </div>
 
       <div className="tabs">
@@ -301,6 +332,44 @@ export default function AssetsPage() {
         <button type="button" className={`tab ${tab === 'licences' ? 'active' : ''}`} onClick={() => setTab('licences')}>
           Licences <span className="tab-count">{licences.length}</span>
         </button>
+      </div>
+
+      {/* Renewals watch: the dashboard renewals KPI deep-links here via
+          /assets?view=renewals — same query the expiry sweep uses, so what
+          this panel shows is exactly what will (or won't, for muted assets)
+          notify. */}
+      <div ref={renewalsRef} className={`renewals-watch${showRenewals ? ' highlighted' : ''}`}>
+        <div className="renewals-watch-head">
+          <h2>Renewals watch</h2>
+          <span className="muted mono">warranties and licences expiring within 90 days{dueSoon > 0 ? ` · ${dueSoon} due` : ''}</span>
+        </div>
+        {watch.warranties.length === 0 && watch.licences.length === 0 ? (
+          <div className="renewals-watch-empty">Nothing expires in the next 90 days. The daily digest only reports what appears here.</div>
+        ) : (
+          <div className="renewals-watch-list">
+            {[
+              ...watch.warranties.map((w) => ({ key: `w-${w.id}`, name: w.name, tag: w.tag ?? '', kind: 'Warranty', due: w.warranty_until ?? null, muted: w.expiry_emails_muted === true })),
+              ...watch.licences.map((l) => ({ key: `l-${l.id}`, name: l.name, tag: l.asset_tag ?? '', kind: 'Licence', due: l.expires_at ?? null, muted: false })),
+            ]
+              .filter((row) => row.due)
+              .sort((a, b) => (daysUntil(a.due) ?? 0) - (daysUntil(b.due) ?? 0))
+              .map((row) => {
+                const days = daysUntil(row.due)!
+                const tone = days < 0 ? 'crit' : days <= 30 ? 'warn' : 'ok'
+                return (
+                  <div key={row.key} className="renewals-watch-row">
+                    <span className={`ops-pill tone-${tone === 'crit' ? 'crit' : tone === 'warn' ? 'warn' : 'ok'}`}>{days < 0 ? 'expired' : `${days}d`}</span>
+                    <strong>{row.name}</strong>
+                    <span className="mono muted">{row.tag}</span>
+                    <span className="ops-pill tone-muted">{row.kind}</span>
+                    <span className="mono muted">{row.due?.slice(0, 10)}</span>
+                    {row.muted ? <span className="ops-pill tone-muted" title="Expiry emails muted for this asset"><Icon name="bell-off" size={11} />muted</span> : null}
+                  </div>
+                )
+              })
+            }
+          </div>
+        )}
       </div>
 
       {tab === 'assets' ? (
@@ -315,10 +384,16 @@ export default function AssetsPage() {
               <option value="">All statuses</option>
               {STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
             </select>
+            <label className="ops-toggle-muted" title="Show only assets whose expiry emails are muted">
+              <input type="checkbox" checked={mutedOnly} onChange={(e) => setMutedOnly(e.target.checked)} />
+              <span>Muted only</span>
+            </label>
           </div>
 
           {assets === null ? (
             <div className="etch" style={{ padding: 24 }}>Loading assets…</div>
+          ) : assets.length === 0 && mutedOnly ? (
+            <div className="ops-empty"><strong>No muted assets</strong><span>Every asset with a warranty date is receiving expiry notices. Toggle “Muted only” off to see the full inventory.</span></div>
           ) : assets.length === 0 ? (
             <div className="ops-empty"><strong>No assets match</strong><span>Adjust your search or add a new asset.</span></div>
           ) : (

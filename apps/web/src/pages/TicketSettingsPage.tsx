@@ -10,6 +10,16 @@ interface Category { id: string; name: string; description: string }
 interface EscalationPolicy { id: number; name: string; description: string; source_status: string; target_status: string; trigger_after_minutes: number; trigger_on_priority: string[]; target_team_id: string | null; target_role: string | null; auto_assign: boolean; enabled: boolean }
 interface EscalationPath { id: number; name: string; description: string; source_team_id: string | null; source_category_id: string | null; source_priority: string[]; target_team_id: string; target_assignee_id: string | null; auto_assign: boolean; enabled: boolean; position: number; target_team_name?: string; target_assignee_name?: string; source_team_name?: string; source_category_name?: string }
 interface Team { id: string; name: string; accepts_tickets?: boolean }
+interface EscalationSimulationMatch {
+  ticket_id: string; number: number; subject: string; priority: string; status: string
+  minutes_in_status: number; assignee_name: string | null; team_name: string | null; would_reassign: boolean
+}
+interface EscalationSimulationResult {
+  matches: EscalationSimulationMatch[]
+  total: number
+  truncated: boolean
+  effective: { source_status: string; target_status: string; trigger_after_minutes: number; priorities: string[] }
+}
 interface Settings {
   ticket_prefix: string; auto_assign_enabled: boolean; auto_close_enabled: boolean; auto_close_after_days: number
   require_description: boolean; allow_attachments: boolean; public_notes_visible: boolean
@@ -158,9 +168,13 @@ export default function TicketSettingsPage() {
   }
 
   // ── Escalation policies ──
+  const [simResult, setSimResult] = useState<EscalationSimulationResult | null>(null)
+  const [simBusy, setSimBusy] = useState(false)
+
   const openNewEsc = () => {
     setEscEdit(null); setEscName(''); setEscMinutes(60); setEscPriorities([]); setEscTeam('')
     setEscAutoAssign(false); setEscSourceStatus('open'); setEscTargetStatus('escalated'); setShowEscForm(true)
+    setSimResult(null)
   }
 
   const openEditEsc = (policy: EscalationPolicy) => {
@@ -168,6 +182,28 @@ export default function TicketSettingsPage() {
     setEscPriorities(policy.trigger_on_priority || []); setEscTeam(policy.target_team_id || '')
     setEscAutoAssign(policy.auto_assign); setEscSourceStatus(policy.source_status || 'open')
     setEscTargetStatus(policy.target_status || 'escalated'); setShowEscForm(true)
+    setSimResult(null)
+  }
+
+  /** Dry-run the current form draft against the live queue — no writes. */
+  const simulateEsc = async () => {
+    setSimBusy(true)
+    try {
+      const result = await api('/escalation-policies/simulate', {
+        method: 'POST',
+        body: {
+          name: escName,
+          source_status: escSourceStatus,
+          target_status: escTargetStatus,
+          trigger_after_minutes: escMinutes,
+          trigger_on_priority: escPriorities,
+          target_team_id: escTeam || null,
+          auto_assign: escAutoAssign,
+        },
+      }) as EscalationSimulationResult
+      setSimResult(result)
+    } catch (err) { setError(err instanceof Error ? err.message : 'Simulation failed') }
+    setSimBusy(false)
   }
 
   const saveEsc = async () => {
@@ -552,6 +588,41 @@ export default function TicketSettingsPage() {
               </select>
             </div>
             <Toggle label="Auto-assign to team members" checked={escAutoAssign} onChange={setEscAutoAssign} />
+
+            <div className="esc-sim-block">
+              <div className="ts-form-actions" style={{ marginTop: '1rem' }}>
+                <button className="btn btn-ghost btn-sm" onClick={() => void simulateEsc()} disabled={simBusy || escMinutes < 1}>
+                  <Icon name={simBusy ? 'clock' : 'eye'} size={14} />{simBusy ? 'Checking queue…' : 'Simulate on live queue'}
+                </button>
+                <span className="ts-hint">Shows which tickets would escalate right now — changes nothing.</span>
+              </div>
+              {simResult ? (
+                <div className="esc-sim-result" role="region" aria-label="Simulation results">
+                  {simResult.total === 0 ? (
+                    <p className="esc-sim-none">No tickets would match right now. Enabling this policy would change nothing until a ticket crosses the threshold.</p>
+                  ) : (
+                    <>
+                      <p className="esc-sim-summary">
+                        <strong>{simResult.total}</strong> {simResult.total === 1 ? 'ticket would' : 'tickets would'} escalate to "{simResult.effective.target_status.replace(/_/g, ' ')}" on the next sweep.
+                        {simResult.truncated ? ' Showing the 50 longest-waiting.' : null}
+                      </p>
+                      <div className="esc-sim-list">
+                        {simResult.matches.map((m) => (
+                          <div key={m.ticket_id} className="esc-sim-row">
+                            <span className="ts-badge">#{m.number}</span>
+                            <strong title={m.subject}>{m.subject}</strong>
+                            <span className="ts-badge ts-badge-accent">{m.priority.toUpperCase()}</span>
+                            <span className="esc-sim-mins mono">{m.minutes_in_status}m in status</span>
+                            {m.would_reassign ? <span className="ts-badge ts-badge-ok">→ new team</span> : null}
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              ) : null}
+            </div>
+
             <div className="ts-form-actions" style={{ marginTop: '1rem' }}>
               <button className="btn btn-primary btn-sm" onClick={() => void saveEsc()} disabled={busy || !escName.trim()}>{busy ? 'Saving…' : 'Save'}</button>
               <button className="btn btn-ghost btn-sm" onClick={() => setShowEscForm(false)}>Cancel</button>

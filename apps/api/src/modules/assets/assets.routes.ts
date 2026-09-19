@@ -93,7 +93,7 @@ export async function assetRoutes(app: FastifyInstance): Promise<void> {
   // ---- Assets -------------------------------------------------------------
   app.get('/assets', { preHandler: read }, async (request) => {
     const ctx = request.tenantCtx!
-    const query = request.query as { q?: string; type?: string; status?: string }
+    const query = request.query as { q?: string; type?: string; status?: string; muted?: string }
     return withTenant(app.db, ctx.tenantId, async (client) => {
       const clauses: string[] = []
       const values: unknown[] = []
@@ -104,6 +104,10 @@ export async function assetRoutes(app: FastifyInstance): Promise<void> {
       if (query.status && (ASSET_STATUSES as readonly string[]).includes(query.status)) {
         values.push(query.status)
         clauses.push(`status = $${values.length}`)
+      }
+      if (query.muted === 'true' || query.muted === 'false') {
+        values.push(query.muted === 'true')
+        clauses.push(`expiry_emails_muted = $${values.length}`)
       }
       if (query.q) {
         values.push(`%${query.q}%`)

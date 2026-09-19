@@ -15,10 +15,24 @@ import { assertSessionPermission, issueJoinToken, sessionPermissions } from './r
 import { buildIceServers } from '../../core/ice.js'
 import '../../types.js'
 
+/**
+ * Support codes are short-lived credentials that grant screen/control access.
+ * Hard cap every source of expiry at 24 hours — a code that outlives a day is
+ * a standing invitation and defeats the single-use model.
+ */
+const MAX_CODE_EXPIRY_MIN = 24 * 60
+
+function clampCodeExpiryMinutes(requested: number): number {
+  return Math.min(Math.max(1, Math.floor(requested)), MAX_CODE_EXPIRY_MIN)
+}
+
 const createSchema = z.object({
   permissions: z.array(z.enum(sessionPermissions)).min(1).max(10).default(['view_screen']),
   reason: z.string().trim().max(500).optional(),
-  expiresInMin: z.number().int().min(1).max(1440).optional(),
+  // No upper bound here on purpose: larger requests are clamped to the 24h
+  // cap below rather than rejected, so stale clients can never talk a server
+  // into a longer-lived code.
+  expiresInMin: z.number().int().min(1).optional(),
   codeLength: z.literal(12).default(12),
 })
 
@@ -155,7 +169,12 @@ export async function adhocSessionRoutes(app: FastifyInstance): Promise<void> {
 
     const tenantRow = (await app.db.query('SELECT settings FROM tenants WHERE id = $1', [ctx.tenantId])).rows[0]
     const remoteDefaults = (tenantRow?.settings?.remote_support ?? {}) as Record<string, unknown>
-    const expiresInMin = Number(body.expiresInMin ?? remoteDefaults.default_expiry_minutes ?? 30)
+    // Three sources feed the expiry (explicit request → tenant default →
+    // built-in fallback). The tenant default may predate this cap, so every
+    // source passes through the same 24h clamp.
+    const expiresInMin = clampCodeExpiryMinutes(
+      Number(body.expiresInMin ?? remoteDefaults.default_expiry_minutes ?? 30),
+    )
     const code = generateEnrolCode(body.codeLength)
     const expiresAt = new Date(Date.now() + expiresInMin * 60_000)
     const created = await withTenant(app.db, ctx.tenantId, async (client) => {
@@ -278,6 +297,35 @@ export async function adhocSessionRoutes(app: FastifyInstance): Promise<void> {
     if (!revoked) throw AppError.conflict('This support code is not open and cannot be revoked.', 'not_open')
     return reply.send({ id: revoked.id, state: revoked.state })
   })
+}
+
+/**
+ * Mark support codes that passed their expiry but were never claimed or
+ * revoked. Claim paths already refuse expired codes by timestamp, so this is
+ * hygiene — the list view and code state reflect reality instead of waiting
+ * for someone to poke the code. Runs across all tenants; safe to repeat.
+ */
+export async function expireStaleAdhocCodes(pool: DbPool): Promise<number> {
+  // adhoc_sessions is FORCE RLS, so the sweep must run inside each tenant's
+  // context — same shape as the retired-device purge.
+  const { rows: tenants } = await pool.query('SELECT id FROM tenants')
+  let total = 0
+  for (const tenant of tenants) {
+    try {
+      await withTenant(pool, tenant.id, async (client) => {
+        const { rowCount } = await client.query(
+          `UPDATE adhoc_sessions
+              SET state = 'expired', updated_at = now()
+            WHERE state = 'open'
+              AND expires_at < now()`,
+        )
+        total += rowCount ?? 0
+      })
+    } catch {
+      // A tenant failing to sweep must not block the others.
+    }
+  }
+  return total
 }
 
 /** Public routes (registered at the root, no tenant auth). */

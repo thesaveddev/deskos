@@ -304,6 +304,7 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
     }).partial().optional(),
     remote_support: z.object({
       require_consent: z.boolean().optional(),
+      // Support codes are capped at 24h; new tenant defaults cannot exceed it.
       default_expiry_minutes: z.number().int().min(5).max(1440).optional(),
       allow_file_transfer: z.boolean().optional(),
       allow_clipboard: z.boolean().optional(),

@@ -255,7 +255,6 @@ export function getWorkerTool(name: string): WorkerToolDef {
 
 export function workerToolCatalogForPrompt(): string {
   return WORKER_TOOLS
-    .filter((t) => t.risk === 'low' || t.risk === 'high')
     .map((t) => `- ${t.name}: ${t.description} (risk: ${t.risk})`)
     .join('\n')
 }

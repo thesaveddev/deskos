@@ -21,6 +21,8 @@ export interface Ticket {
   first_response_at: string | null
   sla_response_breached: boolean
   sla_resolution_breached: boolean
+  /** When the ticket last entered its current status (null for pre-0096 rows). */
+  status_changed_at?: string | null
   resolved_at: string | null
   service_id: string | null
   ext: Record<string, unknown> | null
@@ -222,6 +224,25 @@ export function slaSummary(t: Ticket): { label: string; tone: 'ok' | 'warn' | 'c
   if (mins < 0) return { label: 'Breached', tone: 'crit' }
   const label = mins < 60 ? `${mins}m` : mins < 60 * 24 ? `${Math.round(mins / 60)}h` : `${Math.round(mins / 1440)}d`
   return { label: `due ${label}`, tone: mins < 60 ? 'warn' : 'ok' }
+}
+
+/**
+ * Human duration the ticket has spent in its current status — "3h" for the
+ * rail's stuck-time display. Falls back to ticket age when the API has not
+ * recorded status_changed_at (rows predating migration 0096). Terminal
+ * statuses resolve to null; the rail shows a completed note instead.
+ */
+export function timeInStatusText(t: Ticket): string | null {
+  if (t.status === 'resolved' || t.status === 'closed') return null
+  const anchor = t.status_changed_at ?? t.created_at
+  if (!anchor) return null
+  const started = new Date(anchor).getTime()
+  if (!Number.isFinite(started)) return null
+  const mins = Math.max(0, Math.round((Date.now() - started) / 60_000))
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m`
+  if (mins < 60 * 24) return `${Math.round(mins / 60)}h`
+  return `${Math.round(mins / 1440)}d`
 }
 
 export function formatWhen(iso: string): string {

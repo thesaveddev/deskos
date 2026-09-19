@@ -41,11 +41,12 @@ export interface Licence {
   updated_at: string
 }
 
-export function listAssets(params: { q?: string; type?: AssetType; status?: AssetStatus } = {}): Promise<{ assets: Asset[] }> {
+export function listAssets(params: { q?: string; type?: AssetType; status?: AssetStatus; muted?: boolean } = {}): Promise<{ assets: Asset[] }> {
   const query = new URLSearchParams()
   if (params.q) query.set('q', params.q)
   if (params.type) query.set('type', params.type)
   if (params.status) query.set('status', params.status)
+  if (params.muted !== undefined) query.set('muted', String(params.muted))
   const suffix = query.toString() ? `?${query.toString()}` : ''
   return api(`/assets${suffix}`)
 }

@@ -71,7 +71,7 @@ import { portalAttachmentRoutes } from './modules/portal/portal-attachments.rout
 import { publicPortalRoutes } from './modules/portal/public-portal.routes.js'
 import { reportRoutes } from './modules/reports/reports.routes.js'
 import { rmmRoutes } from './modules/rmm/rmm.routes.js'
-import { adhocSessionRoutes, connectRoutes } from './modules/remote/adhoc.routes.js'
+import { adhocSessionRoutes, connectRoutes, expireStaleAdhocCodes } from './modules/remote/adhoc.routes.js'
 import { probeRoutes } from './modules/remote/probe.routes.js'
 import { marketplaceRoutes } from './modules/marketplace/marketplace.routes.js'
 import { supportRoutes } from './modules/support/support.routes.js'

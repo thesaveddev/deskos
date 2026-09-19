@@ -221,4 +221,73 @@ describe('escalation policies', () => {
     expect(matches.statusCode).toBe(200)
     expect(matches.json().paths.some((p: { id: number }) => p.id === path.json().path.id)).toBe(true)
   })
+
+  it('simulates a policy draft against the live queue without changing anything', async () => {
+    // Two stuck open tickets past a 60-minute threshold, one fresh open
+    // ticket, one stuck p4 ticket, and one aged resolved ticket.
+    const makeTicket = async (subject: string, opts: { age?: boolean; priority?: string; status?: string } = {}) => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/tickets',
+        headers: authHeaders(owner),
+        payload: { subject, description: 'sim', priority: opts.priority ?? 'p2' },
+      })
+      expect(res.statusCode).toBe(201)
+      const id = res.json().ticket.id as string
+      if (opts.age || opts.status) {
+        await withTenant(app.db, owner.tenantId!, async (client) => {
+          await client.query(
+            `UPDATE tickets SET
+               status = COALESCE($2, status),
+               status_changed_at = CASE WHEN $3 THEN now() - interval '3 hours' WHEN $2::text IS NOT NULL THEN now() END,
+               created_at = CASE WHEN $3 THEN now() - interval '3 hours' ELSE created_at END,
+               resolved_at = CASE WHEN $2 = 'resolved' THEN now() ELSE resolved_at END
+             WHERE id = $1`,
+            [id, opts.status ?? null, opts.age ?? false],
+          )
+        })
+      }
+      return id
+    }
+    const stuckId = await makeTicket('Sim stuck open', { age: true, status: 'open' })
+    const otherStuckId = await makeTicket('Sim stuck open two', { age: true, status: 'open' })
+    const freshId = await makeTicket('Sim fresh open')
+    const wrongPrioId = await makeTicket('Sim stuck p4', { age: true, priority: 'p4', status: 'open' })
+    const resolvedId = await makeTicket('Sim aged resolved', { age: true, status: 'resolved' })
+
+    const sim = await app.inject({
+      method: 'POST',
+      url: '/api/v1/escalation-policies/simulate',
+      headers: authHeaders(owner),
+      payload: { name: 'Draft', source_status: 'open', target_status: 'escalated', trigger_after_minutes: 60, trigger_on_priority: ['p2'] },
+    })
+    expect(sim.statusCode).toBe(200)
+    const body = sim.json()
+    expect(body.effective.source_status).toBe('open')
+    expect(body.effective.trigger_after_minutes).toBe(60)
+
+    const numbers = body.matches.map((m: { ticket_id: string }) => m.ticket_id)
+    expect(numbers).toContain(stuckId)
+    expect(numbers).toContain(otherStuckId)
+    expect(numbers).not.toContain(freshId) // under threshold
+    expect(numbers).not.toContain(wrongPrioId) // priority not selected
+    expect(numbers).not.toContain(resolvedId) // terminal status never matches
+
+    const stuck = body.matches.find((m: { ticket_id: string }) => m.ticket_id === stuckId)
+    expect(stuck.minutes_in_status).toBeGreaterThanOrEqual(170)
+    expect(stuck.would_reassign).toBe(false) // no target team in the draft
+
+    // Nothing was written: the matched tickets are still in their original status.
+    const detail = await app.inject({ method: 'GET', url: `/api/v1/tickets/${stuckId}`, headers: authHeaders(owner) })
+    expect(detail.json().ticket.status).toBe('open')
+    const escs = await app.inject({ method: 'GET', url: `/api/v1/tickets/${stuckId}/escalations`, headers: authHeaders(owner) })
+    expect(escs.json().escalations).toHaveLength(0)
+  })
+
+  it('requires ticket.write to simulate', async () => {
+    const sim = await app.inject({ method: 'POST', url: '/api/v1/escalation-policies/simulate', headers: authHeaders(owner) })
+    // Missing body still simulates with defaults rather than erroring.
+    expect(sim.statusCode).toBe(200)
+    expect(sim.json().effective.trigger_after_minutes).toBe(60)
+  })
 })

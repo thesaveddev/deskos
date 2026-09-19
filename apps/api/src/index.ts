@@ -8,6 +8,7 @@ import { checkAllMonitoringPolicies } from './modules/monitoring/monitoring.js'
 import { checkAssetExpiryNotices } from './modules/assets/expiry.js'
 import { checkKbReviewNotices } from './modules/knowledge/review.js'
 import { checkNeedsAttentionDigest } from './modules/notifications/digest.js'
+import { expireStaleAdhocCodes } from './modules/remote/adhoc.routes.js'
 import { generateVapidKeyPair } from './modules/push/vapid.js'
 import { startSlaScheduler } from './modules/tickets/sla.js'
 import { startEscalationScheduler } from './modules/tickets/escalation.scheduler.js'
@@ -144,6 +145,13 @@ async function main(): Promise<void> {
     digestTimer.unref()
     console.log('[digest] needs-attention digest running (hourly; one email per recipient per day)')
   }
+  // Support-code expiry hygiene: flip passed-expiry open codes to 'expired'
+  // so the sessions list and code state stay truthful. Claim paths already
+  // reject expired codes by timestamp, so this is display hygiene + audit
+  // accuracy, not a security boundary. Five-minute cadence; unref'd.
+  const adhocExpiryTimer = setInterval(() => { void expireStaleAdhocCodes(app.db).catch(() => undefined) }, 5 * 60_000)
+  adhocExpiryTimer.unref()
+  console.log('[remote] support-code expiry sweep running (5min interval; 24h max code lifetime)')
   if (app.emailWorker) {
     app.emailWorker.start()
   } else {
