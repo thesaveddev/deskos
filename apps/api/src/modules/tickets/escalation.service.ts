@@ -1,5 +1,9 @@
 import type { DbClient, DbPool } from '../../db/pool.js'
+import { AppError } from '../../core/errors.js'
 import { assertTeamAcceptsTickets } from '../teams/team-policy.js'
+
+/** Statuses that represent finished work — escalation moves work, it cannot un-finish it. */
+const TERMINAL_STATUSES = ['resolved', 'closed'] as const
 
 /* ── Escalation ──────────────────────────────────────────────── */
 
@@ -108,11 +112,18 @@ export async function escalateTicket(
 ): Promise<TicketEscalation> {
   // Get current ticket state
   const { rows: ticketRows } = await db.query(
-    'SELECT team_id, assignee_id FROM tickets WHERE id = $1 AND tenant_id = $2',
+    'SELECT team_id, assignee_id, status FROM tickets WHERE id = $1 AND tenant_id = $2',
     [ticketId, tenantId],
   )
   if (!ticketRows[0]) throw new Error('Ticket not found')
   const ticket = ticketRows[0]
+  if ((TERMINAL_STATUSES as readonly string[]).includes(ticket.status)) {
+    throw AppError.conflict(
+      `This ticket is ${ticket.status}. Reopen it before escalating.`,
+      'ticket_not_escalatable',
+    )
+  }
+  const previousStatus = ticket.status as string
 
   // Get current escalation level
   const { rows: escRows } = await db.query(
@@ -127,9 +138,12 @@ export async function escalateTicket(
   await assertTeamAcceptsTickets(db, tenantId, data.to_team_id)
   await db.query(
     `UPDATE tickets SET team_id = COALESCE($3, team_id), assignee_id = COALESCE($4, assignee_id),
-     status = 'escalated', updated_at = now() WHERE id = $1 AND tenant_id = $2`,
+     status = 'escalated', status_changed_at = now(), updated_at = now() WHERE id = $1 AND tenant_id = $2`,
     [ticketId, tenantId, newTeam, newAssignee],
   )
+  await logActivity(db, tenantId, ticketId, userId, 'status_changed', {
+    from: previousStatus, to: 'escalated', via: 'escalate',
+  })
 
   // Record escalation
   const { rows } = await db.query(
@@ -169,11 +183,17 @@ export async function forwardTicket(
   data: { to_team_id?: string; to_assignee_id?: string; note?: string },
 ): Promise<void> {
   const { rows: ticketRows } = await db.query(
-    'SELECT team_id, assignee_id FROM tickets WHERE id = $1 AND tenant_id = $2',
+    'SELECT team_id, assignee_id, status FROM tickets WHERE id = $1 AND tenant_id = $2',
     [ticketId, tenantId],
   )
   if (!ticketRows[0]) throw new Error('Ticket not found')
   const ticket = ticketRows[0]
+  if ((TERMINAL_STATUSES as readonly string[]).includes(ticket.status)) {
+    throw AppError.conflict(
+      `This ticket is ${ticket.status}. Reopen it before forwarding.`,
+      'ticket_not_escalatable',
+    )
+  }
 
   const newTeam = data.to_team_id ?? ticket.team_id
   const newAssignee = data.to_assignee_id ?? null
@@ -184,6 +204,9 @@ export async function forwardTicket(
      WHERE id = $1 AND tenant_id = $2`,
     [ticketId, tenantId, newTeam, newAssignee],
   )
+  await logActivity(db, tenantId, ticketId, userId, 'status_changed', {
+    from: ticket.status as string, to: ticket.status as string, via: 'forward',
+  })
 
   await logActivity(db, tenantId, ticketId, userId, 'forwarded', {
     from_team: ticket.team_id, to_team: newTeam, from_assignee: ticket.assignee_id, to_assignee: newAssignee,
@@ -208,9 +231,10 @@ export async function mergeTickets(
        VALUES ($1, $2, $3, 'duplicates') ON CONFLICT DO NOTHING`,
       [tenantId, primaryId, dupId],
     )
-    // Close duplicates
+    // Close duplicates (record the reopen transition when a merge is undone
+    // by reopening the duplicate — the status route stamps this column).
     await db.query(
-      `UPDATE tickets SET status = 'closed', updated_at = now()
+      `UPDATE tickets SET status = 'closed', status_changed_at = now(), closed_at = COALESCE(closed_at, now()), updated_at = now()
        WHERE id = $1 AND tenant_id = $2 AND id != $3`,
       [dupId, tenantId, primaryId],
     )

@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify'
+import { AppError } from '../../core/errors.js'
 import { authenticate } from '../../middleware/authenticate.js'
 import { requireTenant } from '../../middleware/requireTenant.js'
 import { requirePermission } from '../../middleware/requirePermission.js'
@@ -118,6 +119,9 @@ export async function escalationRoutes(app: FastifyInstance) {
       const escalation = await withTenant(app.db, ctx.tenantId, (client) => escalateTicket(client, ctx.tenantId, id, ctx.userId, body))
       return reply.code(201).send({ escalation })
     } catch (e) {
+      // Pass typed errors (409 closed-ticket guard, team policy) through;
+      // only unknown failures fall back to 404.
+      if (e instanceof AppError) throw e
       return reply.code(404).send({ error: e instanceof Error ? e.message : 'Ticket not found' })
     }
   })
@@ -139,6 +143,7 @@ export async function escalationRoutes(app: FastifyInstance) {
       await withTenant(app.db, ctx.tenantId, (client) => forwardTicket(client, ctx.tenantId, id, ctx.userId, body))
       return reply.send({ ok: true })
     } catch (e) {
+      if (e instanceof AppError) throw e
       return reply.code(404).send({ error: e instanceof Error ? e.message : 'Ticket not found' })
     }
   })

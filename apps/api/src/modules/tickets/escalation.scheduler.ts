@@ -29,18 +29,22 @@ async function pickAssignee(client: DbClient, tenantId: string, teamId: string |
 
 /** Apply one policy to the tickets that have been stuck in its source status long enough. */
 async function applyPolicy(client: DbClient, tenantId: string, policy: EscalationPolicyRow): Promise<number> {
+  // Time in status when known (status_changed_at), falling back to ticket age
+  // for rows created before that column existed.
+  const timeInStatus = `COALESCE(t.status_changed_at, t.created_at)`
   const candidates = await client.query(
     `SELECT t.id, t.number, t.team_id, t.assignee_id, t.priority
        FROM tickets t
       WHERE t.tenant_id = $1
         AND t.status = $2
-        AND t.created_at < now() - ($3 * interval '1 minute')
+        AND ${timeInStatus} < now() - ($3 * interval '1 minute')
+        AND t.status NOT IN ('resolved', 'closed')
         AND ($4::text[] = '{}' OR t.priority = ANY($4::text[]))
         AND NOT EXISTS (
           SELECT 1 FROM ticket_escalations e
-           WHERE e.ticket_id = t.id AND e.reason LIKE 'Auto:%'
+           WHERE e.ticket_id = t.id AND e.reason LIKE 'Auto:%' AND e.created_at > t.status_changed_at
         )
-      ORDER BY t.created_at ASC
+      ORDER BY ${timeInStatus} ASC
       LIMIT 100`,
     [tenantId, policy.source_status, policy.trigger_after_minutes, policy.trigger_on_priority],
   )
@@ -70,7 +74,7 @@ async function applyPolicy(client: DbClient, tenantId: string, policy: Escalatio
 
     await client.query(
       `UPDATE tickets
-          SET status = $3, team_id = $4, assignee_id = $5, updated_at = now()
+          SET status = $3, status_changed_at = now(), team_id = $4, assignee_id = $5, updated_at = now()
         WHERE id = $1 AND tenant_id = $2`,
       [ticket.id, tenantId, policy.target_status, nextTeam, nextAssignee],
     )

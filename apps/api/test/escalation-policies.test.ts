@@ -87,6 +87,109 @@ describe('escalation policies', () => {
     expect(escalations.json().escalations.some((e: { reason: string }) => e.reason === 'Auto: Open too long')).toBe(true)
   })
 
+  it('does not auto-escalate resolved or closed tickets however old they are', async () => {
+    const create = async (subject: string) => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/tickets',
+        headers: authHeaders(owner),
+        payload: { subject, description: 'old but finished' },
+      })
+      return res.json().ticket.id as string
+    }
+    const resolvedId = await create('Old resolved ticket')
+    const closedId = await create('Old closed ticket')
+
+    await withTenant(app.db, owner.tenantId!, async (client) => {
+      await client.query(
+        `UPDATE tickets SET status = 'resolved', resolved_at = now(), created_at = now() - interval '3 hours' WHERE id = $1`,
+        [resolvedId],
+      )
+      await client.query(
+        `UPDATE tickets SET status = 'closed', closed_at = now(), created_at = now() - interval '3 hours' WHERE id = $1`,
+        [closedId],
+      )
+    })
+
+    const applied = await applyAutoEscalationsForTenant(app.db, owner.tenantId!)
+    const detailA = await app.inject({ method: 'GET', url: `/api/v1/tickets/${resolvedId}`, headers: authHeaders(owner) })
+    const detailB = await app.inject({ method: 'GET', url: `/api/v1/tickets/${closedId}`, headers: authHeaders(owner) })
+    expect(detailA.json().ticket.status).toBe('resolved')
+    expect(detailB.json().ticket.status).toBe('closed')
+    // The sweep ran; these two tickets simply were not candidates.
+    expect(applied).toBeGreaterThanOrEqual(0)
+  })
+
+  it('does not re-trigger an auto escalation after the ticket returns to the source status', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/v1/tickets',
+      headers: authHeaders(owner),
+      payload: { subject: 'Snooze me once', description: 'waiting on user' },
+    })
+    const ticketId = created.json().ticket.id as string
+
+    await withTenant(app.db, owner.tenantId!, async (client) => {
+      await client.query(
+        `UPDATE tickets SET status = 'open', status_changed_at = now() - interval '3 hours' WHERE id = $1`,
+        [ticketId],
+      )
+    })
+
+    await app.inject({
+      method: 'POST',
+      url: '/api/v1/escalation-policies',
+      headers: authHeaders(owner),
+      payload: { name: 'Open too long rearm', source_status: 'open', target_status: 'escalated', trigger_after_minutes: 60, auto_assign: false, enabled: true },
+    })
+
+    const first = await applyAutoEscalationsForTenant(app.db, owner.tenantId!)
+    expect(first).toBeGreaterThanOrEqual(1)
+
+    // Move the ticket back to the source status (as a human would after
+    // triage) and age it again. The pre-existing Auto: escalation must
+    // prevent a second automatic one.
+    await withTenant(app.db, owner.tenantId!, async (client) => {
+      await client.query(
+        `UPDATE tickets SET status = 'open', status_changed_at = now() - interval '3 hours' WHERE id = $1`,
+        [ticketId],
+      )
+    })
+    const second = await applyAutoEscalationsForTenant(app.db, owner.tenantId!)
+    void second
+
+    const escalations = await app.inject({ method: 'GET', url: `/api/v1/tickets/${ticketId}/escalations`, headers: authHeaders(owner) })
+    const autoRows = escalations.json().escalations.filter((e: { reason: string }) => e.reason.startsWith('Auto:'))
+    // Exactly one automatic escalation total: whichever enabled policy fired
+    // first. Re-returning to the source status must not add another.
+    expect(autoRows).toHaveLength(1)
+  })
+
+  it('refuses to escalate a closed ticket with a 409 conflict', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/v1/tickets',
+      headers: authHeaders(owner),
+      payload: { subject: 'Closed escalation guard', description: 'done work' },
+    })
+    const ticketId = created.json().ticket.id as string
+    await app.inject({
+      method: 'POST',
+      url: `/api/v1/tickets/${ticketId}/status`,
+      headers: authHeaders(owner),
+      payload: { status: 'closed' },
+    })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/v1/tickets/${ticketId}/escalate`,
+      headers: authHeaders(owner),
+      payload: { to_team_id: null, reason: 'should not be allowed' },
+    })
+    expect(res.statusCode).toBe(409)
+    expect(res.json().error.code).toBe('ticket_not_escalatable')
+  })
+
   it('returns the escalation paths that match a ticket', async () => {
     const team = await app.inject({
       method: 'POST',

@@ -221,6 +221,42 @@ describe('tickets', () => {
     expect(updated.meta.changes.priority.to).toBe('p1')
   })
 
+  it('recomputes SLA deadlines when priority changes, tightening the response clock', async () => {
+    const ticket = await createTicket(owner, 'Priority SLA recompute', { priority: 'p4' })
+    const p4Due = new Date(ticket.due_response_at).getTime()
+
+    // Raise to p1: the response deadline must pull in, not stay p4-relaxed.
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/tickets/${ticket.id}`,
+      headers: authHeaders(owner),
+      payload: { priority: 'p1' },
+    })
+    expect(res.statusCode).toBe(200)
+    const p1Due = new Date(res.json().ticket.due_response_at).getTime()
+    expect(p1Due).toBeLessThan(p4Due)
+    // Breach flags are re-armed by the priority change.
+    expect(res.json().ticket.sla_response_breached).toBe(false)
+
+    // The recompute is on the timeline for audit.
+    const detail = await app.inject({ method: 'GET', url: `/api/v1/tickets/${ticket.id}`, headers: authHeaders(owner) })
+    const recompute = detail.json().threads.find((t: { meta?: { event?: string } }) => t.meta?.event === 'ticket.sla_recomputed')
+    expect(recompute).toBeTruthy()
+  })
+
+  it('does not recompute SLA deadlines when priority is unchanged', async () => {
+    const ticket = await createTicket(owner, 'Same priority edit', { priority: 'p2' })
+    const before = ticket.due_response_at
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/tickets/${ticket.id}`,
+      headers: authHeaders(owner),
+      payload: { subject: 'Same priority edit — renamed' },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json().ticket.due_response_at).toBe(before)
+  })
+
   it('end_user cannot use staff ticket routes', async () => {
     const create = await app.inject({
       method: 'POST',

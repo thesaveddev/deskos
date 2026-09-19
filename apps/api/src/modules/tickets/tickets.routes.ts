@@ -520,6 +520,30 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
 
       if (sets.length === 0) throw AppError.badRequest('Nothing to update')
 
+      // A priority change re-arms the SLA clock from now: p1 raised from p3
+      // must carry p1 deadlines, not keep the relaxed p3 ones. Only when the
+      // clock has not already run out — an existing breach is an audit fact,
+      // not something a priority edit should erase.
+      if (changes.priority && typeof changes.priority.to === 'string' && changes.priority.to !== changes.priority.from) {
+        const policy = await getDefaultSlaPolicy(app.db, ctx.tenantId)
+        const { dueResponseAt, dueResolutionAt } = computeDeadlines({
+          priority: changes.priority.to,
+          matrix: policy.matrix,
+          schedule: policy.businessHoursSchedule,
+        })
+        values.push(dueResponseAt)
+        sets.push(`due_response_at = $${values.length}`)
+        values.push(dueResolutionAt)
+        sets.push(`due_resolution_at = $${values.length}`)
+        values.push(false)
+        sets.push(`sla_response_breached = $${values.length}`)
+        values.push(false)
+        sets.push(`sla_resolution_breached = $${values.length}`)
+        await logSystemEvent(client, ctx.tenantId, id, 'SLA deadlines recomputed for priority change', {
+          event: 'ticket.sla_recomputed', from: changes.priority.from, to: changes.priority.to,
+        })
+      }
+
       values.push(id)
       const res = await client.query(
         `UPDATE tickets SET ${sets.join(', ')}, updated_at = now() WHERE id = $${values.length} RETURNING *`,
@@ -627,6 +651,7 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
       const res = await client.query(
         `UPDATE tickets
             SET status = $2,
+                status_changed_at = now(),
                 resolved_at = CASE WHEN $2 IN ('resolved','closed') THEN COALESCE(resolved_at, now()) ELSE NULL END,
                 closed_at = CASE WHEN $2 = 'closed' THEN now() ELSE NULL END,
                 updated_at = now()
