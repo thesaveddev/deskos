@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920" fill="none">
+  <defs>
+    <linearGradient id="ac" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#f2b658"/><stop offset="1" stop-color="#d4872a"/>
+    </linearGradient>
+  </defs>
+  <rect width="1080" height="1920" fill="#0e1114"/>
+  <g stroke="#161b20" stroke-width="1.5">
+    <path d="M0 480V0H1080V480"/><path d="M0 1440V1920H1080V1440"/>
+    <path d="M270 0V1920"/><path d="M540 0V1920"/><path d="M810 0V1920"/>
+  </g>
+
+  <!-- top wordmark -->
+  <g transform="translate(90,120)">
+    <rect x="0" y="-4" width="30" height="100" rx="9" fill="#14181d" stroke="#242b33" stroke-width="2"/>
+    <path d="M8 38 C 12 20, 20 20, 24 38" stroke="url(#ac)" stroke-width="4" stroke-linecap="round" fill="none"/>
+  </g>
+  <text x="140" y="160" fill="#e6e9ec" font-family="'IBM Plex Sans',sans-serif" font-size="44" font-weight="600" letter-spacing="-1">Desk<tspan fill="#e8a33d">OS</tspan></text>
+
+  <!-- headline -->
+  <text x="90" y="700" fill="#e6e9ec" font-family="'IBM Plex Sans',sans-serif" font-size="92" font-weight="600" letter-spacing="-2">
+    Your tickets
+  </text>
+  <text x="90" y="820" fill="#e6e9ec" font-family="'IBM Plex Sans',sans-serif" font-size="92" font-weight="600" letter-spacing="-2">
+    used to live
+  </text>
+  <text x="90" y="940" fill="#e8a33d" font-family="'IBM Plex Sans',sans-serif" font-size="92" font-weight="600" letter-spacing="-2">
+    in an inbox.
+  </text>
+
+  <!-- fill-space card -->
+  <g transform="translate(90,1180)">
+    <rect x="0" y="0" width="900" height="200" rx="18" fill="#14181d" stroke="#242b33" stroke-width="2"/>
+    <text x="40" y="66" fill="#9aa4af" font-family="'IBM Plex Mono',monospace" font-size="22" letter-spacing="3">DESKOS</text>
+    <text x="40" y="128" fill="#e6e9ec" font-family="'IBM Plex Sans',sans-serif" font-size="46">IT support, engineered like an OS.</text>
+    <text x="40" y="176" fill="#5f6b77" font-family="'IBM Plex Sans',sans-serif" font-size="30">Email finds its way. Everything stays in order.</text>
+  </g>
+
+  <rect x="90" y="1620" width="256" height="52" rx="10" fill="none" stroke="#e8a33d" stroke-width="2"/>
+  <text x="218" y="1655" fill="#e8a33d" font-family="'IBM Plex Mono',monospace" font-size="17" letter-spacing="3" text-anchor="middle">COMING SOON</text>
+
+  <!-- swipe hint -->
+  <text x="540" y="1860" fill="#5f6b77" font-family="'IBM Plex Mono',monospace" font-size="18" letter-spacing="4" text-anchor="middle">SWIPE</text>
+</svg>

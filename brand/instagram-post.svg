@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080" fill="none">
+  <defs>
+    <linearGradient id="ac" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f2b658"/><stop offset="1" stop-color="#d4872a"/>
+    </linearGradient>
+  </defs>
+  <rect width="1080" height="1080" fill="#0e1114"/>
+  <g stroke="#161b20" stroke-width="1.5">
+    <path d="M0 270V0H1080V270"/><path d="M0 810V1080H1080V810"/>
+    <path d="M270 0V1080"/><path d="M540 0V1080"/><path d="M810 0V1080"/>
+  </g>
+
+  <!-- centered mark -->
+  <g transform="translate(470,150)">
+    <rect x="0" y="40" width="140" height="300" rx="28" fill="#14181d" stroke="#242b33" stroke-width="3"/>
+    <path d="M22 156 C 48 92, 92 92, 118 156" stroke="url(#ac)" stroke-width="10" stroke-linecap="round" fill="none"/>
+    <rect x="24" y="140" width="22" height="18" rx="5" fill="#5b9dd6"/>
+    <rect x="94" y="140" width="22" height="18" rx="5" fill="url(#ac)"/>
+  </g>
+  <text x="540" y="560" fill="#e6e9ec" font-family="'IBM Plex Sans',sans-serif" font-size="96" font-weight="600" letter-spacing="-2" text-anchor="middle">
+    Desk<tspan fill="#e8a33d">OS</tspan>
+  </text>
+  <text x="540" y="630" fill="#5f6b77" font-family="'IBM Plex Mono',monospace" font-size="26" letter-spacing="10" text-anchor="middle">
+    IT SUPPORT OS
+  </text>
+
+  <text x="540" y="770" fill="#9aa4af" font-family="'IBM Plex Sans',sans-serif" font-size="34" text-anchor="middle">
+    Support, engineered like an OS.
+  </text>
+  <rect x="440" y="840" width="200" height="48" rx="9" fill="none" stroke="#e8a33d" stroke-width="2"/>
+  <text x="540" y="871" fill="#e8a33d" font-family="'IBM Plex Mono',monospace" font-size="16" letter-spacing="3" text-anchor="middle">COMING SOON</text>
+</svg>

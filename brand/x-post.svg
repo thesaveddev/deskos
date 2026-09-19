@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" fill="none">
+  <defs>
+    <linearGradient id="ac" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f2b658"/><stop offset="1" stop-color="#d4872a"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="900" fill="#0e1114"/>
+  <g stroke="#161b20" stroke-width="1.5">
+    <path d="M0 300V0H1600V300"/><path d="M0 600V900H1600V600"/>
+    <path d="M400 0V900"/><path d="M800 0V900"/><path d="M1200 0V900"/>
+  </g>
+
+  <!-- headline -->
+  <text x="130" y="300" fill="#e6e9ec" font-family="'IBM Plex Sans',sans-serif" font-size="92" font-weight="600" letter-spacing="-2">
+    Every support team
+  </text>
+  <text x="130" y="420" fill="#e6e9ec" font-family="'IBM Plex Sans',sans-serif" font-size="92" font-weight="600" letter-spacing="-2">
+    starts the day
+  </text>
+  <text x="130" y="540" fill="#e8a33d" font-family="'IBM Plex Sans',sans-serif" font-size="92" font-weight="600" letter-spacing="-2">
+    in an inbox.
+  </text>
+
+  <!-- card strip -->
+  <g transform="translate(180,620)">
+    <rect x="0" y="0" width="1240" height="120" rx="14" fill="#14181d" stroke="#242b33" stroke-width="2"/>
+    <text x="40" y="52" fill="#9aa4af" font-family="'IBM Plex Mono',monospace" font-size="20" letter-spacing="3">THE PROBLEM</text>
+    <text x="40" y="90" fill="#e6e9ec" font-family="'IBM Plex Sans',sans-serif" font-size="34">Unread · Signatures · Chasing · Wrong threads · Duplicates</text>
+  </g>
+
+  <!-- footer -->
+  <text x="130" y="860" fill="#5f6b77" font-family="'IBM Plex Mono',monospace" font-size="18" letter-spacing="3">DESKOS — IT SUPPORT OS</text>
+</svg>
