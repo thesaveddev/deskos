@@ -792,4 +792,49 @@ describe('remote session control plane', () => {
     expect(created.statusCode).toBe(201)
     expect(created.json().session.ticket_id).toBeNull()
   })
+
+  it('lists device-scoped session history with total audit-event counts', async () => {
+    const first = await app.inject({
+      method: 'POST',
+      url: '/api/v1/sessions',
+      headers: authHeaders(owner),
+      payload: { deviceId, permissions: ['view_screen'], reason: 'Device history one' },
+    })
+    expect(first.statusCode).toBe(201)
+    const second = await app.inject({
+      method: 'POST',
+      url: '/api/v1/sessions',
+      headers: authHeaders(owner),
+      payload: { deviceId, permissions: ['view_screen'], reason: 'Device history two' },
+    })
+    expect(second.statusCode).toBe(201)
+
+    const listed = await app.inject({
+      method: 'GET',
+      url: `/api/v1/sessions?deviceId=${deviceId}&limit=10`,
+      headers: authHeaders(owner),
+    })
+    expect(listed.statusCode).toBe(200)
+    const rows = listed.json().sessions as Array<{ id: string; event_count: number }>
+    expect(rows.length).toBeGreaterThanOrEqual(2)
+    for (const row of rows) {
+      // A created session always records at least one session.created event.
+      expect(row.event_count).toBeGreaterThanOrEqual(1)
+    }
+    // Newest first.
+    expect(rows[0].id).toBe(second.json().session.id)
+  })
+
+  it('isolates device session history by tenant', async () => {
+    const listed = await app.inject({
+      method: 'GET',
+      url: `/api/v1/sessions?deviceId=${deviceId}&limit=10`,
+      headers: authHeaders(otherOwner),
+    })
+    // RLS makes the other tenant's device invisible: the device id cannot
+    // match any of its sessions, so the filter yields an empty list.
+    expect(listed.statusCode).toBe(200)
+    const rows = listed.json().sessions as Array<{ device_id: string }>
+    expect(rows.every((row) => row.device_id !== deviceId)).toBe(true)
+  })
 })

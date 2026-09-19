@@ -32,6 +32,7 @@ export interface AppConfig {
   deviceOfflineSec: number
   deviceLowDiskPct: number
   deviceMetricsRetentionDays: number
+  devicePurgeDays: number
   smtp: SmtpConfig
   imap: {
     enabled: boolean
@@ -265,6 +266,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     deviceOfflineSec: Number(value('REYDESK_DEVICE_OFFLINE_SEC') ?? 120),
     deviceLowDiskPct: Number(value('REYDESK_DEVICE_LOW_DISK_PCT') ?? 85),
     deviceMetricsRetentionDays: Number(value('REYDESK_DEVICE_METRICS_RETENTION_DAYS') ?? 30),
+    devicePurgeDays: Number(value('REYDESK_DEVICE_PURGE_DAYS') ?? 90),
     smtp: {
       enabled:
         Boolean(value('REYDESK_SMTP_HOST') && value('REYDESK_SMTP_FROM')) ||

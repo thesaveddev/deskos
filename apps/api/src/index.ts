@@ -3,7 +3,7 @@ import path from 'node:path'
 import { buildApp } from './app.js'
 import { loadConfig } from './config.js'
 import { runMigrations } from './db/migrate.js'
-import { startDeviceAlertScheduler } from './modules/devices/alerts.js'
+import { startDeviceAlertScheduler, purgeExpiredRetiredDevices } from './modules/devices/alerts.js'
 import { checkAllMonitoringPolicies } from './modules/monitoring/monitoring.js'
 import { checkAssetExpiryNotices } from './modules/assets/expiry.js'
 import { checkKbReviewNotices } from './modules/knowledge/review.js'
@@ -115,6 +115,20 @@ async function main(): Promise<void> {
   const kbReviewTimer = setInterval(() => { void checkKbReviewNotices(app.db).catch(() => undefined) }, 60_000)
   kbReviewTimer.unref()
   console.log('[kb] overdue-review notices running (60s interval)')
+  // Retired-device retention purge: hourly is plenty for a daily-horizon job;
+  // REYDESK_DEVICE_PURGE_DAYS=0 disables it entirely.
+  let purgeBusy = false
+  const purgeTimer = setInterval(() => {
+    if (purgeBusy) return
+    purgeBusy = true
+    void purgeExpiredRetiredDevices(app.db, app.config.devicePurgeDays)
+      .catch(() => undefined)
+      .finally(() => { purgeBusy = false })
+  }, 3_600_000)
+  purgeTimer.unref()
+  if (app.config.devicePurgeDays > 0) {
+    console.log(`[devices] retired-device purge running (hourly; deletes retired devices after ${app.config.devicePurgeDays}d)`)
+  }
   if (app.emailWorker) {
     app.emailWorker.start()
   } else {

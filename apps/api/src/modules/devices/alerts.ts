@@ -55,6 +55,66 @@ export async function pruneDeviceMetrics(pool: DbPool, retentionDays: number): P
   return total
 }
 
+/**
+ * Fleet housekeeping: hard-delete devices retired more than `purgeDays` ago
+ * (default 90). Retirement already revoked the agent and ended its sessions;
+ * this removes the stale record — and with it the cascaded session/metric
+ * history — so the inventory does not fill with decommissioned hardware.
+ *
+ * Guardrails:
+ *  - purges only enrolled (adhoc = false) devices, mirroring the manual
+ *    DELETE /devices/:id route
+ *  - skips devices that somehow still have a live session
+ *  - records a `device.purged` audit event BEFORE the delete (audit_logs has
+ *    no FK to devices, so the trail survives the cascade and names what the
+ *    job removed)
+ *  - purgeDays <= 0 disables the job entirely
+ */
+export async function purgeExpiredRetiredDevices(pool: DbPool, purgeDays: number): Promise<number> {
+  const days = Number.isFinite(purgeDays) ? Math.floor(purgeDays) : 90
+  if (days <= 0) return 0
+  const { rows: tenants } = await pool.query('SELECT id FROM tenants')
+  let total = 0
+  for (const tenant of tenants) {
+    try {
+      await withTenant(pool, tenant.id, async (client) => {
+        const { rows: stale } = await client.query(
+          `SELECT d.id, d.name, d.retired_at
+             FROM devices d
+            WHERE d.adhoc = false
+              AND d.retired_at IS NOT NULL
+              AND d.retired_at < now() - ($1 || ' days')::interval
+              AND NOT EXISTS (
+                SELECT 1 FROM remote_sessions s
+                 WHERE s.device_id = d.id
+                   AND s.state IN ('requested', 'consent_pending', 'connecting', 'active', 'reconnecting')
+              )`,
+          [days],
+        )
+        for (const device of stale) {
+          await recordAudit(client, tenant.id, {
+            actorType: 'system',
+            action: 'device.purged',
+            objectType: 'device',
+            objectId: device.id as string,
+            payload: {
+              name: device.name,
+              retiredAt: device.retired_at,
+              retentionDays: days,
+              reason: 'retired_device_retention',
+            },
+          })
+          await client.query('DELETE FROM devices WHERE id = $1', [device.id])
+          total += 1
+        }
+      })
+    } catch {
+      /* keep sweeping other tenants */
+    }
+  }
+  return total
+}
+
 /** First active owner of a tenant (fallback requester/notifiee for automation). */
 export async function firstOwner(client: DbClient, tenantId: string): Promise<string | null> {
   const { rows } = await client.query(

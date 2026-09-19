@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { FastifyInstance } from 'fastify'
 import { createTestApp, signupOwner, seedActiveMember, authHeaders, type Session } from './helpers.js'
 import { withTenant } from '../src/db/pool.js'
-import { checkDeviceAlertsForTenant, pruneDeviceMetrics } from '../src/modules/devices/alerts.js'
+import { checkDeviceAlertsForTenant, pruneDeviceMetrics, purgeExpiredRetiredDevices } from '../src/modules/devices/alerts.js'
 
 const OFFLINE_SEC = 120
 const LOW_DISK_PCT = 85
@@ -699,6 +699,91 @@ describe('devices & agent v1', () => {
       await post(LOW_DISK_PCT + 2)
       const reRaised = await checkDeviceAlertsForTenant(app.db, owner.tenantId!, { offlineSec: OFFLINE_SEC, lowDiskPct: LOW_DISK_PCT })
       expect(reRaised.lowDisk).toBe(1)
+    })
+  })
+
+  describe('retired-device purge', () => {
+    it('hard-deletes devices retired beyond the horizon, keeps recent ones, and records the audit before the cascade', async () => {
+      // Enrol three devices: two to retire (one old, one recent) and one active.
+      const stale = await enrolDevice({ name: 'purge-stale' })
+      const recent = await enrolDevice({ name: 'purge-recent' })
+      const active = await enrolDevice({ name: 'purge-active' })
+      const retire = async (id: string) => {
+        const res = await app.inject({ method: 'POST', url: `/api/v1/devices/${id}/retire`, headers: authHeaders(owner) })
+        expect(res.statusCode).toBe(200)
+      }
+      await retire(stale.deviceId)
+      await retire(recent.deviceId)
+
+      // Backdate the first retirement past the 90-day horizon.
+      await withTenant(app.db, owner.tenantId!, (client) =>
+        client.query("UPDATE devices SET retired_at = now() - interval '91 days' WHERE id = $1", [stale.deviceId]),
+      )
+
+      const purged = await purgeExpiredRetiredDevices(app.db, 90)
+      expect(purged).toBeGreaterThanOrEqual(1)
+
+      const state = await withTenant(app.db, owner.tenantId!, async (client) => {
+        const remaining = await client.query(
+          'SELECT id FROM devices WHERE id = ANY($1::uuid[])',
+          [[stale.deviceId, recent.deviceId, active.deviceId]],
+        )
+        const audit = await client.query(
+          "SELECT payload FROM audit_logs WHERE action = 'device.purged' AND object_id = $1",
+          [stale.deviceId],
+        )
+        return {
+          ids: remaining.rows.map((r: { id: string }) => r.id),
+          purgeAudit: audit.rows[0]?.payload ?? null,
+        }
+      })
+      // Stale retired device is gone; recent-retired and active devices stay.
+      expect(state.ids).not.toContain(stale.deviceId)
+      expect(state.ids).toContain(recent.deviceId)
+      expect(state.ids).toContain(active.deviceId)
+      // The audit trail names what the job removed and why.
+      expect(state.purgeAudit).toMatchObject({ name: 'purge-stale', retentionDays: 90 })
+    })
+
+    it('skips devices that still have a live remote session even past the horizon', async () => {
+      const device = await enrolDevice({ name: 'purge-live-session' })
+      const retire = await app.inject({ method: 'POST', url: `/api/v1/devices/${device.deviceId}/retire`, headers: authHeaders(owner) })
+      expect(retire.statusCode).toBe(200)
+      await withTenant(app.db, owner.tenantId!, (client) =>
+        client.query("UPDATE devices SET retired_at = now() - interval '120 days' WHERE id = $1", [device.deviceId]),
+      )
+      // A live session on the retired device blocks the purge the same way it
+      // blocks the manual DELETE route.
+      await app.inject({
+        method: 'POST',
+        url: '/api/v1/sessions',
+        headers: authHeaders(owner),
+        payload: { deviceId: device.deviceId, type: 'attended', permissions: ['view_screen'], reason: 'purge guard test' },
+      })
+
+      await purgeExpiredRetiredDevices(app.db, 90)
+
+      const remaining = await withTenant(app.db, owner.tenantId!, (client) =>
+        client.query('SELECT id FROM devices WHERE id = $1', [device.deviceId]),
+      )
+      expect(remaining.rows).toHaveLength(1)
+    })
+
+    it('is a no-op when disabled (purgeDays <= 0)', async () => {
+      const device = await enrolDevice({ name: 'purge-disabled' })
+      const retire = await app.inject({ method: 'POST', url: `/api/v1/devices/${device.deviceId}/retire`, headers: authHeaders(owner) })
+      expect(retire.statusCode).toBe(200)
+      await withTenant(app.db, owner.tenantId!, (client) =>
+        client.query("UPDATE devices SET retired_at = now() - interval '200 days' WHERE id = $1", [device.deviceId]),
+      )
+
+      const purged = await purgeExpiredRetiredDevices(app.db, 0)
+      expect(purged).toBe(0)
+
+      const remaining = await withTenant(app.db, owner.tenantId!, (client) =>
+        client.query('SELECT id FROM devices WHERE id = $1', [device.deviceId]),
+      )
+      expect(remaining.rows).toHaveLength(1)
     })
   })
 })
