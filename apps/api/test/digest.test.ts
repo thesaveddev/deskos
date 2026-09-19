@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { FastifyInstance } from 'fastify'
 import { authHeaders, createTestApp, seedActiveMember, signupOwner } from './helpers.js'
-import { checkNeedsAttentionDigest, collectDigestContent } from '../src/modules/notifications/digest.js'
+import { checkNeedsAttentionDigest, collectDigestContent, sendTenantDigest } from '../src/modules/notifications/digest.js'
 
 /**
  * Needs-attention digest: one combined email per owner/manager per day
@@ -19,6 +19,12 @@ describe('needs-attention digest', () => {
     return wt(app.db, owner.tenantId!, fn)
   }
 
+  // CI shares one database across every suite, so the global sweep touches
+  // other suites' tenants too. All assertions scope to this tenant via
+  // sendTenantDigest in its RLS context; the global loop gets one
+  // shape-only test below.
+  const digestForTenant = () => withTenant((client) => sendTenantDigest(client, app.emailQueue, app.mailer, 'https://reydesk.test'))
+
   beforeAll(async () => {
     app = await createTestApp({ REYDESK_SMTP_JSON: 'true', REYDESK_SMTP_FROM: 'ReyDesk <support@example.com>' })
     owner = await signupOwner(app, { tenantName: 'Digest Org' })
@@ -35,9 +41,9 @@ describe('needs-attention digest', () => {
 
   it('empty tenant sends nothing', async () => {
     const before = app.mailer.sent.length
-    const result = await checkNeedsAttentionDigest(app.db, app.emailQueue, app.mailer, 'https://reydesk.test')
+    const sent = await digestForTenant()
+    expect(sent).toEqual([])
     expect(app.mailer.sent.length).toBe(before)
-    expect(result.recipients).toBe(0)
   })
 
   it('aggregates overdue review + upcoming expiry + open alert and emails owners/managers once per day', async () => {
@@ -95,12 +101,12 @@ describe('needs-attention digest', () => {
     expect(content.alerts.map((a) => a.deviceName)).toContain('digest-box')
 
     const before = app.mailer.sent.length
-    const result = await checkNeedsAttentionDigest(app.db, app.emailQueue, app.mailer, 'https://reydesk.test')
+    const sent = await digestForTenant()
 
     // Exactly one digest email per eligible recipient (owner + manager, not analyst).
-    const digestMails = app.mailer.sent.slice(before).filter((m) => m.subject.includes('attention'))
-    expect(result.recipients).toBe(2)
-    expect(digestMails).toHaveLength(2)
+    expect(sent).toHaveLength(2)
+    expect(sent.every((s) => s.itemCount === 3)).toBe(true)
+    const digestMails = app.mailer.sent.slice(before)
     const recipients = digestMails.map((m) => m.to).sort()
     expect(recipients).toEqual([owner.email, manager.email].sort())
 
@@ -116,9 +122,9 @@ describe('needs-attention digest', () => {
 
   it('does not resend within the same day (ledger dedupe)', async () => {
     const before = app.mailer.sent.length
-    const result = await checkNeedsAttentionDigest(app.db, app.emailQueue, app.mailer, 'https://reydesk.test')
-    expect(result.recipients).toBe(0)
-    expect(app.mailer.sent.slice(before).filter((m) => m.subject.includes('attention'))).toHaveLength(0)
+    const sent = await digestForTenant()
+    expect(sent).toEqual([])
+    expect(app.mailer.sent.slice(before)).toHaveLength(0)
   })
 
   it('an analyst is not a recipient even with items present', async () => {
@@ -126,6 +132,12 @@ describe('needs-attention digest', () => {
       `SELECT m.user_id FROM needs_attention_digests nd JOIN memberships m ON m.user_id = nd.recipient_id WHERE m.org_role = 'analyst'`,
     ))
     expect(rows.rows).toHaveLength(0)
+  })
+
+  it('global sweep runs across tenants without erroring (shape only)', async () => {
+    const result = await checkNeedsAttentionDigest(app.db, app.emailQueue, app.mailer, 'https://reydesk.test')
+    expect(result.tenants).toBeGreaterThanOrEqual(0)
+    expect(result.recipients).toBeGreaterThanOrEqual(0)
   })
 
   it('resolving the alert and muting the asset empties those sections on the next day', async () => {
@@ -137,8 +149,8 @@ describe('needs-attention digest', () => {
     await withTenant((client) => client.query(`UPDATE needs_attention_digests SET digest_date = CURRENT_DATE - 1`))
 
     const before = app.mailer.sent.length
-    await checkNeedsAttentionDigest(app.db, app.emailQueue, app.mailer, 'https://reydesk.test')
-    const mails = app.mailer.sent.slice(before).filter((m) => m.subject.includes('attention'))
+    await digestForTenant()
+    const mails = app.mailer.sent.slice(before)
     expect(mails.length).toBeGreaterThan(0)
     for (const mail of mails) {
       expect(mail.text).not.toContain('digest-box')
