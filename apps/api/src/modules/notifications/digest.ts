@@ -72,7 +72,8 @@ export async function collectDigestContent(client: DbClient): Promise<DigestCont
     client.query(
       `SELECT a.title, a.review_due_at::date::text AS due_date
          FROM kb_articles a
-        WHERE a.status = 'published'
+        WHERE a.tenant_id = current_setting('app.tenant_id', true)::uuid
+          AND a.status = 'published'
           AND a.review_due_at IS NOT NULL
           AND a.review_due_at <= now()
         ORDER BY a.review_due_at ASC
@@ -82,7 +83,8 @@ export async function collectDigestContent(client: DbClient): Promise<DigestCont
       `SELECT tag, name, due_date, kind FROM (
          SELECT a.tag, a.name, a.warranty_until::date::text AS due_date, 'warranty'::text AS kind
            FROM assets a
-          WHERE a.expiry_emails_muted = false
+          WHERE a.tenant_id = current_setting('app.tenant_id', true)::uuid
+            AND a.expiry_emails_muted = false
             AND a.warranty_until IS NOT NULL
             AND a.warranty_until >= CURRENT_DATE
             AND a.warranty_until < CURRENT_DATE + interval '30 days'
@@ -90,7 +92,8 @@ export async function collectDigestContent(client: DbClient): Promise<DigestCont
          SELECT a.tag, a.name, l.expires_at::date::text AS due_date, 'licence'::text AS kind
            FROM licences l
            JOIN assets a ON a.id = l.asset_id
-          WHERE a.expiry_emails_muted = false
+          WHERE a.tenant_id = current_setting('app.tenant_id', true)::uuid
+            AND a.expiry_emails_muted = false
             AND l.expires_at IS NOT NULL
             AND l.expires_at >= CURRENT_DATE
             AND l.expires_at < CURRENT_DATE + interval '30 days'
@@ -102,7 +105,8 @@ export async function collectDigestContent(client: DbClient): Promise<DigestCont
       `SELECT d.name AS device_name, al.kind, al.severity, al.message
          FROM device_alerts al
          JOIN devices d ON d.id = al.device_id
-        WHERE al.resolved_at IS NULL
+        WHERE al.tenant_id = current_setting('app.tenant_id', true)::uuid
+          AND al.resolved_at IS NULL
         ORDER BY CASE al.severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END, al.created_at DESC
         LIMIT 10`,
     ),
@@ -143,11 +147,14 @@ export async function sendTenantDigest(
 
   const itemCount = content.reviews.length + content.expiries.length + content.alerts.length
 
+  // memberships has no RLS (see firstOwner) — the tenant filter must be
+  // explicit or recipients from every tenant would receive this digest.
   const { rows: recipients } = await client.query(
     `SELECT DISTINCT m.user_id, u.email
        FROM memberships m
        JOIN users u ON u.id = m.user_id
-      WHERE m.org_role = ANY($1)
+      WHERE m.tenant_id = current_setting('app.tenant_id', true)::uuid
+        AND m.org_role = ANY($1)
         AND m.status = 'active'
         AND u.status = 'active'`,
     [DIGEST_ROLES],
