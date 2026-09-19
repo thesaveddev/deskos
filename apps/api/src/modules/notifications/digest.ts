@@ -139,7 +139,9 @@ export async function sendTenantDigest(
   mailer: Mailer,
   publicUrl: string,
 ): Promise<DigestRecipientResult[]> {
-  const tenantRow = (await client.query('SELECT name FROM tenants')).rows[0]
+  // tenants is the RLS anchor table (no policy of its own) — filter by id
+  // explicitly or another tenant's name can land in the subject line.
+  const tenantRow = (await client.query('SELECT name FROM tenants WHERE id = current_setting(\'app.tenant_id\', true)::uuid')).rows[0]
   const tenantName = String(tenantRow?.name ?? 'ReyDesk')
 
   const content = await collectDigestContent(client)
