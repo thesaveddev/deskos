@@ -140,10 +140,10 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/tickets/export.csv', { preHandler: [...guards, requirePermission('ticket.read')] }, async (request, reply) => {
     const ctx = request.tenantCtx!
-    const rows = await withTenant(app.db, ctx.tenantId, (client) =>
-      client
+    const rows: Array<Record<string, unknown>> = await withTenant(app.db, ctx.tenantId, async (client) => {
+      const ticketRows = await client
         .query(
-          `SELECT t.number, t.type, t.status, t.priority, t.subject,
+          `SELECT t.id, t.number, t.type, t.status, t.priority, t.subject,
                   ru.name AS requester, au.name AS assignee,
                   t.created_at, t.resolved_at
              FROM tickets t
@@ -151,14 +151,46 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
              LEFT JOIN users au ON au.id = t.assignee_id
             ORDER BY t.number`,
         )
-        .then((r) => r.rows),
-    )
+        .then((r) => r.rows)
+      if (ticketRows.length === 0) return []
+      const ids = ticketRows.map((r: Record<string, unknown>) => r.id)
+      const { rows: linkRows } = await client.query(
+        `SELECT l.ticket_id, l.link_type, l.target_type,
+                t.number AS target_number, t.subject AS target_subject,
+                a.name AS target_asset_name, a.tag AS target_asset_tag,
+                kb.title AS target_kb_title
+           FROM ticket_links l
+           LEFT JOIN tickets t ON l.target_type = 'ticket' AND t.id = l.target_id
+           LEFT JOIN assets a ON l.target_type = 'asset' AND a.id = l.target_id
+           LEFT JOIN kb_articles kb ON l.target_type = 'kb' AND kb.id = l.target_id
+          WHERE l.ticket_id = ANY($1)`,
+        [ids],
+      )
+      const linkMap = new Map<string, string[]>()
+      for (const link of linkRows) {
+        const label = link.target_type === 'ticket'
+          ? `#${link.target_number} ${link.target_subject}`
+          : link.target_type === 'asset'
+            ? `${link.target_asset_tag ?? ''} ${link.target_asset_name ?? ''}`.trim()
+            : link.target_type === 'kb'
+              ? link.target_kb_title ?? link.target_id
+              : `${link.target_type}:${link.target_id}`
+        const entry = `${link.link_type}: ${label}`
+        const existing = linkMap.get(link.ticket_id) ?? []
+        existing.push(entry)
+        linkMap.set(link.ticket_id, existing)
+      }
+      return ticketRows.map((r: Record<string, unknown>) => ({
+        ...r,
+        linked_work: (linkMap.get(r.id as string) ?? []).join(' | '),
+      }))
+    })
     const esc = (v: unknown) => {
       const s = v === null || v === undefined ? '' : String(v)
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
     }
-    const header = 'number,type,status,priority,subject,requester,assignee,created_at,resolved_at'
-    const csv = [header, ...rows.map((r) => [r.number, r.type, r.status, r.priority, r.subject, r.requester, r.assignee, r.created_at?.toISOString() ?? '', r.resolved_at?.toISOString() ?? ''].map(esc).join(','))].join('\n')
+    const header = 'number,type,status,priority,subject,requester,assignee,created_at,resolved_at,linked_work'
+    const csv = [header, ...rows.map((r) => [r.number, r.type, r.status, r.priority, r.subject, r.requester, r.assignee, (r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at ?? '')), (r.resolved_at instanceof Date ? r.resolved_at.toISOString() : String(r.resolved_at ?? '')), r.linked_work ?? ''].map(esc).join(','))].join('\n')
     return reply.header('content-type', 'text/csv; charset=utf-8').send(csv)
   })
 

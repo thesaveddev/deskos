@@ -274,7 +274,7 @@ describe('tickets', () => {
     expect(res.statusCode).toBe(200)
     expect(res.headers['content-type']).toContain('text/csv')
     const lines = res.body.split('\n')
-    expect(lines[0]).toBe('number,type,status,priority,subject,requester,assignee,created_at,resolved_at')
+    expect(lines[0]).toBe('number,type,status,priority,subject,requester,assignee,created_at,resolved_at,linked_work')
     expect(lines.length).toBeGreaterThanOrEqual(2)
   })
 

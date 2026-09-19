@@ -387,7 +387,7 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
 
       return withTenant(app.db, ctx.tenantId, async (client) => {
         const rows = await client.query(
-          `SELECT t.number, t.subject, t.status, t.priority, t.type, t.source, t.impact, t.urgency,
+          `SELECT t.id, t.number, t.subject, t.status, t.priority, t.type, t.source, t.impact, t.urgency,
                   t.created_at, t.first_response_at, t.resolved_at, t.closed_at,
                   t.sla_response_breached, t.sla_resolution_breached,
                   u1.name AS requester, u2.name AS assignee, tm.name AS team, c.name AS category
@@ -399,9 +399,43 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
            WHERE 1=1${clause}
            ORDER BY t.created_at DESC`, params,
         )
+        const ticketRows = rows.rows
+        if (ticketRows.length === 0) {
+          const header = 'Number,Subject,Status,Priority,Type,Source,Impact,Urgency,Created,First Response,Resolved,Closed,SLA Response Breached,SLA Resolution Breached,Requester,Assignee,Team,Category,Linked Work'
+          reply.header('Content-Type', 'text/csv')
+          reply.header('Content-Disposition', `attachment; filename="reydesk-tickets-${new Date().toISOString().slice(0, 10)}.csv"`)
+          return reply.send(header)
+        }
+        const ids = ticketRows.map((r: Record<string, unknown>) => r.id)
+        const { rows: linkRows } = await client.query(
+          `SELECT l.ticket_id, l.link_type, l.target_type,
+                  t.number AS target_number, t.subject AS target_subject,
+                  a.name AS target_asset_name, a.tag AS target_asset_tag,
+                  kb.title AS target_kb_title
+             FROM ticket_links l
+             LEFT JOIN tickets t ON l.target_type = 'ticket' AND t.id = l.target_id
+             LEFT JOIN assets a ON l.target_type = 'asset' AND a.id = l.target_id
+             LEFT JOIN kb_articles kb ON l.target_type = 'kb' AND kb.id = l.target_id
+            WHERE l.ticket_id = ANY($1)`,
+          [ids],
+        )
+        const linkMap = new Map<string, string[]>()
+        for (const link of linkRows) {
+          const label = link.target_type === 'ticket'
+            ? `#${link.target_number} ${link.target_subject}`
+            : link.target_type === 'asset'
+              ? `${link.target_asset_tag ?? ''} ${link.target_asset_name ?? ''}`.trim()
+              : link.target_type === 'kb'
+                ? link.target_kb_title ?? link.target_id
+                : `${link.target_type}:${link.target_id}`
+          const entry = `${link.link_type}: ${label}`
+          const existing = linkMap.get(link.ticket_id) ?? []
+          existing.push(entry)
+          linkMap.set(link.ticket_id, existing)
+        }
 
-        const header = 'Number,Subject,Status,Priority,Type,Source,Impact,Urgency,Created,First Response,Resolved,Closed,SLA Response Breached,SLA Resolution Breached,Requester,Assignee,Team,Category'
-        const csv = [header, ...rows.rows.map((r) =>
+        const header = 'Number,Subject,Status,Priority,Type,Source,Impact,Urgency,Created,First Response,Resolved,Closed,SLA Response Breached,SLA Resolution Breached,Requester,Assignee,Team,Category,Linked Work'
+        const csv = [header, ...ticketRows.map((r) =>
           [
             r.number,
             `"${(r.subject ?? '').replace(/"/g, '""')}"`,
@@ -412,6 +446,7 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
             r.closed_at?.toISOString?.() ?? '',
             r.sla_response_breached, r.sla_resolution_breached,
             r.requester ?? '', r.assignee ?? '', r.team ?? '', r.category ?? '',
+            `"${(linkMap.get(r.id) ?? []).join(' | ').replace(/"/g, '""')}"`,
           ].join(','),
         )].join('\n')
 
