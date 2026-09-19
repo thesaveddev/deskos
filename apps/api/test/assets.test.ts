@@ -342,5 +342,78 @@ describe('assets & licences', () => {
       ))
       expect(ledger.rows[0].n).toBe(0)
     })
+
+    it('mutes notices per asset and re-arms them on unmute', async () => {
+      // The tenant opt-out test above disabled expiry emails tenant-wide and
+      // never re-enabled them; restore the default so this test exercises the
+      // per-asset mute against an enabled tenant.
+      await emailApp.inject({
+        method: 'PATCH',
+        url: '/api/v1/tenant/settings',
+        headers: authHeaders(expOwner),
+        payload: { assets: { warranty_expiry_emails: true } },
+      })
+
+      const due = soonDate()
+      const create = await emailApp.inject({
+        method: 'POST',
+        url: '/api/v1/assets',
+        headers: authHeaders(expManager),
+        payload: { tag: 'LT-MUTE', type: 'hardware', name: 'Muted laptop', ownerId: expAnalyst.userId, warrantyUntil: due },
+      })
+      expect(create.statusCode).toBe(201)
+      const mutedAssetId = create.json().asset.id as string
+
+      // Mute via the dedicated route.
+      const mute = await emailApp.inject({
+        method: 'PATCH',
+        url: `/api/v1/assets/${mutedAssetId}/expiry-mute`,
+        headers: authHeaders(expManager),
+        payload: { muted: true },
+      })
+      expect(mute.statusCode).toBe(200)
+      expect(mute.json().asset.expiry_emails_muted).toBe(true)
+
+      // The sweep skips the muted asset: no notice, no email, no ledger row.
+      await checkAssetExpiryNotices(emailApp.db, emailApp.emailQueue, emailApp.mailer, 'https://reydesk.test')
+      expect(await noticesFor(mutedAssetId)).toBe(0)
+      expect(emailApp.mailer.sent.filter((m) => m.subject.includes('LT-MUTE'))).toHaveLength(0)
+
+      // Unmuting re-arms the notice — the next sweep fires normally.
+      const unmute = await emailApp.inject({
+        method: 'PATCH',
+        url: `/api/v1/assets/${mutedAssetId}/expiry-mute`,
+        headers: authHeaders(expManager),
+        payload: { muted: false },
+      })
+      expect(unmute.statusCode).toBe(200)
+      await checkAssetExpiryNotices(emailApp.db, emailApp.emailQueue, emailApp.mailer, 'https://reydesk.test')
+      expect(await noticesFor(mutedAssetId)).toBe(1)
+      expect(emailApp.mailer.sent.filter((m) => m.subject.includes('LT-MUTE'))).toHaveLength(1)
+
+      // The mute state is visible on the renewals watch for muted indicators.
+      const watch = await emailApp.inject({ method: 'GET', url: '/api/v1/assets/warranties?days=90', headers: authHeaders(expManager) })
+      expect(watch.statusCode).toBe(200)
+      const row = (watch.json().warranties as Array<{ id: string; expiry_emails_muted: boolean }>).find((w) => w.id === mutedAssetId)
+      expect(row?.expiry_emails_muted).toBe(false)
+    })
+
+    it('rejects a malformed mute payload', async () => {
+      const due = soonDate()
+      const create = await emailApp.inject({
+        method: 'POST',
+        url: '/api/v1/assets',
+        headers: authHeaders(expManager),
+        payload: { tag: 'LT-BADMUTE', type: 'hardware', name: 'Bad mute laptop', warrantyUntil: due },
+      })
+      const assetId = create.json().asset.id as string
+      const bad = await emailApp.inject({
+        method: 'PATCH',
+        url: `/api/v1/assets/${assetId}/expiry-mute`,
+        headers: authHeaders(expManager),
+        payload: { muted: 'yes' },
+      })
+      expect(bad.statusCode).toBe(400)
+    })
   })
 })

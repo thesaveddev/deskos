@@ -14,6 +14,9 @@ import type { EmailQueue } from '../email/email.queue.js'
  * date notifies at most once — extending a date re-arms the notice.
  *
  * Opt-out is a tenant setting: assets.warranty_expiry_emails (default ON).
+ * Individual assets can additionally be muted (assets.expiry_emails_muted,
+ * PATCH /assets/:id/expiry-mute): the sweep skips them before claiming a
+ * due date, so no ledger row is created and unmuting re-arms the notice.
  */
 
 export const ASSET_EXPIRY_WINDOW_DAYS = 30
@@ -41,13 +44,13 @@ async function sweepKind(
   tenantName: string,
   tenantId: string,
   settingsUrl: string,
-): Promise<number> {
-  const due = (await client.query(
+): Promise<number> {    const due = (await client.query(
     `SELECT ${kind === 'warranty'
       ? `a.id, a.owner_id, a.tag, a.name, a.warranty_until::text AS due`
       : `a.id, a.owner_id, a.tag, a.name, l.expires_at::text AS due`}
        FROM ${kind === 'warranty' ? 'assets a' : 'licences l JOIN assets a ON a.id = l.asset_id'}
       WHERE a.tenant_id = $1
+        AND a.expiry_emails_muted = false
         AND ${kind === 'warranty' ? 'a.warranty_until' : 'l.expires_at'} IS NOT NULL
         AND ${kind === 'warranty' ? 'a.warranty_until' : 'l.expires_at'} >= CURRENT_DATE
         AND ${kind === 'warranty' ? 'a.warranty_until' : 'l.expires_at'} < CURRENT_DATE + ($2 || ' days')::interval`,

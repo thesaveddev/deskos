@@ -243,6 +243,26 @@ async function mockTicketApi(page: Page) {
     }
     if (path === '/directory/search' && method === 'GET') return json(route, { contacts: [] })
     if (path === '/canned-responses' && method === 'GET') return json(route, { cannedResponses: [] })
+    if (path === '/reports/tickets' && method === 'GET') {
+      // Realistic empty report — the dashboard dereferences report.totals.
+      return json(route, {
+        totals: { total: 1, open: 1, resolved: 0, breached: 0 },
+        byStatus: [{ status: 'open', n: 1 }],
+        byPriority: [{ priority: 'p3', n: 1 }],
+        resolution: { n: 0, avg_minutes: 0 },
+        firstResponse: { n: 0, avg_minutes: 0 },
+        byAssignee: [],
+        createdDaily: [],
+      })
+    }
+    if (path === '/assets/warranties' && method === 'GET') {
+      return json(route, {
+        warranties: [
+          { id: 'w1', tag: 'LT-100', name: 'Field laptop', type: 'hardware', status: 'in_use', warranty_until: new Date(Date.now() + 20 * 86_400_000).toISOString().slice(0, 10), expiry_emails_muted: false, device_name: 'Opeyemi-PC' },
+        ],
+        licences: [],
+      })
+    }
 
     // ── Ticket collection ──────────────────────────────────────
     if (path === '/tickets' && method === 'GET') {
@@ -634,5 +654,17 @@ test.describe('ticket lifecycle', () => {
     await expect(page.getByText('Invalid status')).toBeVisible()
     // The failed action must not wipe the ticket view.
     await expect(page.locator('.ticket-subject')).toBeVisible()
+  })
+
+  test('the dashboard surfaces upcoming renewals for asset readers', async ({ page }) => {
+    await page.goto('/')
+
+    // Owner role has asset.read, so the renewals card loads and renders the
+    // soon-expiring warranty from the /assets/warranties mock.
+    await expect(page.getByText('Upcoming renewals')).toBeVisible()
+    await expect(page.locator('.dash-renewal-name')).toHaveText('Field laptop')
+    await expect(page.locator('.dash-renewal-kind').first()).toHaveText('Warranty')
+    // 20 days out lands in the amber window.
+    await expect(page.locator('.dash-renewal-pill').first()).toHaveText('20d')
   })
 })

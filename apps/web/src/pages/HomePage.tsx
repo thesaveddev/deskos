@@ -10,6 +10,7 @@ import { listDevices, type Device } from '../lib/devices.js'
 import { listSessions, type RemoteSession } from '../lib/sessions.js'
 import { listMyApprovals, type Approval } from '../lib/catalogue.js'
 import { listIncidents, type MajorIncident } from '../lib/incidents.js'
+import { listWarrantyWatch, type WarrantyWatchItem } from '../lib/assets.js'
 import { getOnboardingStatus } from '../lib/onboarding.js'
 import { OnboardingWizard } from '../components/OnboardingWizard.js'
 
@@ -51,14 +52,62 @@ function PriorityBadge({ p }: { p: string }) {
   return <span className={`priority-badge priority-${p}`}>{p.toUpperCase()}</span>
 }
 
+/* ── Renewal date helper ───────────────────────────────────────── */
+
+function daysUntil(date: string | null | undefined): number | null {
+  if (!date) return null
+  const ms = new Date(`${date.slice(0, 10)}T00:00:00`).getTime() - Date.now()
+  return Math.ceil(ms / 86_400_000)
+}
+
+/* ── Upcoming renewals card ────────────────────────────────────── */
+
+function RenewalsCard({ warranties, licences }: { warranties: WarrantyWatchItem[]; licences: WarrantyWatchItem[] }) {
+  const rows = [
+    ...warranties.slice(0, 3).map((w) => ({ key: `w-${w.id}`, id: w.id, tag: w.tag ?? '', name: w.name, kind: 'Warranty', due: w.warranty_until ?? null })),
+    ...licences.slice(0, 2).map((l) => ({ key: `l-${l.id}`, id: l.id, tag: l.asset_tag ?? '', name: l.name, kind: 'Licence', due: l.expires_at ?? null })),
+  ]
+    .filter((row) => row.due)
+    .sort((a, b) => daysUntil(a.due)! - daysUntil(b.due)!)
+    .slice(0, 5)
+
+  return (
+    <div className="dash-card dash-renewals-card">
+      <div className="dash-card-header">
+        <h3 className="dash-card-title">Upcoming renewals</h3>
+        <Link to="/assets" className="btn btn-ghost btn-sm">Assets →</Link>
+      </div>
+      {rows.length > 0 ? (
+        <div className="dash-renewals-list">
+          {rows.map((row) => {
+            const days = daysUntil(row.due)!
+            const tone = days < 0 ? 'crit' : days <= 30 ? 'warn' : 'ok'
+            return (
+              <Link key={row.key} to="/assets" className="dash-renewal-row">
+                <span className={`dash-renewal-pill dash-renewal-${tone}`}>{days < 0 ? 'expired' : days <= 30 ? `${days}d` : `${days}d`}</span>
+                <span className="dash-renewal-name" title={`${row.tag} · ${row.name}`}>{row.name}</span>
+                <span className="dash-renewal-kind">{row.kind}</span>
+                <span className="dash-renewal-date mono">{row.due?.slice(0, 10)}</span>
+              </Link>
+            )
+          })}
+        </div>
+      ) : (
+        <p className="dash-empty">Nothing expires in the next 90 days</p>
+      )}
+    </div>
+  )
+}
+
 /* ── Owner / Manager dashboard ─────────────────────────────────── */
 
-function ManagerDashboard({ report, devices, sessions, incidents, myTicketCount }: {
+function ManagerDashboard({ report, devices, sessions, incidents, myTicketCount, renewals }: {
   report: TicketReport | null
   devices: Device[]
   sessions: RemoteSession[]
   incidents: MajorIncident[]
   myTicketCount: number
+  renewals: { warranties: WarrantyWatchItem[]; licences: WarrantyWatchItem[] }
 }) {
   const onlineDevices = devices.filter((d) => d.status === 'online').length
   const activeSessions = sessions.filter((s) => s.state === 'active' || s.state === 'connecting' || s.state === 'consent_pending').length
@@ -176,17 +225,23 @@ function ManagerDashboard({ report, devices, sessions, incidents, myTicketCount 
           </div>
         </div>
       )}
+
+      {/* Upcoming warranty / licence renewals */}
+      {(renewals.warranties.length > 0 || renewals.licences.length > 0) && (
+        <RenewalsCard warranties={renewals.warranties} licences={renewals.licences} />
+      )}
     </>
   )
 }
 
 /* ── Analyst / Engineer dashboard ──────────────────────────────── */
 
-function AnalystDashboard({ myTickets, report, devices, sessions }: {
+function AnalystDashboard({ myTickets, report, devices, sessions, renewals }: {
   myTickets: Ticket[]
   report: TicketReport | null
   devices: Device[]
   sessions: RemoteSession[]
+  renewals: { warranties: WarrantyWatchItem[]; licences: WarrantyWatchItem[] }
 }) {
   const activeSessions = sessions.filter((s) => s.state === 'active' || s.state === 'connecting' || s.state === 'consent_pending').length
 
@@ -262,6 +317,11 @@ function AnalystDashboard({ myTickets, report, devices, sessions }: {
           </div>
         </div>
       </div>
+
+      {/* Upcoming warranty / licence renewals */}
+      {(renewals.warranties.length > 0 || renewals.licences.length > 0) && (
+        <RenewalsCard warranties={renewals.warranties} licences={renewals.licences} />
+      )}
     </>
   )
 }
@@ -345,6 +405,7 @@ export default function HomePage() {
   const [sessions, setSessions] = useState<RemoteSession[]>([])
   const [incidents, setIncidents] = useState<MajorIncident[]>([])
   const [approvals, setApprovals] = useState<Approval[]>([])
+  const [renewals, setRenewals] = useState<{ warranties: WarrantyWatchItem[]; licences: WarrantyWatchItem[] }>({ warranties: [], licences: [] })
   const [loading, setLoading] = useState(true)
   const [quickTicketOpen, setQuickTicketOpen] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
@@ -355,6 +416,8 @@ export default function HomePage() {
 
   const isMgr = isManager(myRole)
   const isAnalystRole = isAnalyst(myRole)
+  // Renewals need asset read permission; end users never see the panel.
+  const canSeeAssets = auth.memberships.find((m) => m.tenant.id === auth.activeTenantId)?.permissions.includes('asset.read') ?? false
 
   useEffect(() => {
     if (!auth.user) return
@@ -370,15 +433,23 @@ export default function HomePage() {
           listSessions({ limit: 10 }),
           listIncidents(),
           listMyApprovals(),
+          canSeeAssets ? listWarrantyWatch(90).catch(() => ({ warranties: [], licences: [] })) : Promise.resolve({ warranties: [], licences: [] }),
         ])
 
         if (results[0].status === 'fulfilled') setCounts(results[0].value as any)
-        if (results[1].status === 'fulfilled') setReport(results[1].value as TicketReport)
+        // Guard the shape: a malformed or partial report payload must degrade
+        // to "no report" rather than crash the whole dashboard on report.totals.
+        const reportValue = results[1].status === 'fulfilled' ? (results[1].value as TicketReport | null) : null
+        if (reportValue && reportValue.totals && reportValue.resolution && reportValue.firstResponse) setReport(reportValue)
         if (results[2].status === 'fulfilled') setMyTickets((results[2].value as any).tickets || [])
         if (results[3].status === 'fulfilled') setDevices((results[3].value as any).devices || [])
         if (results[4].status === 'fulfilled') setSessions((results[4].value as any).sessions || [])
         if (results[5].status === 'fulfilled') setIncidents((results[5].value as any).incidents || [])
         if (results[6].status === 'fulfilled') setApprovals((results[6].value as any).approvals || [])
+        if (results[7].status === 'fulfilled') {
+          const watchValue = results[7].value as { warranties?: WarrantyWatchItem[]; licences?: WarrantyWatchItem[] } | null
+          setRenewals({ warranties: watchValue?.warranties ?? [], licences: watchValue?.licences ?? [] })
+        }
 
         // Check onboarding status
         try {
@@ -432,6 +503,7 @@ export default function HomePage() {
           sessions={sessions}
           incidents={incidents}
           myTicketCount={counts?.mine ?? 0}
+          renewals={renewals}
         />
       ) : isAnalystRole ? (
         <AnalystDashboard
@@ -439,6 +511,7 @@ export default function HomePage() {
           report={report}
           devices={devices}
           sessions={sessions}
+          renewals={renewals}
         />
       ) : (
         <EndUserDashboard myTickets={myTickets} onNewTicket={() => setQuickTicketOpen(true)} />

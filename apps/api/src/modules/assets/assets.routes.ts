@@ -39,6 +39,7 @@ const assetUpdateSchema = z.object({
   purchase: z.record(z.unknown()).optional(),
   deviceId: z.string().uuid().nullable().optional(),
   ext: z.record(z.unknown()).optional(),
+  expiryEmailsMuted: z.boolean().optional(),
 })
 
 const licenceCreateSchema = z.object({
@@ -204,6 +205,7 @@ export async function assetRoutes(app: FastifyInstance): Promise<void> {
         `UPDATE assets SET
            tag = $2, type = $3, name = $4, status = $5, owner_id = $6, location = $7,
            supplier = $8, warranty_until = $9, purchase = $10::jsonb, device_id = $11, ext = $12::jsonb,
+           expiry_emails_muted = $13,
            updated_at = now()
          WHERE id = $1 RETURNING *`,
         [
@@ -219,6 +221,7 @@ export async function assetRoutes(app: FastifyInstance): Promise<void> {
           JSON.stringify(body.purchase ?? current.purchase),
           body.deviceId === undefined ? current.device_id : body.deviceId,
           JSON.stringify(body.ext ?? current.ext),
+          body.expiryEmailsMuted === undefined ? current.expiry_emails_muted : body.expiryEmailsMuted,
         ],
       )
       await recordAudit(client, ctx.tenantId, {
@@ -230,6 +233,33 @@ export async function assetRoutes(app: FastifyInstance): Promise<void> {
         ip: request.ip,
       })
       return { asset: res.rows[0] }
+    })
+  })
+
+  /**
+   * Per-asset expiry-email mute. Unlike the tenant-wide setting, muting one
+   * asset silences both the owner email and the in-app notice for that asset
+   * only. Unmuting re-arms the sweep: no ledger row was written while muted,
+   * so the next due date in the window notifies normally.
+   */
+  app.patch('/assets/:id/expiry-mute', { preHandler: write }, async (request) => {
+    const ctx = request.tenantCtx!
+    const { id } = request.params as { id: string }
+    const body = z.object({ muted: z.boolean() }).parse(request.body)
+    return withTenant(app.db, ctx.tenantId, async (client) => {
+      const asset = (await client.query('SELECT id, tag, name FROM assets WHERE id = $1', [id])).rows[0]
+      if (!asset) throw AppError.notFound('Asset not found')
+      await client.query('UPDATE assets SET expiry_emails_muted = $2, updated_at = now() WHERE id = $1', [id, body.muted])
+      await recordAudit(client, ctx.tenantId, {
+        actorType: 'user',
+        actorId: request.user!.id,
+        action: body.muted ? 'asset.expiry_muted' : 'asset.expiry_unmuted',
+        objectType: 'asset',
+        objectId: id,
+        payload: { tag: asset.tag, name: asset.name },
+        ip: request.ip,
+      })
+      return { asset: { id, expiry_emails_muted: body.muted } }
     })
   })
 
@@ -272,7 +302,7 @@ export async function assetRoutes(app: FastifyInstance): Promise<void> {
     const days = Math.min(Math.max(Number(query.days ?? 90), 1), 365)
     return withTenant(app.db, ctx.tenantId, async (client) => {
       const warranties = await client.query(
-        `SELECT a.id, a.tag, a.name, a.type, a.status, a.warranty_until, d.name AS device_name
+        `SELECT a.id, a.tag, a.name, a.type, a.status, a.warranty_until, a.expiry_emails_muted, d.name AS device_name
            FROM assets a
            LEFT JOIN devices d ON d.id = a.device_id
           WHERE a.warranty_until IS NOT NULL

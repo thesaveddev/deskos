@@ -6,7 +6,7 @@ import { useAuth } from '../lib/auth.js'
 import { api } from '../lib/api.js'
 import { Icon } from '../components/Icons.js'
 import {
-  createAsset, createLicence, deleteAsset, deleteLicence, listAssets, listLicences, listWarrantyWatch, updateAsset,
+  createAsset, createLicence, deleteAsset, deleteLicence, listAssets, listLicences, listWarrantyWatch, setAssetExpiryMute, updateAsset,
   type Asset, type AssetStatus, type AssetType, type Licence, type WarrantyWatchItem,
 } from '../lib/assets.js'
 
@@ -209,6 +209,19 @@ export default function AssetsPage() {
     }
   }
 
+  /** Per-asset expiry-notice mute. Optimistic, with rollback on failure. */
+  async function toggleExpiryMute(asset: Asset) {
+    const next = !asset.expiry_emails_muted
+    setAssets((rows) => (rows ?? []).map((row) => (row.id === asset.id ? { ...row, expiry_emails_muted: next } : row)))
+    try {
+      await setAssetExpiryMute(asset.id, next)
+      await load()
+    } catch (err) {
+      setAssets((rows) => (rows ?? []).map((row) => (row.id === asset.id ? { ...row, expiry_emails_muted: asset.expiry_emails_muted } : row)))
+      setError(err instanceof Error ? err.message : 'Could not update expiry preference')
+    }
+  }
+
   async function removeAsset(asset: Asset) {
     if (!await confirm(`Delete asset “${asset.name}”?`, { title: 'Delete asset', confirmLabel: 'Delete', destructive: true })) return
     setError(null)
@@ -343,7 +356,8 @@ export default function AssetsPage() {
                           return (
                             <span className="ops-cell-inline">
                               <span className="mono muted">{a.warranty_until}</span>
-                              {tone ? <span className={`ops-pill tone-${tone}`}>{daysUntil(a.warranty_until)! < 0 ? 'expired' : daysUntil(a.warranty_until)! <= 30 ? 'due soon' : 'ok'}</span> : null}
+                              {a.expiry_emails_muted ? <span className="ops-pill tone-muted" title="Expiry emails muted for this asset"><Icon name="bell-off" size={11} />muted</span> : null}
+                              {tone && !a.expiry_emails_muted ? <span className={`ops-pill tone-${tone}`}>{daysUntil(a.warranty_until)! < 0 ? 'expired' : daysUntil(a.warranty_until)! <= 30 ? 'due soon' : 'ok'}</span> : null}
                             </span>
                           )
                         })() : <span className="muted">—</span>}
@@ -351,6 +365,16 @@ export default function AssetsPage() {
                       {canManage ? (
                         <td>
                           <div className="ops-actions">
+                            {a.warranty_until ? (
+                              <button
+                                className="btn btn-ghost btn-sm"
+                                title={a.expiry_emails_muted ? 'Unmute expiry emails for this asset' : 'Mute expiry emails for this asset'}
+                                aria-label={a.expiry_emails_muted ? 'Unmute expiry emails' : 'Mute expiry emails'}
+                                onClick={() => void toggleExpiryMute(a)}
+                              >
+                                <Icon name={a.expiry_emails_muted ? 'bell' : 'bell-off'} size={14} />
+                              </button>
+                            ) : null}
                             {a.qr_payload ? (
                               <button className="btn btn-ghost btn-sm" title="Asset label" aria-label="View asset label" onClick={() => setQrAsset(a)}><Icon name="eye" size={14} /></button>
                             ) : null}

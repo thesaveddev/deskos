@@ -20,6 +20,7 @@ export interface Asset {
   ext: Record<string, unknown>
   qr_payload?: string | null
   barcode_value?: string | null
+  expiry_emails_muted?: boolean | null
   assignment_status?: 'assigned' | 'shared' | 'temporary' | 'returned' | null
   assigned_user_name?: string | null
   assigned_department?: string | null
@@ -81,8 +82,14 @@ export function updateAsset(id: string, body: Partial<{
   purchase: Record<string, unknown>
   deviceId: string | null
   ext: Record<string, unknown>
+  expiryEmailsMuted: boolean
 }>): Promise<{ asset: Asset }> {
   return api(`/assets/${id}`, { method: 'PATCH', body })
+}
+
+/** Mute or unmute expiry notices (email + in-app) for one asset. */
+export function setAssetExpiryMute(id: string, muted: boolean): Promise<{ asset: { id: string; expiry_emails_muted: boolean } }> {
+  return api(`/assets/${id}/expiry-mute`, { method: 'PATCH', body: { muted } })
 }
 
 export function deleteAsset(id: string): Promise<{ ok: boolean }> {
@@ -131,6 +138,7 @@ export interface WarrantyWatchItem {
   seats_used?: number
   seats_total?: number
   device_name?: string | null
+  expiry_emails_muted?: boolean | null
   asset_tag?: string | null
   asset_name?: string | null
 }
