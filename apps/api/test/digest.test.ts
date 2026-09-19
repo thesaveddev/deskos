@@ -12,7 +12,6 @@ describe('needs-attention digest', () => {
   let app: FastifyInstance
   let owner: Awaited<ReturnType<typeof signupOwner>>
   let manager: Awaited<ReturnType<typeof seedActiveMember>>
-  let analyst: Awaited<ReturnType<typeof seedActiveMember>>
 
   const withTenant = async <T,>(fn: (client: import('../src/db/pool.js').DbClient) => Promise<T>): Promise<T> => {
     const { withTenant: wt } = await import('../src/db/pool.js')
@@ -29,7 +28,8 @@ describe('needs-attention digest', () => {
     app = await createTestApp({ REYDESK_SMTP_JSON: 'true', REYDESK_SMTP_FROM: 'ReyDesk <support@example.com>' })
     owner = await signupOwner(app, { tenantName: 'Digest Org' })
     manager = await seedActiveMember(app, owner.tenantId!, 'service_desk_manager')
-    analyst = await seedActiveMember(app, owner.tenantId!, 'analyst')
+    // Seeded for the analyst-not-a-recipient assertion below.
+    await seedActiveMember(app, owner.tenantId!, 'analyst')
   })
 
   afterAll(async () => {
