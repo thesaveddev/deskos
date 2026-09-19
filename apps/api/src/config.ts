@@ -33,6 +33,8 @@ export interface AppConfig {
   deviceLowDiskPct: number
   deviceMetricsRetentionDays: number
   devicePurgeDays: number
+  /** Master switch for the daily needs-attention digest email. */
+  digestEnabled: boolean
   smtp: SmtpConfig
   imap: {
     enabled: boolean
@@ -267,6 +269,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     deviceLowDiskPct: Number(value('REYDESK_DEVICE_LOW_DISK_PCT') ?? 85),
     deviceMetricsRetentionDays: Number(value('REYDESK_DEVICE_METRICS_RETENTION_DAYS') ?? 30),
     devicePurgeDays: Number(value('REYDESK_DEVICE_PURGE_DAYS') ?? 90),
+    digestEnabled: value('REYDESK_DIGEST_ENABLED') !== '0',
     smtp: {
       enabled:
         Boolean(value('REYDESK_SMTP_HOST') && value('REYDESK_SMTP_FROM')) ||

@@ -7,6 +7,7 @@ import { startDeviceAlertScheduler, purgeExpiredRetiredDevices } from './modules
 import { checkAllMonitoringPolicies } from './modules/monitoring/monitoring.js'
 import { checkAssetExpiryNotices } from './modules/assets/expiry.js'
 import { checkKbReviewNotices } from './modules/knowledge/review.js'
+import { checkNeedsAttentionDigest } from './modules/notifications/digest.js'
 import { generateVapidKeyPair } from './modules/push/vapid.js'
 import { startSlaScheduler } from './modules/tickets/sla.js'
 import { startEscalationScheduler } from './modules/tickets/escalation.scheduler.js'
@@ -128,6 +129,20 @@ async function main(): Promise<void> {
   purgeTimer.unref()
   if (app.config.devicePurgeDays > 0) {
     console.log(`[devices] retired-device purge running (hourly; deletes retired devices after ${app.config.devicePurgeDays}d)`)
+  }
+  // Needs-attention digest: one combined email per owner/manager per day.
+  // REYDESK_DIGEST_ENABLED=0 disables it entirely.
+  if (app.config.digestEnabled) {
+    let digestBusy = false
+    const digestTimer = setInterval(() => {
+      if (digestBusy) return
+      digestBusy = true
+      void checkNeedsAttentionDigest(app.db, app.emailQueue, app.mailer, app.config.publicUrl)
+        .catch(() => undefined)
+        .finally(() => { digestBusy = false })
+    }, 3_600_000)
+    digestTimer.unref()
+    console.log('[digest] needs-attention digest running (hourly; one email per recipient per day)')
   }
   if (app.emailWorker) {
     app.emailWorker.start()

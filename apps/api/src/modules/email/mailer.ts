@@ -336,6 +336,62 @@ export class Mailer {
     }
   }
 
+  /**
+   * Build the combined needs-attention digest email: overdue KB reviews,
+   * upcoming asset expiries, and open device alerts in one message.
+   */
+  buildNeedsAttentionDigestMail(ctx: {
+    to: string
+    tenantName: string
+    content: {
+      reviews: Array<{ title: string; dueDate: string }>
+      expiries: Array<{ label: string; tag: string; kind: 'warranty' | 'licence'; dueDate: string }>
+      alerts: Array<{ deviceName: string; kind: string; severity: string; message: string }>
+    }
+    digestUrl: string
+  }): { to: string; subject: string; text: string; html: string } {
+    const reviewRows = ctx.content.reviews
+    const expiryRows = ctx.content.expiries
+    const alertRows = ctx.content.alerts
+    const total = reviewRows.length + expiryRows.length + alertRows.length
+
+    const section = (heading: string, rows: string[], emptyText: string): string =>
+      `<tr><td style="padding:0 0 22px;"><table role="presentation" width="100%" style="border-collapse:collapse;"><tr><td style="padding:0 0 8px;color:#e6e9ec;font-size:14px;font-weight:700;">${escapeHtml(heading)}</td></tr>${rows.length > 0
+        ? rows.map((row) => `<tr><td style="padding:8px 12px;border:1px solid #303a45;background:#1a2027;color:#c3cbd3;font-size:13px;line-height:1.5;">${row}</td></tr>`).join('')
+        : `<tr><td style="padding:8px 12px;border:1px dashed #303a45;color:#6f7b87;font-size:12px;">${escapeHtml(emptyText)}</td></tr>`}</table></td></tr>`
+
+    const reviewCells = reviewRows.map((r) => `${escapeHtml(r.title)} — review was due ${escapeHtml(r.dueDate)}`)
+    const expiryCells = expiryRows.map((e) => `${escapeHtml(e.label)} (${escapeHtml(e.tag)}) — ${e.kind === 'licence' ? 'licence' : 'warranty'} expires ${escapeHtml(e.dueDate)}`)
+    const alertCells = alertRows.map((a) => `<span style="color:${a.severity === 'critical' ? '#e5484d' : '#e8a33d'};font-weight:700;">${escapeHtml(a.severity.toUpperCase())}</span> · ${escapeHtml(a.deviceName)} — ${escapeHtml(a.kind.replace(/_/g, ' '))}: ${escapeHtml(a.message)}`)
+
+    const summaryLabel = total === 1 ? '1 item needs attention' : `${total} items need attention`
+
+    const textLines = [
+      `Needs attention · ${ctx.tenantName}`,
+      '',
+      ...(reviewRows.length > 0 ? ['Overdue knowledge base reviews:', ...reviewRows.map((r) => `- ${r.title} (due ${r.dueDate})`), ''] : []),
+      ...(expiryRows.length > 0 ? ['Upcoming asset expiries (30-day window):', ...expiryRows.map((e) => `- ${e.label} (${e.tag}) — ${e.kind} expires ${e.dueDate}`), ''] : []),
+      ...(alertRows.length > 0 ? ['Open device alerts:', ...alertRows.map((a) => `- [${a.severity.toUpperCase()}] ${a.deviceName} — ${a.kind}: ${a.message}`), ''] : []),
+      `Open ReyDesk: ${ctx.digestUrl}`,
+    ]
+
+    return {
+      to: ctx.to,
+      subject: `${summaryLabel} · ${ctx.tenantName}`,
+      text: textLines.join('\n'),
+      html: renderBrandedEmail({
+        tenantName: ctx.tenantName,
+        eyebrow: 'Needs attention',
+        preheader: summaryLabel,
+        title: summaryLabel,
+        greeting: 'A daily summary of everything in your workspace that needs attention.',
+        htmlBody: `<table role="presentation" width="100%" style="border-collapse:collapse;">${section('Overdue knowledge base reviews', reviewCells, 'No overdue reviews right now.')}${section('Upcoming asset expiries', expiryCells, 'Nothing expires in the next 30 days.')}${section('Open device alerts', alertCells, 'No open device alerts.')}</table>`,
+        action: { label: 'Open ReyDesk', url: ctx.digestUrl },
+        footer: `You received this daily digest because you are an owner or manager in ${ctx.tenantName}. Managers can adjust digest settings in ReyDesk Settings.`,
+      }),
+    }
+  }
+
   buildInvitationMail(ctx: InvitationMailContext): EmailMessage {
     const tenantName = safeText(ctx.tenantName) || 'your organisation'
     const role = safeText(ctx.role) || 'team member'
