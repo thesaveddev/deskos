@@ -5,7 +5,8 @@ import { withTenant } from '../../db/pool.js'
 import { authenticate } from '../../middleware/authenticate.js'
 import { requirePermission } from '../../middleware/requirePermission.js'
 import { requireTenant } from '../../middleware/requireTenant.js'
-import { listPlaybooks, getPlaybook, createPlaybook, updatePlaybook, deletePlaybook, seedBuiltInPlaybooks } from './playbooks.js'
+import { listPlaybooks, getPlaybook, createPlaybook, updatePlaybook, deletePlaybook, seedBuiltInPlaybooks, reviewPlaybookAccess, rotatePlaybookIdentity, revokePlaybookIdentity } from './playbooks.js'
+import { issueIdentityCredential, listIdentityCredentials, revokeIdentityCredential } from './identity-credentials.js'
 import '../../types.js'
 
 const createSchema = z.object({
@@ -16,6 +17,8 @@ const createSchema = z.object({
   system_prompt: z.string().min(1).max(10000),
   max_steps: z.number().int().min(1).max(12).default(6),
   auto_approve_low_risk: z.boolean().default(true),
+  machine_identity: z.string().min(1).max(120).default('reydesk-worker'),
+  allowed_tools: z.array(z.string().max(120)).max(50).default([]),
 })
 
 const updateSchema = z.object({
@@ -27,6 +30,8 @@ const updateSchema = z.object({
   max_steps: z.number().int().min(1).max(12).optional(),
   auto_approve_low_risk: z.boolean().optional(),
   enabled: z.boolean().optional(),
+  machine_identity: z.string().min(1).max(120).optional(),
+  allowed_tools: z.array(z.string().max(120)).max(50).optional(),
 })
 
 export async function playbookRoutes(app: FastifyInstance): Promise<void> {
@@ -70,6 +75,84 @@ export async function playbookRoutes(app: FastifyInstance): Promise<void> {
     const { id } = request.params as { id: string }
     const body = updateSchema.parse(request.body)
     const playbook = await updatePlaybook(app.db, ctx.tenantId, id, body)
+    return { playbook }
+  })
+
+  app.post('/ai-playbooks/:id/access-review', { preHandler: manage }, async (request) => {
+    const ctx = request.tenantCtx!
+    const { id } = request.params as { id: string }
+    const playbook = await reviewPlaybookAccess(app.db, ctx.tenantId, id, request.user!.id)
+    await withTenant(app.db, ctx.tenantId, async (client) => {
+      await recordAudit(client, ctx.tenantId, {
+        actorType: 'user', actorId: request.user!.id,
+        action: 'ai_playbook.access_reviewed', objectType: 'ai_playbook', objectId: id,
+        ip: request.ip, payload: { machineIdentity: playbook.machine_identity, allowedTools: playbook.allowed_tools },
+      })
+    })
+    return { playbook }
+  })
+
+  app.post('/ai-playbooks/:id/identity/rotate', { preHandler: manage }, async (request) => {
+    const ctx = request.tenantCtx!
+    const { id } = request.params as { id: string }
+    const playbook = await rotatePlaybookIdentity(app.db, ctx.tenantId, id)
+    await withTenant(app.db, ctx.tenantId, async (client) => {
+      await recordAudit(client, ctx.tenantId, {
+        actorType: 'user', actorId: request.user!.id,
+        action: 'ai_playbook.identity_rotated', objectType: 'ai_playbook', objectId: id,
+        ip: request.ip, payload: { identityVersion: playbook.identity_version },
+      })
+    })
+    return { playbook }
+  })
+
+  app.get('/ai-playbooks/:id/identity/credentials', { preHandler: read }, async (request) => {
+    const ctx = request.tenantCtx!
+    const { id } = request.params as { id: string }
+    return { credentials: await listIdentityCredentials(app.db, ctx.tenantId, id) }
+  })
+
+  app.post('/ai-playbooks/:id/identity/credentials', { preHandler: manage }, async (request, reply) => {
+    const ctx = request.tenantCtx!
+    const { id } = request.params as { id: string }
+    const body = z.object({ name: z.string().trim().min(1).max(120), expiresInDays: z.number().int().min(1).max(365).default(90) }).parse(request.body)
+    const issued = await issueIdentityCredential(app.db, ctx.tenantId, id, request.user!.id, body)
+    await withTenant(app.db, ctx.tenantId, async (client) => {
+      await recordAudit(client, ctx.tenantId, {
+        actorType: 'user', actorId: request.user!.id,
+        action: 'ai_playbook.identity_credential_issued', objectType: 'ai_playbook', objectId: id,
+        ip: request.ip, payload: { credentialId: issued.credential.id, name: body.name, expiresAt: issued.credential.expires_at },
+      })
+    })
+    return reply.code(201).send(issued)
+  })
+
+  app.delete('/ai-playbooks/:id/identity/credentials/:credentialId', { preHandler: manage }, async (request, reply) => {
+    const ctx = request.tenantCtx!
+    const { id, credentialId } = request.params as { id: string; credentialId: string }
+    const credential = await revokeIdentityCredential(app.db, ctx.tenantId, id, credentialId, request.user!.id)
+    await withTenant(app.db, ctx.tenantId, async (client) => {
+      await recordAudit(client, ctx.tenantId, {
+        actorType: 'user', actorId: request.user!.id,
+        action: 'ai_playbook.identity_credential_revoked', objectType: 'ai_playbook', objectId: id,
+        ip: request.ip, payload: { credentialId },
+      })
+    })
+    return reply.send({ credential })
+  })
+
+  app.post('/ai-playbooks/:id/identity/revoke', { preHandler: manage }, async (request) => {
+    const ctx = request.tenantCtx!
+    const { id } = request.params as { id: string }
+    const body = z.object({ reason: z.string().min(1).max(500) }).parse(request.body)
+    const playbook = await revokePlaybookIdentity(app.db, ctx.tenantId, id, body.reason)
+    await withTenant(app.db, ctx.tenantId, async (client) => {
+      await recordAudit(client, ctx.tenantId, {
+        actorType: 'user', actorId: request.user!.id,
+        action: 'ai_playbook.identity_revoked', objectType: 'ai_playbook', objectId: id,
+        ip: request.ip, payload: { reason: body.reason },
+      })
+    })
     return { playbook }
   })
 

@@ -33,6 +33,7 @@ import '../styles/ticket-lock.css'
 import { listDevices, getDevice, type Device, type DeviceMetric, type DeviceAlert } from '../lib/devices.js'
 import { isElevatedSessionEvent, listTicketSessions, sessionOutcomeSegments, type TicketSessionSummary, type TicketSessionEvent } from '../lib/sessions.js'
 import { draftKbArticle, getTriageState, listSimilarTickets, retryTriage, stopTriage, summarizeTicket, type KbDraftArticle, type SimilarTicket, type TriageState } from '../lib/ai.js'
+import { approveWorkerRun, cancelWorkerRun, createWorkerRun, denyWorkerRun, listWorkerRuns, WORKER_RUN_LABELS, WORKER_STEP_LABELS, type WorkerRun } from '../lib/ai-worker.js'
 
 const STATUS_OPTIONS = ['new', 'open', 'in_progress', 'pending_user', 'pending_vendor', 'escalated', 'resolved', 'closed']
 
@@ -148,8 +149,18 @@ export default function TicketDetailPage() {
   const [aiSimilarBusy, setAiSimilarBusy] = useState(false)
   const [aiDraft, setAiDraft] = useState<KbDraftArticle | null>(null)
   const [aiDraftBusy, setAiDraftBusy] = useState(false)
+  const [linkedSimilarIds, setLinkedSimilarIds] = useState<Set<string>>(new Set())
+  const [linkingSimilarId, setLinkingSimilarId] = useState<string | null>(null)
+  const [aiDraftLinked, setAiDraftLinked] = useState(false)
+  const [aiDraftLinking, setAiDraftLinking] = useState(false)
   const [aiTriage, setAiTriage] = useState<TriageState | null>(null)
   const [aiTriageBusy, setAiTriageBusy] = useState(false)
+
+  // AI worker runs on this ticket (inline, per the 21 Sep blueprint phase 7:
+  // AI actions live on the object, not a separate page).
+  const [workerRuns, setWorkerRuns] = useState<WorkerRun[] | null>(null)
+  const [workerRunsLoaded, setWorkerRunsLoaded] = useState(false)
+  const [workerActionBusy, setWorkerActionBusy] = useState(false)
 
   // Ticket locking & viewing
   const [ticketLock, setTicketLock] = useState<TicketLockInfo | null>(null)
@@ -232,6 +243,7 @@ export default function TicketDetailPage() {
   }
 
   const canUseAi = useAuth((state) => state.memberships.some((m) => m.permissions.includes('ai.use')))
+  const canManageWorkers = useAuth((state) => state.memberships.some((m) => m.permissions.includes('ai_agent.manage')))
   const canOverrideTicketLock = auth.memberships.some((m) => m.permissions.includes('settings.manage'))
 
   const load = useCallback(async () => {
@@ -362,6 +374,36 @@ export default function TicketDetailPage() {
   useEffect(() => {
     if (!id || !canUseAi) return
     getTriageState(id).then((result) => setAiTriage(result.triage)).catch(() => setAiTriage(null))
+  }, [id, canUseAi])
+
+  // Load worker runs for this ticket once; poll while any run is active so
+  // step progress streams into the rail without a manual refresh.
+  useEffect(() => {
+    if (!id || !canUseAi) return
+    let cancelled = false
+    const load = () => {
+      listWorkerRuns(undefined, id)
+        .then((result) => {
+          if (cancelled) return
+          setWorkerRuns(result.runs)
+          setWorkerRunsLoaded(true)
+        })
+        .catch(() => {
+          if (!cancelled) setWorkerRunsLoaded(true)
+        })
+    }
+    load()
+    const interval = setInterval(() => {
+      setWorkerRuns((current) => {
+        const active = current?.some((run) => run.status === 'queued' || run.status === 'running' || run.status === 'waiting_approval' || run.status === 'waiting_action')
+        if (active) load()
+        return current
+      })
+    }, 8_000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
   }, [id, canUseAi])
 
   useEffect(() => {
@@ -914,15 +956,51 @@ export default function TicketDetailPage() {
     }
   }
 
+  // Turn an AI-found similar incident into a persistent 'related' link.
+  const linkSimilarTicket = async (similar: SimilarTicket) => {
+    if (!ticket || linkedSimilarIds.has(similar.id)) return
+    setLinkingSimilarId(similar.id)
+    try {
+      await addTicketLink(ticket.id, { linkType: 'related', targetType: 'ticket', targetId: similar.id })
+      setLinks((await listTicketLinks(ticket.id)).links)
+      setLinkedSimilarIds((prev) => new Set(prev).add(similar.id))
+      toast.success(`Linked #${similar.number} as related work`)
+    } catch (err) {
+      fail(err, 'Could not link the similar ticket')
+    } finally {
+      setLinkingSimilarId(null)
+    }
+  }
+
   const runAiDraft = async () => {
     if (!ticket || aiDraftBusy) return
     setAiDraftBusy(true)
     try {
       setAiDraft((await draftKbArticle(ticket.id)).article)
+      setAiDraftLinked(false)
+      toast.success('KB draft saved — it lives in the knowledge base as a draft')
     } catch (err) {
       fail(err, 'KB draft failed')
     } finally {
       setAiDraftBusy(false)
+    }
+  }
+
+  // AI drafts are already persisted as real KB articles (status: draft,
+  // tagged ai-drafted) — this links one back to the ticket that produced it
+  // so future similar tickets surface it through the knowledge graph.
+  const linkAiDraft = async () => {
+    if (!ticket || !aiDraft || aiDraftLinked) return
+    setAiDraftLinking(true)
+    try {
+      await addTicketLink(ticket.id, { linkType: 'related', targetType: 'kb', targetId: aiDraft.id })
+      setLinks((await listTicketLinks(ticket.id)).links)
+      setAiDraftLinked(true)
+      toast.success('KB draft linked to this ticket')
+    } catch (err) {
+      fail(err, 'Could not link the KB draft')
+    } finally {
+      setAiDraftLinking(false)
     }
   }
 
@@ -943,6 +1021,47 @@ export default function TicketDetailPage() {
       fail(err, 'AI triage action failed')
     } finally {
       setAiTriageBusy(false)
+    }
+  }
+
+  const refreshWorkerRuns = async () => {
+    if (!id) return
+    try {
+      const result = await listWorkerRuns(undefined, id)
+      setWorkerRuns(result.runs)
+      setWorkerRunsLoaded(true)
+    } catch {
+      setWorkerRunsLoaded(true)
+    }
+  }
+
+  const startWorker = async () => {
+    if (!ticket || workerActionBusy) return
+    setWorkerActionBusy(true)
+    try {
+      await createWorkerRun(ticket.id)
+      toast.success('AI worker started — it will diagnose and act on this ticket')
+      await refreshWorkerRuns()
+    } catch (err) {
+      fail(err, 'Could not start the AI worker')
+    } finally {
+      setWorkerActionBusy(false)
+    }
+  }
+
+  const workerStepAction = async (runId: string, action: 'approve' | 'deny' | 'cancel') => {
+    if (workerActionBusy) return
+    setWorkerActionBusy(true)
+    try {
+      if (action === 'approve') await approveWorkerRun(runId)
+      else if (action === 'deny') await denyWorkerRun(runId)
+      else await cancelWorkerRun(runId)
+      toast.success(action === 'approve' ? 'Step approved — worker resuming' : action === 'deny' ? 'Step denied — worker handing off' : 'AI worker cancelled')
+      await refreshWorkerRuns()
+    } catch (err) {
+      fail(err, `Could not ${action} the worker step`)
+    } finally {
+      setWorkerActionBusy(false)
     }
   }
 
@@ -1206,14 +1325,26 @@ export default function TicketDetailPage() {
               <div className="muted" style={{ padding: '4px 0' }}>No similar incidents found.</div>
             ) : (
               <ul className="attachments-list">
-                {aiSimilar.map((s) => (
-                  <li key={s.id} className="attachment-row">
-                    <Link className="attachment-link" to={`/tickets/${s.id}`}>
-                      <span className="attachment-name">#{s.number} {s.subject}</span>
-                    </Link>
-                    <span className="muted mono">{s.type} · {s.status} · {(s.similarity * 100).toFixed(0)}% match</span>
-                  </li>
-                ))}
+                {aiSimilar.map((s) => {
+                  const linked = linkedSimilarIds.has(s.id) || links.some((l) => l.target_type === 'ticket' && l.target_id === s.id)
+                  return (
+                    <li key={s.id} className="attachment-row">
+                      <Link className="attachment-link" to={`/tickets/${s.id}`}>
+                        <span className="attachment-name">#{s.number} {s.subject}</span>
+                      </Link>
+                      <span className="muted mono">{s.type} · {s.status} · {(s.similarity * 100).toFixed(0)}% match</span>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        disabled={linked || linkingSimilarId === s.id}
+                        onClick={() => void linkSimilarTicket(s)}
+                        title={linked ? 'Already linked to this ticket' : 'Link as related work'}
+                      >
+                        {linked ? 'Linked' : linkingSimilarId === s.id ? 'Linking…' : 'Link'}
+                      </button>
+                    </li>
+                  )
+                })}
               </ul>
             )
           ) : null}
@@ -1221,6 +1352,18 @@ export default function TicketDetailPage() {
             <div className="ai-result">
               <span className="muted mono">Draft KB article · {aiDraft.status}</span>
               <p><strong>{aiDraft.title}</strong></p>
+              <div className="ticket-link-form">
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  disabled={aiDraftLinked || aiDraftLinking}
+                  onClick={() => void linkAiDraft()}
+                  title="Attach this draft to the ticket so the relationship is preserved"
+                >
+                  {aiDraftLinked ? 'Linked to ticket' : aiDraftLinking ? 'Linking…' : 'Link to ticket'}
+                </button>
+                <Link className="btn btn-ghost btn-sm" to={`/kb?article=${aiDraft.id}`}>Open in knowledge base</Link>
+              </div>
             </div>
           ) : null}
         </section>
@@ -1607,6 +1750,80 @@ export default function TicketDetailPage() {
               })}
             </>
           )}
+        </div>
+
+        <div className="ticket-rail-panel ticket-worker-panel">
+          <span className="etch">AI worker</span>
+          {(() => {
+            const activeRun = workerRuns?.find((run) => run.status === 'queued' || run.status === 'running' || run.status === 'waiting_approval' || run.status === 'waiting_action')
+            const latestRun = workerRuns?.[0]
+            const terminalRun = !activeRun ? latestRun : undefined
+            const canStart = canUseAi && canManageWorkers && ticket && ticket.status !== 'resolved' && ticket.status !== 'closed' && !activeRun && !readOnlyForLock
+            if (!workerRunsLoaded) {
+              return <div className="ticket-rail-empty">Checking for worker runs…</div>
+            }
+            return (
+              <>
+                {activeRun ? (
+                  <div className={`ticket-worker-run worker-${activeRun.status}`}>
+                    <div className="ticket-worker-run-head">
+                      <span className={`status-pill worker-state-${activeRun.status}`}>{WORKER_RUN_LABELS[activeRun.status]}</span>
+                      <span className="ticket-worker-run-when mono">{formatWhen(activeRun.created_at)}</span>
+                    </div>
+                    {activeRun.summary ? <div className="ticket-worker-summary">{activeRun.summary}</div> : null}
+                    {activeRun.steps.length > 0 ? (
+                      <ol className="ticket-worker-steps">
+                        {activeRun.steps.map((step) => (
+                          <li key={step.id} className={`ticket-worker-step step-${step.status}`}>
+                            <span className="ticket-worker-step-dot" aria-hidden="true" />
+                            <div className="ticket-worker-step-body">
+                              <span className="ticket-worker-step-tool mono">{step.tool}</span>
+                              <span className="ticket-worker-step-note">{step.rationale || WORKER_STEP_LABELS[step.status]}</span>
+                            </div>
+                            <span className={`ticket-worker-step-state step-state-${step.status}`}>{WORKER_STEP_LABELS[step.status]}</span>
+                          </li>
+                        ))}
+                      </ol>
+                    ) : null}
+                    {canManageWorkers ? (
+                      <div className="ticket-worker-actions">
+                        {activeRun.status === 'waiting_approval' ? (
+                          <>
+                            <button type="button" className="btn btn-primary btn-sm" disabled={workerActionBusy} onClick={() => void workerStepAction(activeRun.id, 'approve')}>Approve step</button>
+                            <button type="button" className="btn btn-ghost btn-sm" disabled={workerActionBusy} onClick={() => void workerStepAction(activeRun.id, 'deny')}>Deny</button>
+                          </>
+                        ) : null}
+                        <button type="button" className="btn btn-ghost btn-sm" disabled={workerActionBusy} onClick={() => void workerStepAction(activeRun.id, 'cancel')}>Cancel worker</button>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+                {!activeRun && terminalRun ? (
+                  <div className={`ticket-worker-run worker-${terminalRun.status}`}>
+                    <div className="ticket-worker-run-head">
+                      <span className={`status-pill worker-state-${terminalRun.status}`}>{WORKER_RUN_LABELS[terminalRun.status]}</span>
+                      <span className="ticket-worker-run-when mono">{formatWhen(terminalRun.finished_at ?? terminalRun.created_at)}</span>
+                    </div>
+                    {terminalRun.summary ? <div className="ticket-worker-summary">{terminalRun.summary}</div> : null}
+                  </div>
+                ) : null}
+                {!activeRun && !terminalRun ? (
+                  <div className="ticket-rail-empty">No AI worker runs on this ticket yet.</div>
+                ) : null}
+                {workerRuns && workerRuns.length > 1 ? (
+                  <span className="ticket-worker-history-note">
+                    {workerRuns.length} run{workerRuns.length === 1 ? '' : 's'} on this ticket
+                  </span>
+                ) : null}
+                {canStart ? (
+                  <button type="button" className="btn btn-secondary btn-sm ticket-worker-start" disabled={workerActionBusy} onClick={() => void startWorker()}>
+                    <Icon name="sparkles" size={14} />
+                    <span>{workerRuns && workerRuns.length > 0 ? 'Run AI worker again' : 'Run AI worker'}</span>
+                  </button>
+                ) : null}
+              </>
+            )
+          })()}
         </div>
 
         <div className="ticket-escalation-history">

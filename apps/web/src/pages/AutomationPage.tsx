@@ -90,6 +90,8 @@ export default function AutomationPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [workflowPrompt, setWorkflowPrompt] = useState('')
+  const [workflowDrafted, setWorkflowDrafted] = useState(false)
   const confirm = useConfirm()
 
   const load = useCallback(async () => {
@@ -108,6 +110,29 @@ export default function AutomationPage() {
     setEditing(null)
     setForm(EMPTY_FORM)
     setError(null)
+    setWorkflowDrafted(false)
+    setModalOpen(true)
+  }
+
+  // Turn common service-work descriptions into a safe, disabled-by-default
+  // automation draft. The administrator reviews the structured rule before
+  // anything is persisted or enabled.
+  const generateWorkflowDraft = () => {
+    const prompt = workflowPrompt.trim()
+    if (!prompt) return
+    const lower = prompt.toLowerCase()
+    const isDeviceAlert = lower.includes('disk') || lower.includes('cpu') || lower.includes('device offline') || lower.includes('device alert')
+    const isNewStarter = lower.includes('new employee') || lower.includes('new starter') || lower.includes('join')
+    const trigger: AutomationTrigger = isDeviceAlert ? (lower.includes('disk') ? 'device.low_disk' : 'device.offline') : 'ticket.created'
+    const name = isNewStarter ? 'New starter service workflow' : isDeviceAlert ? 'Device alert response workflow' : 'Generated service workflow'
+    const conditions: CondRow[] = isDeviceAlert ? [{ field: 'severity', op: 'neq', value: 'info' }] : []
+    const actions: ActionRow[] = isNewStarter
+      ? [{ type: 'add_note', value: `Onboarding workflow requested: ${prompt}` }, { type: 'notify', value: 'manager' }]
+      : [{ type: 'add_note', value: `Generated workflow request: ${prompt}` }, { type: 'notify', value: 'technician' }]
+    setEditing(null)
+    setForm({ name, trigger, enabled: false, conditions, actions })
+    setWorkflowDrafted(true)
+    setWorkflowPrompt('')
     setModalOpen(true)
   }
 
@@ -201,6 +226,13 @@ export default function AutomationPage() {
         actions={canManage ? <button className="btn btn-primary btn-sm" onClick={openCreate}><Icon name="add" size={14} />New automation</button> : undefined}
       />
 
+      {canManage ? (
+        <section className="workflow-generator panel">
+          <div className="workflow-generator-copy"><span className="etch">Describe the workflow</span><h2>Start with the outcome, not the nodes</h2><p>Describe a common service process in plain language. ReyDesk will create a disabled rule draft for review; it will not execute or enable anything automatically.</p></div>
+          <div className="workflow-generator-form"><textarea className="field-input" value={workflowPrompt} onChange={(event) => setWorkflowPrompt(event.target.value)} placeholder="When a new employee joins, create an onboarding task and notify their manager…" rows={3} /><button type="button" className="btn btn-primary" onClick={generateWorkflowDraft} disabled={!workflowPrompt.trim()}><Icon name="sparkles" size={15} />Generate draft</button></div>
+        </section>
+      ) : null}
+
       {error ? <Alert kind="error">{error}</Alert> : null}
       {notice ? <Alert kind="info">{notice}</Alert> : null}
 
@@ -232,7 +264,7 @@ export default function AutomationPage() {
       <Modal
         open={modalOpen}
         onClose={() => { if (!busy) { setModalOpen(false); setEditing(null); setForm(EMPTY_FORM) } }}
-        title={editing ? 'Edit automation' : 'New automation'}
+        title={workflowDrafted ? 'Review generated workflow draft' : editing ? 'Edit automation' : 'New automation'}
         width={640}
         footer={
           <>
@@ -252,10 +284,9 @@ export default function AutomationPage() {
               <select className="field-input" value={form.trigger} onChange={(e) => setForm({ ...form, trigger: e.target.value as AutomationTrigger })} disabled={!!editing}>
                 {TRIGGERS.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
-            </Field>
-            <Field label="Enabled">
-              <input type="checkbox" className="checkbox-field" checked={form.enabled} onChange={(e) => setForm({ ...form, enabled: e.target.checked })} />
-            </Field>
+            </Field>            <Field label="Enabled">
+                <input type="checkbox" className="checkbox-field" checked={form.enabled} onChange={(e) => setForm({ ...form, enabled: e.target.checked })} />
+              </Field>
           </div>
 
           <h3 className="channel-title" style={{ marginTop: 20 }}>When (all match)</h3>

@@ -41,9 +41,10 @@ export interface WorkerRun {
   device_name?: string | null
 }
 
-export function listWorkerRuns(status?: WorkerRunStatus): Promise<{ runs: WorkerRun[] }> {
+export function listWorkerRuns(status?: WorkerRunStatus, ticketId?: string): Promise<{ runs: WorkerRun[] }> {
   const params = new URLSearchParams()
   if (status) params.set('status', status)
+  if (ticketId) params.set('ticketId', ticketId)
   const qs = params.toString()
   return api(`/ai-worker/runs${qs ? `?${qs}` : ''}`)
 }
@@ -66,6 +67,98 @@ export function denyWorkerRun(id: string): Promise<{ run: WorkerRun }> {
 
 export function cancelWorkerRun(id: string): Promise<{ run: WorkerRun }> {
   return api(`/ai-worker/runs/${id}/cancel`, { method: 'POST' })
+}
+
+export interface IdentityCredential {
+  id: string
+  playbook_id: string
+  name: string
+  token_prefix: string
+  status: 'active' | 'revoked' | 'expired'
+  expires_at: string
+  last_used_at: string | null
+  usage_count: number
+  created_at: string
+  revoked_at: string | null
+}
+
+export interface Playbook {
+  id: string
+  name: string
+  description: string
+  category: string
+  trigger_keywords: string[]
+  system_prompt: string
+  max_steps: number
+  auto_approve_low_risk: boolean
+  enabled: boolean
+  usage_count: number
+  success_rate: number
+  machine_identity: string
+  allowed_tools: string[]
+  access_reviewed_at: string | null
+  access_reviewed_by: string | null
+  identity_status: 'active' | 'revoked'
+  identity_version: number
+  identity_rotated_at: string | null
+  identity_revoked_at: string | null
+  identity_revoked_reason: string | null
+}
+
+export function createPlaybook(body: {
+  name: string
+  description: string
+  category: string
+  trigger_keywords: string[]
+  system_prompt: string
+  max_steps: number
+  auto_approve_low_risk: boolean
+}): Promise<{ playbook: Playbook }> {
+  return api('/ai-playbooks', { method: 'POST', body })
+}
+
+export function getPlaybook(id: string): Promise<{ playbook: Playbook }> {
+  return api(`/ai-playbooks/${id}`)
+}
+
+export function listPlaybooks(): Promise<{ playbooks: Playbook[] }> {
+  return api('/ai-playbooks')
+}
+
+export function updatePlaybook(id: string, body: Partial<Omit<Playbook, 'id' | 'tenant_id' | 'usage_count' | 'success_rate'>>): Promise<{ playbook: Playbook }> {
+  return api(`/ai-playbooks/${id}`, { method: 'PATCH', body })
+}
+
+export function deletePlaybook(id: string): Promise<void> {
+  return api(`/ai-playbooks/${id}`, { method: 'DELETE' })
+}
+
+export function reviewPlaybookAccess(id: string): Promise<{ playbook: Playbook }> {
+  return api(`/ai-playbooks/${id}/access-review`, { method: 'POST', body: {} })
+}
+
+export function rotatePlaybookIdentity(id: string): Promise<{ playbook: Playbook }> {
+  return api(`/ai-playbooks/${id}/identity/rotate`, { method: 'POST', body: {} })
+}
+
+export function revokePlaybookIdentity(id: string, reason: string): Promise<{ playbook: Playbook }> {
+  return api(`/ai-playbooks/${id}/identity/revoke`, { method: 'POST', body: { reason } })
+}
+
+export function listIdentityCredentials(id: string): Promise<{ credentials: IdentityCredential[] }> {
+  return api(`/ai-playbooks/${id}/identity/credentials`)
+}
+
+export function issueIdentityCredential(id: string, body: { name: string; expiresInDays: number }): Promise<{ credential: IdentityCredential; token: string }> {
+  return api(`/ai-playbooks/${id}/identity/credentials`, { method: 'POST', body })
+}
+
+export function revokeIdentityCredential(id: string, credentialId: string): Promise<{ credential: IdentityCredential }> {
+  return api(`/ai-playbooks/${id}/identity/credentials/${credentialId}`, { method: 'DELETE' })
+}
+
+export function seedPlaybooks(): Promise<{ seeded: number; message: string }> {
+  return api('/ai-playbooks/seed', { method: 'POST', body: {} })
 }
 
 export const WORKER_RUN_LABELS: Record<WorkerRunStatus, string> = {

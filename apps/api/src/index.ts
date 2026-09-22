@@ -13,6 +13,7 @@ import { generateVapidKeyPair } from './modules/push/vapid.js'
 import { startSlaScheduler } from './modules/tickets/sla.js'
 import { startEscalationScheduler } from './modules/tickets/escalation.scheduler.js'
 import { startReminderScheduler } from './modules/tickets/reminders.routes.js'
+import { checkIdentityCredentialExpiry } from './modules/ai-worker/identity-credentials.js'
 
 function setting(name: string): string | undefined {
   return process.env[name]
@@ -133,6 +134,18 @@ async function main(): Promise<void> {
   }
   // Needs-attention digest: one combined email per owner/manager per day.
   // REYDESK_DIGEST_ENABLED=0 disables it entirely.
+  // AI worker credential expiry: notify tenant administrators within the
+  // seven-day window, once per credential per day.
+  let credentialExpiryBusy = false
+  const credentialExpiryTimer = setInterval(() => {
+    if (credentialExpiryBusy) return
+    credentialExpiryBusy = true
+    void checkIdentityCredentialExpiry(app.db, 7)
+      .catch(() => undefined)
+      .finally(() => { credentialExpiryBusy = false })
+  }, 3_600_000)
+  credentialExpiryTimer.unref()
+  console.log('[ai] worker credential expiry notices running (hourly; 7-day window)')
   if (app.config.digestEnabled) {
     let digestBusy = false
     const digestTimer = setInterval(() => {

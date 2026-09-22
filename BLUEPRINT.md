@@ -1,7 +1,7 @@
 # ReyDesk Blueprint
 
-> Last updated: 14 September 2026
-> Based on: ITSM/ESM Market Briefs (24 Aug - 14 Sep 2026)
+> Last updated: 21 September 2026
+> Based on: ITSM/ESM Market Briefs (24 Aug - 21 Sep 2026)
 
 ---
 
@@ -22,11 +22,19 @@ The ITSM market is moving from "AI-assisted ticketing" to **governed autonomous 
 | **Zendesk** | Employee Service AI agents in Slack, Teams, employee portal. Connects to SharePoint, Google Drive, Confluence. Automated-resolution pricing after Oct 2026 GA. | Zendesk is no longer purely customer-support — moving directly into IT/HR/employee-service. |
 | **ManageEngine** | Zia Agents with own knowledge, tools, guardrails. Session-level observability (tool calls, LLM calls, token usage, success rates). BYOK support. | Enterprise buyers want control + model choice + auditability. |
 | **HaloITSM** | No material September disruption. Still strong reference competitor for configurable ITSM/ESM. | The more dramatic movement is from ServiceNow, Atlassian, Freshworks, Zendesk, ManageEngine. |
+| **Atlassian (21 Sep)** | Rovo agents now invocable directly from JSM work items; automation templates trigger the Service Triage agent and write its output back into request fields. | AI must live inside the work item, not on a separate page — and AI output can become an automation trigger (intelligence → execution loop). |
+| **ServiceNow (21 Sep)** | Agent Advisor analyses instance data to find automation opportunities; visual agent canvas + side-by-side build/test in reimagined AI Agent Studio. | The barrier is shifting from "can AI do it" to "how much effort to find and deploy the right agents" — platforms that find the ROI for you win. |
+| **ServiceNow (21 Sep)** | AI, data, workflow, security and governance now included across the whole portfolio (no separate AI purchase); Context Engine provides enterprise context for agents. | AI is becoming platform architecture, not a module. Architecture must make AI a first-class citizen of data → workflow → permissions → execution → audit. |
+| **Freshworks (21 Sep)** | Explicit consumption pricing: Freshdesk Growth includes 500 Freddy AI sessions; extra sessions $49/100, MCP actions $15/1,000. Freshservice AI Copilot €29/agent. | Vendors now expose the raw cost of AI execution. ReyDesk should keep economics simple: subscription + generous allowance + optional packs. |
+| **Zendesk (21 Sep)** | Employee Service AI agents native in Slack, Teams, Help Center; GA ~Oct 2026; automated-resolution pricing applies when connected external knowledge is used. Suite Team starts at $29/agent. | The ITSM platform becomes the governed backend; chat tools and assistants are the front door. And Zendesk now overlaps the mid-market ITSM price band directly. |
+| **ManageEngine (21 Sep)** | Workflow Assist across all editions; Zia generates workflows from attached images; workflows pause/resume on events across related records, approvals, emails, worklogs. | AI is entering the workflow-construction layer: "describe the workflow you want" beats node-by-node administration. |
+| **Enterprise security (21 Sep)** | Agentic AI introduces machine identities, API access and permission risks; concerns centre on overprivileged agents and poor visibility into agent access. | Agent least-privilege, access visibility and per-action attribution are procurement questions now — governance is a sales feature, not a checkbox. |
 
 ### Enterprise buying signals
 
 - AI training is the #1 planned technology investment for next 12 months (Liferay research, Sep 2026)
 - 94% support AI on mainframe, but only 23% comfortable with AI acting independently (BMC survey, Sep 2026)
+- Security teams now flag agentic AI as an identity/access problem: overprivileged agents, invisible agent access, machine identities needing least-privilege treatment (Tenable/Express Computer, Sep 2026)
 - **Lesson:** Buyers want autonomy, but controlled autonomy. Don't sell "our AI can do anything." Sell "our AI can perform approved IT work automatically, within policies you control."
 
 ---
@@ -336,6 +344,17 @@ Atlassian charges $1 per successfully resolved CSM inquiry. This is too aggressi
 - [ ] Ollama/vLLM self-hosted support
 - [ ] Model performance dashboard
 
+### Phase 7: AI-Native Objects & Opportunity Centre (from 21 Sep brief)
+Market driver: Atlassian now invokes Rovo agents directly inside JSM work items, and ServiceNow's Agent Advisor finds automation ROI from instance data. AI must live where work happens, and the platform should find the ROI.
+- [x] AI actions inline on the ticket object (worker runs, triage, summaries, similar incidents, KB drafts)
+- [x] Approved AI outputs can become workflow inputs (similar incident → related-work link; KB draft → linked article; worker approval → resumed execution)
+- [x] AI Opportunity Centre: analyse historical tickets → rank candidates with transparent volume and adjustable automation assumptions
+- [x] Opportunity planning view with estimated automated tickets and hours saved, explicitly labelled as a planning estimate
+- [ ] Opportunity → one-click worker/playbook creation from a recommendation (currently routes to the worker workspace; creation wizard remains)
+- [x] Natural-language workflow description → safe structured automation draft for review (common new-starter and device-alert patterns; disabled by default)
+- [ ] Expand natural-language parsing with an AI provider and broader workflow/action coverage
+- [ ] Agent identity hardening: least-privilege machine identity per worker, per-agent access review view (enterprise security signal)
+
 ---
 
 ## Part 6: Competitive Positioning
@@ -398,3 +417,25 @@ Atlassian charges $1 per successfully resolved CSM inquiry. This is too aggressi
 7. ManageEngine Zia Agents — BYOK, session-level observability
 8. Liferay September 2026 Research — AI training as #1 investment
 9. BMC September 2026 Survey — Trust gap in AI autonomy
+10. Atlassian Sep 7–14 2026 rollout — Rovo agents invocable from JSM work items; Service Triage agent output drives automation templates
+11. ServiceNow Sep 2026 — Reimagined AI Agent Studio (Agent Advisor, visual canvas)
+12. ServiceNow 4 Sep 2026 — AI moved from add-on to platform architecture; Context Engine
+13. Freshworks Sep 2026 — Freddy AI session pricing ($49/100 sessions), MCP actions ($15/1,000)
+14. Zendesk Sep 2026 — Employee Service AI agents in Slack/Teams (Oct GA); Suite Team $29/agent
+15. ManageEngine Sep 2026 — Workflow Assist everywhere; Zia generates workflows from images; event-driven pause/resume
+16. Tenable/Express Computer Sep 2026 — Agentic AI identity & access risk signal
+
+---
+
+## Phase 7 completion: governed AI worker operations
+
+- AI Playbooks workspace provides review, seed, enable/disable, and deletion controls.
+- Every playbook carries a named machine identity and an explicit allowed-tool scope.
+- Access review records who reviewed the worker identity and when; unreviewed disabled drafts cannot be enabled.
+- Runtime actions remain subject to the tenant tool-permission matrix, approval gates, and immutable activity logging.
+- Identity lifecycle now supports versioned rotation and emergency revocation; rotation clears the prior access review and forces re-review before re-enablement.
+- Revocation immediately disables the playbook and records the operator's reason in the audit trail.
+- External identity credentials now have hashed storage, one-time secret display, configurable 1–365 day expiry, lazy expiry enforcement, usage count, last-used visibility, and explicit revocation controls.
+- MCP now accepts these credentials via `X-ReyDesk-API-Key` or Bearer auth with an explicit tenant header, rejects expired/revoked/disabled identities, updates usage metadata, and enforces each playbook's allowed-tool scope.
+- Credential expiry notifications now run hourly for the seven-day window and notify active tenant owners/managers once per credential per day, with normal notification preferences respected.
+- Future work: broader external API credential coverage beyond MCP.

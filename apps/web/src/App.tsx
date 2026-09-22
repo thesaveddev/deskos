@@ -11,6 +11,8 @@ import { clearLockedUser, onLockRequest, onLockStateChange, readPersistedLocked,
 const AiAgentPage = lazy(() => import('./pages/AiAgentPage.js'))
 const AiWorkersPage = lazy(() => import('./pages/AiWorkersPage.js'))
 const AiGovernancePage = lazy(() => import('./pages/AiGovernancePage.js'))
+const AiOpportunityPage = lazy(() => import('./pages/AiOpportunityPage.js'))
+const AiPlaybooksPage = lazy(() => import('./pages/AiPlaybooksPage.js'))
 const ApprovalsPage = lazy(() => import('./pages/ApprovalsPage.js'))
 const AssetsPage = lazy(() => import('./pages/AssetsPage.js'))
 const AutomationPage = lazy(() => import('./pages/AutomationPage.js'))
@@ -293,6 +295,8 @@ export default function App() {
       <Route path="/ai-agent" element={<Protected><AiAgentPage /></Protected>} />
       <Route path="/ai-workers" element={<Protected><AiWorkersPage /></Protected>} />
       <Route path="/ai-governance" element={<Protected><AiGovernancePage /></Protected>} />
+      <Route path="/ai-opportunities" element={<Protected><AiOpportunityPage /></Protected>} />
+      <Route path="/ai-playbooks" element={<Protected><AiPlaybooksPage /></Protected>} />
       <Route path="/sessions" element={<Protected><SessionsPage /></Protected>} />
       <Route path="/sessions/:id" element={<Protected><SessionConsolePage /></Protected>} />
       <Route path="/settings" element={<Protected><SettingsPage /></Protected>} />

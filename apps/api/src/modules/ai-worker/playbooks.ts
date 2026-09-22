@@ -13,6 +13,15 @@ export interface Playbook {
   max_steps: number
   auto_approve_low_risk: boolean
   enabled: boolean
+  machine_identity: string
+  allowed_tools: string[]
+  access_reviewed_at: string | null
+  access_reviewed_by: string | null
+  identity_status: 'active' | 'revoked'
+  identity_version: number
+  identity_rotated_at: string | null
+  identity_revoked_at: string | null
+  identity_revoked_reason: string | null
   usage_count: number
   success_rate: number
   created_at: string
@@ -28,10 +37,12 @@ export interface PlaybookPatch {
   max_steps?: number
   auto_approve_low_risk?: boolean
   enabled?: boolean
+  machine_identity?: string
+  allowed_tools?: string[]
 }
 
 /** Pre-built L1 playbooks that are seeded for every tenant on creation. */
-export const BUILT_IN_PLAYBOOKS: Array<Omit<Playbook, 'id' | 'tenant_id' | 'usage_count' | 'success_rate' | 'created_at' | 'updated_at'>> = [
+export const BUILT_IN_PLAYBOOKS: Array<Omit<Playbook, 'id' | 'tenant_id' | 'usage_count' | 'success_rate' | 'created_at' | 'updated_at' | 'machine_identity' | 'allowed_tools' | 'access_reviewed_at' | 'access_reviewed_by' | 'identity_status' | 'identity_version' | 'identity_rotated_at' | 'identity_revoked_at' | 'identity_revoked_reason'>> = [
   {
     name: 'Password Reset',
     description: 'Guide the user through a password reset for their account or connected directory.',
@@ -156,7 +167,7 @@ export async function getPlaybook(pool: DbPool, tenantId: string, playbookId: st
 export async function createPlaybook(
   pool: DbPool,
   tenantId: string,
-  data: { name: string; description: string; category: string; trigger_keywords: string[]; system_prompt: string; max_steps: number; auto_approve_low_risk: boolean },
+  data: { name: string; description: string; category: string; trigger_keywords: string[]; system_prompt: string; max_steps: number; auto_approve_low_risk: boolean; machine_identity?: string; allowed_tools?: string[] },
 ): Promise<Playbook> {
   return withTenant(pool, tenantId, async (client) => {
     const { rows } = await client.query(
@@ -188,6 +199,8 @@ export async function updatePlaybook(
     if (patch.max_steps !== undefined) { params.push(patch.max_steps); updates.push(`max_steps = $${params.length}`) }
     if (patch.auto_approve_low_risk !== undefined) { params.push(patch.auto_approve_low_risk); updates.push(`auto_approve_low_risk = $${params.length}`) }
     if (patch.enabled !== undefined) { params.push(patch.enabled); updates.push(`enabled = $${params.length}`) }
+    if (patch.machine_identity !== undefined) { params.push(patch.machine_identity); updates.push(`machine_identity = $${params.length}`) }
+    if (patch.allowed_tools !== undefined) { params.push(patch.allowed_tools); updates.push(`allowed_tools = $${params.length}`) }
     if (updates.length === 0) return current
     updates.push('updated_at = now()')
     const { rows } = await client.query(
@@ -257,6 +270,66 @@ export async function recordPlaybookUsage(
  * Seed built-in playbooks for a tenant. Called during tenant creation
  * or can be run manually to backfill.
  */
+export async function rotatePlaybookIdentity(
+  pool: DbPool,
+  tenantId: string,
+  playbookId: string,
+): Promise<Playbook> {
+  return withTenant(pool, tenantId, async (client) => {
+    const { rows } = await client.query(
+      `UPDATE ai_playbooks
+       SET identity_version = identity_version + 1,
+           identity_status = 'active',
+           identity_rotated_at = now(),
+           identity_revoked_at = NULL,
+           identity_revoked_reason = NULL,
+           access_reviewed_at = NULL,
+           access_reviewed_by = NULL,
+           updated_at = now()
+       WHERE id = $1 AND tenant_id = $2 RETURNING *`,
+      [playbookId, tenantId],
+    )
+    if (!rows[0]) throw AppError.notFound('Playbook not found')
+    return rows[0]
+  })
+}
+
+export async function revokePlaybookIdentity(
+  pool: DbPool,
+  tenantId: string,
+  playbookId: string,
+  reason: string,
+): Promise<Playbook> {
+  return withTenant(pool, tenantId, async (client) => {
+    const { rows } = await client.query(
+      `UPDATE ai_playbooks
+       SET identity_status = 'revoked', identity_revoked_at = now(), identity_revoked_reason = $3,
+           enabled = false, updated_at = now()
+       WHERE id = $1 AND tenant_id = $2 RETURNING *`,
+      [playbookId, tenantId, reason],
+    )
+    if (!rows[0]) throw AppError.notFound('Playbook not found')
+    return rows[0]
+  })
+}
+
+export async function reviewPlaybookAccess(
+  pool: DbPool,
+  tenantId: string,
+  playbookId: string,
+  reviewerId: string,
+): Promise<Playbook> {
+  return withTenant(pool, tenantId, async (client) => {
+    const { rows } = await client.query(
+      `UPDATE ai_playbooks SET access_reviewed_at = now(), access_reviewed_by = $3, updated_at = now()
+       WHERE id = $1 AND tenant_id = $2 RETURNING *`,
+      [playbookId, tenantId, reviewerId],
+    )
+    if (!rows[0]) throw AppError.notFound('Playbook not found')
+    return rows[0]
+  })
+}
+
 export async function seedBuiltInPlaybooks(pool: DbPool, tenantId: string): Promise<number> {
   return withTenant(pool, tenantId, async (client) => {
     let seeded = 0

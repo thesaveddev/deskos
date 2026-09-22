@@ -8,6 +8,7 @@ import {
   createWorkerRun,
   denyWorkerRun,
   getWorkerRun,
+  getPlaybook,
   listWorkerRuns,
   WORKER_RUN_LABELS,
   WORKER_STEP_LABELS,
@@ -31,6 +32,7 @@ export default function AiWorkersPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [draftPlaybook, setDraftPlaybook] = useState<import('../lib/ai-worker.js').Playbook | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -52,6 +54,12 @@ export default function AiWorkersPage() {
     }, 4000)
     return () => clearInterval(timer)
   }, [load])
+
+  useEffect(() => {
+    const playbookId = new URLSearchParams(window.location.search).get('playbook')
+    if (!playbookId) return
+    getPlaybook(playbookId).then((result) => setDraftPlaybook(result.playbook)).catch((err) => setError(err instanceof Error ? err.message : 'Could not load playbook draft'))
+  }, [])
 
   const act = async (fn: () => Promise<unknown>) => {
     setBusy(true)
@@ -92,6 +100,14 @@ export default function AiWorkersPage() {
       />
 
       {error ? <Alert kind="error">{error}</Alert> : null}
+      {draftPlaybook ? (
+        <section className="ai-worker-draft-review">
+          <div><span className="etch">Opportunity draft · disabled</span><h2>{draftPlaybook.name}</h2><p>{draftPlaybook.description}</p></div>
+          <div className="ai-worker-draft-meta"><span>{draftPlaybook.trigger_keywords.join(', ') || 'No trigger keywords'}</span><span>{draftPlaybook.max_steps} max steps</span><span>Approval required for risky actions</span></div>
+          <details><summary>Review worker instructions</summary><pre>{draftPlaybook.system_prompt}</pre></details>
+          <p className="muted">This draft is not enabled automatically. Test it, refine its instructions, and enable it only after reviewing permissions and approval policy.</p>
+        </section>
+      ) : null}
 
       <Panel
         title={anyActive ? 'Worker runs · live' : 'Worker runs'}

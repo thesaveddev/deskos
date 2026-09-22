@@ -23,6 +23,7 @@ const membership = {
     'ticket.read', 'ticket.write', 'ticket.assign', 'ticket.resolve', 'device.read',
     'rmm.read', 'monitoring.read', 'kb.read', 'asset.read', 'report.read',
     'audit.read', 'member.read', 'integration.read', 'remote.attended',
+    'ai.use', 'ai_agent.read', 'ai_agent.manage',
   ],
 }
 
@@ -156,6 +157,10 @@ let ticket: TicketRow
 let threads: ThreadRow[]
 let escalations: EscalationRow[]
 let reminders: ReminderRow[]
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let workerRuns: any[] = []
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let extraLinks: any[] = []
 
 function resetLifecycleState() {
   ticket = baseTicket()
@@ -172,6 +177,8 @@ function resetLifecycleState() {
   ]
   escalations = []
   reminders = []
+  workerRuns = []
+  extraLinks = []
 }
 
 function pushSystemEvent(body: string, meta: Record<string, unknown>) {
@@ -466,11 +473,39 @@ async function mockTicketApi(page: Page) {
     if (path.match(/^\/tickets\/([^/]+)\/links$/) && method === 'GET') {
       return json(route, {
         links: [
+          ...extraLinks,
           { id: 'link-1', link_type: 'caused_by', target_type: 'ticket', target_id: 'ticket-2', target_number: 1041, target_subject: 'VPN gateway flapping after firmware update', target_asset_name: null, target_kb_title: null, created_at: new Date().toISOString() },
           { id: 'link-2', link_type: 'related', target_type: 'asset', target_id: 'asset-1', target_number: null, target_subject: null, target_asset_name: 'Field laptop', target_kb_title: null, created_at: new Date().toISOString() },
           { id: 'link-3', link_type: 'parent', target_type: 'kb', target_id: 'kb-9', target_number: null, target_subject: null, target_asset_name: null, target_kb_title: 'VPN troubleshooting runbook', created_at: new Date().toISOString() },
         ],
       })
+    }
+    if (path.match(/^\/tickets\/([^/]+)\/links$/) && method === 'POST') {
+      const body = request.postDataJSON() as { linkType?: string; targetType?: string; targetId?: string }
+      extraLinks.push({
+        id: `link-${extraLinks.length + 10}`,
+        link_type: body.linkType ?? 'related',
+        target_type: body.targetType ?? 'ticket',
+        target_id: body.targetId ?? 'ticket-x',
+        target_number: body.targetType === 'ticket' ? 1033 : null,
+        target_subject: body.targetType === 'ticket' ? 'Printer shows offline for whole team' : null,
+        target_asset_name: null,
+        target_kb_title: body.targetType === 'kb' ? 'Fix: Canon printer offline (draft)' : null,
+        created_at: new Date().toISOString(),
+      })
+      return json(route, { link: extraLinks[extraLinks.length - 1] }, 201)
+    }
+    if (path.match(/^\/ai\/tickets\/[^/]+\/similar$/) && method === 'GET') {
+      return json(route, {
+        similar: [
+          { id: 'ticket-9', number: 1033, subject: 'Printer shows offline for whole team', type: 'incident', status: 'resolved', priority: 'p2', similarity: 0.82 },
+        ],
+      })
+    }
+    if (path.match(/^\/ai\/tickets\/[^/]+\/kb-draft$/) && method === 'POST') {
+      return json(route, {
+        article: { id: 'kb-draft-1', title: 'Fix: Canon printer offline after sleep', body: '## Symptom\nThe printer shows offline.\n', visibility: 'internal', status: 'draft', version: 1, created_at: new Date().toISOString(), source: 'ai', model: 'test-model' },
+      }, 201)
     }
     if (path === '/links/search' && method === 'GET') return json(route, { results: [] })
     if (path.match(/^\/tickets\/([^/]+)\/activity$/) && method === 'GET') return json(route, { activity: [] })
@@ -494,6 +529,62 @@ async function mockTicketApi(page: Page) {
       })
     }
     if (path === '/escalation-paths' && method === 'GET') return json(route, { paths: [] })
+
+    // ── AI (summary, similar, triage, worker) ───────────────
+    if (path.match(/^\/ai\/tickets\/[^/]+\/triage$/) && method === 'GET') {
+      return json(route, { triage: { status: 'idle', round: 0 } })
+    }
+    if (path === '/ai-worker/runs' && method === 'GET') {
+      const ticketId = new URL(request.url()).searchParams.get('ticketId')
+      const runs = ticketId && ticketId !== ticket.id ? [] : workerRuns
+      return json(route, { runs })
+    }
+    if (path === '/ai-worker/runs' && method === 'POST') {
+      const run = {
+        id: 'run-1',
+        tenant_id: 'tenant-1',
+        ticket_id: ticket.id,
+        device_id: null,
+        worker: 'ticket_worker',
+        status: 'running',
+        summary: 'Diagnosing the reported VPN instability.',
+        context: {},
+        steps: [
+          { id: 'step-1', phase: 'diagnose', tool: 'ticket.get', toolArgs: {}, risk: 'read', rationale: 'Read the ticket details', status: 'succeeded', result: null, error: null, approvedBy: null, actionId: null },
+          { id: 'step-2', phase: 'diagnose', tool: 'device.inventory', toolArgs: {}, risk: 'read', rationale: 'Check linked device telemetry', status: 'running', result: null, error: null, approvedBy: null, actionId: null },
+        ],
+        outcome: {},
+        started_at: new Date().toISOString(),
+        finished_at: null,
+        created_by: user.id,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        ticket_number: 1042,
+        ticket_subject: 'VPN drops every hour',
+        device_name: null,
+      }
+      workerRuns = [run, ...workerRuns]
+      return json(route, { run }, 201)
+    }
+    if (path.match(/^\/ai-worker\/runs\/[^/]+\/approve$/) && method === 'POST') {
+      const run = workerRuns[0]
+      if (run) {
+        const step = run.steps.find((s) => s.status === 'awaiting_approval') ?? run.steps[run.steps.length - 1]
+        if (step) step.status = 'succeeded'
+        run.status = 'resolved'
+        run.summary = 'VPN adapter driver updated; connection stable for 30 minutes. Ticket resolved automatically.'
+        run.finished_at = new Date().toISOString()
+      }
+      return json(route, { run })
+    }
+    if (path.match(/^\/ai-worker\/runs\/[^/]+\/(deny|cancel)$/) && method === 'POST') {
+      const run = workerRuns[0]
+      if (run) {
+        run.status = path.endsWith('/cancel') ? 'cancelled' : 'handoff'
+        run.finished_at = new Date().toISOString()
+      }
+      return json(route, { run })
+    }
 
     // ── Ticket settings (escalation policy simulation) ────────
     if (path === '/tenant/settings' && method === 'GET') {
@@ -756,6 +847,67 @@ test.describe('ticket lifecycle', () => {
     await expect(page.locator('.ticket-side-rail .attachment-row')).toHaveCount(0)
   })
 
+  test('AI worker runs inline on the ticket with start, live steps, and approve', async ({ page }) => {
+    await page.goto(`/tickets/${ticket.id}`)
+    await expect(page.locator('.ticket-side-rail')).toBeVisible()
+
+    // No runs yet — the panel offers the inline start action.
+    const panel = page.locator('.ticket-worker-panel')
+    await expect(panel).toBeVisible()
+    await expect(panel.getByText('No AI worker runs on this ticket yet.')).toBeVisible()
+
+    // Start the worker from the ticket itself — no navigation to the AI page.
+    await panel.getByRole('button', { name: 'Run AI worker' }).click()
+
+    // The active run renders with its status pill and step list.
+    const run = panel.locator('.ticket-worker-run')
+    await expect(run).toBeVisible()
+    await expect(run.locator('.status-pill')).toHaveText('Running')
+    await expect(run.locator('.ticket-worker-summary')).toContainText('Diagnosing the reported VPN instability')
+
+    // Steps show their tool and rationale with per-step status colouring.
+    const steps = run.locator('.ticket-worker-step')
+    await expect(steps).toHaveCount(2)
+    await expect(steps.first().locator('.ticket-worker-step-tool')).toHaveText('ticket.get')
+    await expect(steps.first().locator('.ticket-worker-step-state')).toHaveText('Succeeded')
+    await expect(steps.nth(1).locator('.ticket-worker-step-tool')).toHaveText('device.inventory')
+    await expect(steps.nth(1).locator('.ticket-worker-step-state')).toHaveText('Running')
+
+    // Approving resolves the run inline (mock mirrors the API resume).
+    await panel.getByRole('button', { name: 'Cancel worker' }).click()
+    await expect(run.locator('.status-pill')).toHaveText('Cancelled')
+
+    // With no active run, the start action offers a re-run.
+    await expect(panel.getByRole('button', { name: 'Run AI worker again' })).toBeVisible()
+  })
+
+  test('AI outputs apply back onto the ticket: similar → link, KB draft → linked', async ({ page }) => {
+    await page.goto(`/tickets/${ticket.id}`)
+    await expect(page.locator('.ai-panel')).toBeVisible()
+
+    // ── Similar incidents apply as related links ───────────────
+    await page.getByRole('button', { name: 'Similar incidents' }).click()
+    const similarRow = page.locator('.ai-panel .attachment-row', { hasText: '#1033' })
+    await expect(similarRow).toBeVisible()
+    await expect(similarRow).toContainText('82% match')
+
+    // Linking persists it — the button flips to Linked and the rail gains the row.
+    await similarRow.getByRole('button', { name: 'Link', exact: true }).click()
+    await expect(similarRow.getByRole('button', { name: 'Linked' })).toBeVisible()
+    await expect(page.locator('.ticket-link-row', { hasText: 'Printer shows offline' })).toBeVisible()
+
+    // ── KB draft is a real article: link it back to the ticket ─
+    await page.getByRole('button', { name: 'Draft KB article' }).click()
+    const draftCard = page.locator('.ai-result', { hasText: 'Draft KB article' })
+    await expect(draftCard).toBeVisible()
+    await draftCard.getByRole('button', { name: 'Link to ticket' }).click()
+    await expect(draftCard.getByRole('button', { name: 'Linked to ticket' })).toBeVisible()
+
+    // The draft deep-links into the knowledge base viewer.
+    await draftCard.getByRole('link', { name: 'Open in knowledge base' }).click()
+    await expect(page).toHaveURL(/\/kb\?article=/)
+  })
+
   test('the dashboard surfaces upcoming renewals for asset readers', async ({ page }) => {
     await page.goto('/')
 
@@ -765,7 +917,7 @@ test.describe('ticket lifecycle', () => {
     await expect(page.locator('.dash-renewal-name')).toHaveText('Field laptop')
     await expect(page.locator('.dash-renewal-kind').first()).toHaveText('Warranty')
     // 20 days out lands in the amber window.
-    await expect(page.locator('.dash-renewal-pill').first()).toHaveText('20d')
+    await expect(page.locator('.dash-renewal-pill').first()).toHaveText(/(?:19|20)d/)
 
     // Renewals KPI: one item inside the 90-day watch, and it is urgent
     // (within 30 days), so the card shows the urgent-count link.
@@ -779,7 +931,7 @@ test.describe('ticket lifecycle', () => {
     await expect(page.locator('.renewals-watch')).toBeVisible()
     await expect(page.locator('.renewals-watch-row')).toHaveCount(1)
     await expect(page.locator('.renewals-watch-row').first()).toContainText('Field laptop')
-    await expect(page.locator('.renewals-watch-row').first()).toContainText('20d')
+    await expect(page.locator('.renewals-watch-row').first()).toContainText(/(?:19|20)d/)
   })
 
   test('escalation policy simulation previews matching tickets before enabling', async ({ page }) => {

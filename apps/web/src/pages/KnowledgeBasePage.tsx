@@ -113,6 +113,13 @@ export default function KnowledgeBasePage() {
     return () => window.clearTimeout(timer)
   }, [load, q, tag])
 
+  // Deep link support: /kb?article=<id> opens the article viewer directly
+  // (used by ticket AI drafts linking back into the knowledge base).
+  const deepLinkArticleId = useMemo(() => new URLSearchParams(window.location.search).get('article'), [])
+  useEffect(() => {
+    if (deepLinkArticleId) void openArticle(deepLinkArticleId)
+  }, [deepLinkArticleId])
+
   const resetListPage = () => setPagination((current) => ({ ...current, page: 1 }))
 
   function startNew() {

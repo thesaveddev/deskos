@@ -22,6 +22,7 @@ export const NOTIFICATION_KINDS = [
   'session.adhoc.claimed',
   'automation',
   'ai_worker.approval',
+  'ai_worker.credential_expiry',
   'membership.invited',
   'service.approval',
   'service.approval_decided',

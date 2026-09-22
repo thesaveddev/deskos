@@ -30,6 +30,12 @@ export interface DeviceContext {
   tenantId: string
 }
 
+export interface AiCredentialContext {
+  id: string
+  playbookId: string
+  allowedTools: string[]
+}
+
 export interface OAuthContext {
   clientId: string
   tenantId: string
@@ -53,6 +59,7 @@ declare module 'fastify' {
     tenantCtx?: TenantContext
     deviceCtx?: DeviceContext
     oauthCtx?: OAuthContext
+    aiCredential?: AiCredentialContext
     /** W3C trace id (32 hex chars), set by the tracing hook. */
     traceId?: string
     /** W3C span id (16 hex chars), set by the tracing hook. */
