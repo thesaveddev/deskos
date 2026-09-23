@@ -82,6 +82,13 @@ export function markChatRoomRead(roomId: string, messageId?: string | number): P
   return api(`/chat/rooms/${roomId}/read`, { method: 'POST', body: messageId === undefined ? {} : { messageId } })
 }
 
+export function fetchChatUnread(): Promise<{ total_unread: number }> {
+  return api('/chat/unread-summary')
+}
+
+/** Dispatched whenever chat read state changes so the shell badge refetches. */
+export const CHAT_UNREAD_REFRESH_EVENT = 'reydesk:chat-unread-refresh'
+
 export function sendChatMessage(roomId: string, body: string): Promise<{ message: ChatMessage }> {
   return api(`/chat/rooms/${roomId}/messages`, { method: 'POST', body: { body } })
 }

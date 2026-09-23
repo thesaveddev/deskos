@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Shell } from '../components/Shell.js'
 import { Alert, Modal } from '../components/ui.js'
 import { Icon } from '../components/Icons.js'
-import { addChatRoomMember, createChatRoom, deleteChatMessage, downloadChatAttachment, editChatMessage, listChatMessages, listChatRoomMembers, listChatRooms, markChatRoomRead, removeChatRoomMember, sendChatMessage, sendChatMessageWithFile, type ChatMessage, type ChatRoom, type ChatRoomMember, type ChatRoomMembershipInfo } from '../lib/chat.js'
-import { connectChatWebSocket, type ChatRealtimeMessage } from '../lib/chatRealtime.js'
+import { addChatRoomMember, CHAT_UNREAD_REFRESH_EVENT, createChatRoom, deleteChatMessage, downloadChatAttachment, editChatMessage, listChatMessages, listChatRoomMembers, listChatRooms, markChatRoomRead, removeChatRoomMember, sendChatMessage, sendChatMessageWithFile, type ChatMessage, type ChatRoom, type ChatRoomMember, type ChatRoomMembershipInfo } from '../lib/chat.js'
+import { connectChatWebSocket, type ChatRealtimeConnection, type ChatRealtimeMessage } from '../lib/chatRealtime.js'
 import { api } from '../lib/api.js'
 import { useAuth } from '../lib/auth.js'
 
@@ -39,6 +39,14 @@ function withinDeleteWindow(iso: string): boolean {
   return !Number.isNaN(created) && Date.now() - created <= 60 * 60 * 1000
 }
 
+function typingLabel(names: string[]): string {
+  const unique = [...new Set(names)]
+  if (unique.length === 1) return `${unique[0]} is typing…`
+  if (unique.length === 2) return `${unique[0]} and ${unique[1]} are typing…`
+  const head = unique.slice(0, -1).join(', ')
+  return `${head} and ${unique[unique.length - 1]} are typing…`
+}
+
 export default function ChatPage() {
   const user = useAuth((s) => s.user)
   const tenantId = useAuth((s) => s.activeTenantId)
@@ -62,6 +70,10 @@ export default function ChatPage() {
   const [memberBusy, setMemberBusy] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState('')
+  const [typingNames, setTypingNames] = useState<Record<string, string>>({})
+  const connRef = useRef<ChatRealtimeConnection | null>(null)
+  const typingTimersRef = useRef<Record<string, number>>({})
+  const lastTypingSentRef = useRef(0)
   const threadRef = useRef<HTMLDivElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const activeRoomRef = useRef<string | null>(null)
@@ -98,6 +110,30 @@ export default function ChatPage() {
     try {
       await markChatRoomRead(roomId)
     } catch { /* retried the next time the room is viewed */ }
+    window.dispatchEvent(new Event(CHAT_UNREAD_REFRESH_EVENT))
+  }, [])
+
+  // Someone else started typing in this room: keep their entry alive for
+  // four seconds after the last event, then drop it.
+  const seenTyping = useCallback((info: { userId: string; name: string | null }) => {
+    if (info.userId === user?.id) return
+    const label = info.name?.trim() || 'Someone'
+    setTypingNames((prev) => ({ ...prev, [info.userId]: label }))
+    const timers = typingTimersRef.current
+    if (timers[info.userId] !== undefined) window.clearTimeout(timers[info.userId])
+    timers[info.userId] = window.setTimeout(() => {
+      setTypingNames((prev) => {
+        const next = { ...prev }
+        delete next[info.userId]
+        return next
+      })
+      delete timers[info.userId]
+    }, 4000)
+  }, [user?.id])
+
+  useEffect(() => () => {
+    for (const timer of Object.values(typingTimersRef.current)) window.clearTimeout(timer)
+    typingTimersRef.current = {}
   }, [])
 
   useEffect(() => { void loadRooms() }, [loadRooms])
@@ -118,15 +154,26 @@ export default function ChatPage() {
   useEffect(() => {
     if (!tenantId || !activeRoomId) return
 
-    const unsub = connectChatWebSocket({
+    const conn = connectChatWebSocket({
       roomId: activeRoomId,
       tenantId,
       onConnected: () => {
         const roomId = activeRoomRef.current
         if (roomId) void loadMessages(roomId)
       },
+      onTyping: seenTyping,
       onMessage: (msg: ChatRealtimeMessage) => {
         if (msg.type === 'chat.message' && msg.message) {
+          // The sender stopped typing the moment their message landed.
+          const senderId = msg.message.sender_id
+          if (senderId) {
+            setTypingNames((prev) => {
+              if (!(senderId in prev)) return prev
+              const next = { ...prev }
+              delete next[senderId]
+              return next
+            })
+          }
           // Append the new message to state (avoid duplicate by id)
           setMessages((prev) => {
             const exists = prev.some((m) => String(m.id) === String(msg.message!.id))
@@ -147,8 +194,13 @@ export default function ChatPage() {
         }
       },
     })
-    return unsub
-  }, [tenantId, activeRoomId, loadRooms, loadMessages, markRoomRead])
+    connRef.current = conn
+    return () => {
+      connRef.current = null
+      conn.close()
+      setTypingNames({})
+    }
+  }, [tenantId, activeRoomId, loadRooms, loadMessages, markRoomRead, seenTyping])
 
   useEffect(() => {
     threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: 'smooth' })
@@ -444,12 +496,29 @@ export default function ChatPage() {
               >
                 {dragActive ? <div className="chat-drop-hint"><Icon name="upload" size={16} />Drop file to attach</div> : null}
                 {selectedFile ? <div className="chat-selected-file"><Icon name="file" size={14} /><span>{selectedFile.name}</span><small>{formatBytes(selectedFile.size)}</small><button type="button" className="icon-btn" aria-label="Remove attachment" title="Remove attachment" onClick={() => { setSelectedFile(null); if (fileInputRef.current) fileInputRef.current.value = '' }}><Icon name="close" size={14} /></button></div> : null}
+                <div className="chat-typing-row" aria-live="polite">
+                  {Object.keys(typingNames).length > 0 ? (
+                    <>
+                      <span className="chat-typing-dots" aria-hidden="true"><i /><i /><i /></span>
+                      <span className="chat-typing-label">{typingLabel(Object.values(typingNames))}</span>
+                    </>
+                  ) : null}
+                </div>
                 <textarea
                   className="composer-input"
                   rows={2}
                   placeholder="Write a message…"
                   value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
+                  onChange={(e) => {
+                    setDraft(e.target.value)
+                    if (e.target.value.trim()) {
+                      const now = Date.now()
+                      if (now - lastTypingSentRef.current > 2000) {
+                        lastTypingSentRef.current = now
+                        connRef.current?.sendTyping()
+                      }
+                    }
+                  }}
                   onKeyDown={(e) => {
                     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') void send()
                   }}

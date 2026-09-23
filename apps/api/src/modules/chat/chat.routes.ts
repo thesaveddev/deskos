@@ -18,6 +18,22 @@ const messageSchema = z.object({ body: z.string().trim().min(1).max(4000) })
 const readMarkerSchema = z.object({ messageId: z.union([z.string(), z.number()]).optional() })
 const CHAT_FILE_MAX_BYTES = 10 * 1024 * 1024
 const MESSAGE_AUTHOR_WINDOW_MS = 60 * 60 * 1000
+// Rooms a user may see: team rooms they belong to, organization rooms until
+// restricted, restricted rooms they were added to, plus manager override.
+// Shared by the room list and the unread summary so the badge can never
+// count activity from a room the user cannot open.
+const ROOM_VISIBILITY_WHERE = `(
+  r.team_id IS NULL
+  AND (
+    NOT EXISTS (SELECT 1 FROM chat_room_members crm WHERE crm.room_id = r.id)
+    OR r.created_by = $1
+    OR $1 IN (SELECT crm.user_id FROM chat_room_members crm WHERE crm.room_id = r.id)
+    OR $2 IN ('owner', 'it_manager', 'service_desk_manager')
+  )
+)
+OR ($1 IN (SELECT tm.user_id FROM team_members tm WHERE tm.team_id = r.team_id))
+OR $2 IN ('owner', 'it_manager', 'service_desk_manager')
+OR r.created_by = $1`
 
 function sanitizeFilename(name: string): string {
   const base = path.basename(name).replace(/[^\w.\- ()[\]]+/g, '_').slice(0, 180)
@@ -50,22 +66,29 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
            FROM chat_rooms r
            LEFT JOIN teams t ON t.id = r.team_id
            LEFT JOIN chat_room_reads cr ON cr.room_id = r.id AND cr.user_id = $1
-          WHERE (
-            r.team_id IS NULL
-            AND (
-              NOT EXISTS (SELECT 1 FROM chat_room_members crm WHERE crm.room_id = r.id)
-              OR r.created_by = $1
-              OR $1 IN (SELECT crm.user_id FROM chat_room_members crm WHERE crm.room_id = r.id)
-              OR $2 IN ('owner', 'it_manager', 'service_desk_manager')
-            )
-          )
-             OR ($1 IN (SELECT tm.user_id FROM team_members tm WHERE tm.team_id = r.team_id))
-             OR $2 IN ('owner', 'it_manager', 'service_desk_manager')
-             OR r.created_by = $1
+          WHERE ${ROOM_VISIBILITY_WHERE}
           ORDER BY COALESCE((SELECT max(m.created_at) FROM chat_messages m WHERE m.room_id = r.id), r.created_at) DESC`,
         [request.user!.id, ctx.orgRole],
       )
       return { rooms: rows }
+    })
+  })
+
+  app.get('/chat/unread-summary', { preHandler: read }, async (request) => {
+    const ctx = request.tenantCtx!
+    return withTenant(app.db, ctx.tenantId, async (client) => {
+      const { rows } = await client.query(
+        `SELECT COALESCE(SUM((
+                 SELECT count(*) FROM chat_messages m
+                  WHERE m.room_id = r.id
+                    AND m.created_at > COALESCE(cr.last_read_at, '-infinity'::timestamptz)
+               )), 0)::int AS total_unread
+          FROM chat_rooms r
+          LEFT JOIN chat_room_reads cr ON cr.room_id = r.id AND cr.user_id = $1
+         WHERE ${ROOM_VISIBILITY_WHERE}`,
+        [request.user!.id, ctx.orgRole],
+      )
+      return { total_unread: Number(rows[0]?.total_unread ?? 0) }
     })
   })
 

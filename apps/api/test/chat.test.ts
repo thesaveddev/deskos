@@ -295,6 +295,37 @@ describe('team chat', () => {
     expect(denied.statusCode).toBe(403)
   })
 
+  it('summarises unread only across rooms the user can see', async () => {
+    const created = await app.inject({ method: 'POST', url: '/api/v1/chat/rooms', headers: authHeaders(owner), payload: { name: 'Locked summary room' } })
+    expect(created.statusCode).toBe(201)
+    const lockedRoomId = created.json().room.id as string
+    await app.inject({ method: 'POST', url: `/api/v1/chat/rooms/${lockedRoomId}/members`, headers: authHeaders(owner), payload: { userId: analyst.userId } })
+    await app.inject({ method: 'POST', url: `/api/v1/chat/rooms/${lockedRoomId}/messages`, headers: authHeaders(analyst), payload: { body: 'restricted one' } })
+    await app.inject({ method: 'POST', url: `/api/v1/chat/rooms/${lockedRoomId}/messages`, headers: authHeaders(analyst), payload: { body: 'restricted two' } })
+
+    // The engineer cannot even list the restricted room…
+    const engineerRooms = await app.inject({ method: 'GET', url: '/api/v1/chat/rooms', headers: authHeaders(engineer) })
+    expect(engineerRooms.statusCode).toBe(200)
+    expect((engineerRooms.json().rooms as Array<{ id: string }>).some((room) => room.id === lockedRoomId)).toBe(false)
+
+    // …so the summary must equal the unread sum of exactly the rooms they
+    // can see — never including the restricted room's two messages.
+    const expected = (engineerRooms.json().rooms as Array<{ unread_count: number | string }>)
+      .reduce((sum, room) => sum + Number(room.unread_count ?? 0), 0)
+    const engineerSummary = await app.inject({ method: 'GET', url: '/api/v1/chat/unread-summary', headers: authHeaders(engineer) })
+    expect(engineerSummary.statusCode).toBe(200)
+    expect(engineerSummary.json().total_unread).toBe(expected)
+
+    // The owner (creator and manager) does see the locked room's messages.
+    const ownerSummary = await app.inject({ method: 'GET', url: '/api/v1/chat/unread-summary', headers: authHeaders(owner) })
+    expect(ownerSummary.statusCode).toBe(200)
+    expect(ownerSummary.json().total_unread).toBeGreaterThanOrEqual(2)
+
+    // End users are denied outright.
+    const denied = await app.inject({ method: 'GET', url: '/api/v1/chat/unread-summary', headers: authHeaders(endUser) })
+    expect(denied.statusCode).toBe(403)
+  })
+
   it('isolates rooms and messages between tenants', async () => {
     const list = await app.inject({ method: 'GET', url: `/api/v1/chat/rooms/${roomId}/messages`, headers: authHeaders(foreign) })
     expect(list.statusCode).toBe(404)

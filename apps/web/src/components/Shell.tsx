@@ -11,6 +11,7 @@ import { createAdhocSession, emailAdhocSession } from '../lib/sessions.js'
 import { Icon } from './Icons.js'
 import { readSessionDock, sessionDockEventName, type SessionDockEntry } from '../lib/sessions.js'
 import { listNotifications, markNotificationsRead, openNotificationStream, type AppNotification } from '../lib/notifications.js'
+import { CHAT_UNREAD_REFRESH_EVENT, fetchChatUnread } from '../lib/chat.js'
 import { BRAND } from '../lib/brand.js'
 import { dismissTicketReminder, listTicketReminders, updateTicketReminder, type TicketReminder } from '../lib/tickets.js'
 
@@ -124,7 +125,7 @@ const NAV_ICON_MAP: Record<string, string> = {
 }
 
 /** Categorised sidebar navigation, driven by the caller's permissions. */
-function NavSections() {
+function NavSections({ chatUnread }: { chatUnread: number }) {
   const auth = useAuth()
   const location = useLocation()
   const perms = new Set(auth.memberships.flatMap((m) => m.permissions))
@@ -236,6 +237,9 @@ function NavSections() {
               >
                 <NavIcon name={NAV_ICON_MAP[item.to] ?? 'dashboard'} />
                 {item.label}
+                {item.to === '/chat' && chatUnread > 0 ? (
+                  <span className="nav-unread-badge" aria-label={`${chatUnread} unread chat messages`}>{chatUnread > 99 ? '99+' : chatUnread}</span>
+                ) : null}
               </NavLink>
             ))}
           </div>
@@ -257,6 +261,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [notifications, setNotifications] = useState<AppNotification[]>([])
   const [notificationsLoading, setNotificationsLoading] = useState(false)
+  const [chatUnread, setChatUnread] = useState(0)
   const [reminderAlert, setReminderAlert] = useState<{ notification: AppNotification; reminder: TicketReminder } | null>(null)
   const [reminderActionBusy, setReminderActionBusy] = useState(false)
   const [quickTicketOpen, setQuickTicketOpen] = useState(false)
@@ -333,6 +338,39 @@ export function Shell({ children }: { children: ReactNode }) {
     }
   }, [auth.activeTenantId, auth.user?.id])
 
+  const loadChatUnread = useCallback(async () => {
+    try {
+      const summary = await fetchChatUnread()
+      setChatUnread(summary.total_unread)
+    } catch { /* the badge retries on the next tick */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth.activeTenantId])
+
+  // Global unread badge: loads on mount, ticks every minute, refreshes when
+  // the tab returns to focus, when chat read state changes anywhere in the
+  // app, and immediately when a chat message notification streams in.
+  useEffect(() => {
+    if (!perms.has('chat.read')) {
+      setChatUnread(0)
+      return
+    }
+    void loadChatUnread()
+    const fallbackTimer = window.setInterval(() => void loadChatUnread(), 60 * 1000)
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void loadChatUnread()
+    }
+    const onChatRefresh = () => void loadChatUnread()
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener(CHAT_UNREAD_REFRESH_EVENT, onChatRefresh)
+    return () => {
+      window.clearInterval(fallbackTimer)
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener(CHAT_UNREAD_REFRESH_EVENT, onChatRefresh)
+    }
+  // loadChatUnread is stable for the active tenant; perms is derived per render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth.activeTenantId, loadChatUnread])
+
   useEffect(() => {
     void loadNotifications()
     const tenantId = auth.activeTenantId
@@ -343,6 +381,7 @@ export function Shell({ children }: { children: ReactNode }) {
       onNotification: (notification) => {
         setNotifications((items) => [notification, ...items.filter((item) => item.id !== notification.id)].slice(0, 100))
         void showReminderAlert(notification)
+        if (notification.kind === 'chat.message') void loadChatUnread()
       },
     })
     // Safety nets on top of the SSE stream: a slow refresh keeps the badge
@@ -360,7 +399,7 @@ export function Shell({ children }: { children: ReactNode }) {
     }
   // showReminderAlert is stable and is declared below with the other actions.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [auth.activeTenantId, auth.user?.id, loadNotifications])
+  }, [auth.activeTenantId, auth.user?.id, loadNotifications, loadChatUnread])
 
   const unreadNotifications = notifications.filter((notification) => !notification.read_at)
   const markNotificationRead = async (id: string) => {
@@ -434,7 +473,7 @@ export function Shell({ children }: { children: ReactNode }) {
           <span className="brand">{BRAND.name}</span>
         </div>
         <nav className="nav-items" onClick={() => setNavOpen(false)}>
-          <NavSections />
+          <NavSections chatUnread={chatUnread} />
         </nav>
         <div className="nav-footer">
           <span className="etch">{BRAND.name} IT Support OS</span>

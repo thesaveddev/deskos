@@ -1,7 +1,9 @@
 import { getAccessToken } from './api.js'
 
 export interface ChatRealtimeMessage {
-  type: 'chat.message' | 'chat.message.updated' | 'connected' | 'disconnected'
+  type: 'chat.message' | 'chat.message.updated' | 'chat.typing' | 'connected' | 'disconnected'
+  userId?: string
+  name?: string | null
   roomId?: string
   message?: {
     id: string | number
@@ -19,19 +21,30 @@ export interface ChatRealtimeMessage {
       created_at: string
     }>
   }
-  userId?: string
+}
+
+export interface ChatRealtimeTyping {
+  userId: string
+  name: string | null
 }
 
 export interface ChatRealtimeOptions {
   roomId: string
   tenantId: string
   onMessage: (message: ChatRealtimeMessage) => void
+  onTyping?: (typing: ChatRealtimeTyping) => void
   onConnected?: () => void
   onDisconnected?: () => void
   onError?: (error: Event) => void
 }
 
-export function connectChatWebSocket(options: ChatRealtimeOptions): () => void {
+export interface ChatRealtimeConnection {
+  close: () => void
+  /** Tell the room the local user is typing (throttled server-side). */
+  sendTyping: () => void
+}
+
+export function connectChatWebSocket(options: ChatRealtimeOptions): ChatRealtimeConnection {
   let socket: WebSocket | null = null
   let stopped = false
   let retryTimer: number | undefined
@@ -67,6 +80,8 @@ export function connectChatWebSocket(options: ChatRealtimeOptions): () => void {
           options.onConnected?.()
         } else if (data.type === 'disconnected') {
           options.onDisconnected?.()
+        } else if (data.type === 'chat.typing') {
+          if (data.userId) options.onTyping?.({ userId: data.userId, name: data.name ?? null })
         } else {
           options.onMessage(data)
         }
@@ -92,14 +107,21 @@ export function connectChatWebSocket(options: ChatRealtimeOptions): () => void {
 
   connect()
 
-  return () => {
-    stopped = true
-    if (retryTimer !== undefined) {
-      window.clearTimeout(retryTimer)
-    }
-    if (socket) {
-      socket.close()
-      socket = null
-    }
+  return {
+    close: () => {
+      stopped = true
+      if (retryTimer !== undefined) {
+        window.clearTimeout(retryTimer)
+      }
+      if (socket) {
+        socket.close()
+        socket = null
+      }
+    },
+    sendTyping: () => {
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        try { socket.send(JSON.stringify({ type: 'chat.typing' })) } catch { /* closing */ }
+      }
+    },
   }
 }

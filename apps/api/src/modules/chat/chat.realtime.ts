@@ -14,11 +14,15 @@ type ChatSubscriber = {
   roomId: string
   userId: string
   tenantId: string
+  name: string | null
   alive: boolean
+  lastTypingAt: number
   send: (data: string) => void
   ping: () => void
   isAlive: () => boolean
 }
+
+const TYPING_MIN_INTERVAL_MS = 1_500
 
 const subscribers = new Map<string, ChatSubscriber>()
 
@@ -57,9 +61,9 @@ export async function chatRealtimeRoutes(app: FastifyInstance): Promise<void> {
   let pgListener: import('../../db/pool.js').DbClient | null = null
   let heartbeat: ReturnType<typeof setInterval> | null = null
 
-  function fanOut(tenantId: string, roomId: string, payload: string): void {
+  function fanOut(tenantId: string, roomId: string, payload: string, excludeUserId?: string): void {
     for (const [, sub] of subscribers) {
-      if (sub.tenantId === tenantId && sub.roomId === roomId && sub.isAlive()) {
+      if (sub.tenantId === tenantId && sub.roomId === roomId && sub.isAlive() && sub.userId !== excludeUserId) {
         try {
           sub.send(payload)
         } catch { /* connection may have closed */ }
@@ -137,9 +141,12 @@ export async function chatRealtimeRoutes(app: FastifyInstance): Promise<void> {
           }
 
           const membership = (await client.query(
-            'SELECT org_role FROM memberships WHERE tenant_id = $1 AND user_id = $2 AND status = $3',
+            `SELECT m.org_role, u.name
+               FROM memberships m
+               JOIN users u ON u.id = m.user_id
+              WHERE m.tenant_id = $1 AND m.user_id = $2 AND m.status = $3`,
             [tenantId, userId, 'active'],
-          )).rows[0] as { org_role: OrgRole } | undefined
+          )).rows[0] as { org_role: OrgRole; name: string | null } | undefined
           // Mirrors the REST route gates: active staff membership plus the
           // chat.read permission (end users are denied at the permission
           // layer, exactly like GET /chat/rooms).
@@ -155,7 +162,9 @@ export async function chatRealtimeRoutes(app: FastifyInstance): Promise<void> {
             roomId,
             userId,
             tenantId,
+            name: membership?.name ?? null,
             alive: true,
+            lastTypingAt: 0,
             send: (data) => { socket.send(data) },
             ping: () => { socket.ping() },
             isAlive: () => socket.readyState === 1,
@@ -170,6 +179,22 @@ export async function chatRealtimeRoutes(app: FastifyInstance): Promise<void> {
           socket.on('message', async (raw: Buffer) => {
             try {
               const msg = JSON.parse(raw.toString()) as Record<string, unknown>
+              if (msg.type === 'chat.typing') {
+                // Ephemeral presence: rate-limited per socket, forwarded only
+                // to other room members, and gated on chat.write so read-only
+                // observers cannot inject typing noise.
+                if (!roleHasAll(orgRole, ['chat.write'])) return
+                const now = Date.now()
+                if (now - sub.lastTypingAt < TYPING_MIN_INTERVAL_MS) return
+                sub.lastTypingAt = now
+                fanOut(
+                  tenantId,
+                  roomId,
+                  JSON.stringify({ type: 'chat.typing', roomId, userId, name: sub.name }),
+                  userId,
+                )
+                return
+              }
               if (msg.type !== 'chat.send' || typeof msg.body !== 'string') return
               const body = msg.body.trim()
               if (!body || body.length > 4000) return
