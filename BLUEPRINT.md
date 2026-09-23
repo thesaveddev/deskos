@@ -438,4 +438,4 @@ Market driver: Atlassian now invokes Rovo agents directly inside JSM work items,
 - External identity credentials now have hashed storage, one-time secret display, configurable 1–365 day expiry, lazy expiry enforcement, usage count, last-used visibility, and explicit revocation controls.
 - MCP now accepts these credentials via `X-ReyDesk-API-Key` or Bearer auth with an explicit tenant header, rejects expired/revoked/disabled identities, updates usage metadata, and enforces each playbook's allowed-tool scope.
 - Credential expiry notifications now run hourly for the seven-day window and notify active tenant owners/managers once per credential per day, with normal notification preferences respected.
-- Future work: broader external API credential coverage beyond MCP.
+- Future work: broader external API credential coverage beyond MCP, including credential-scoped worker triggers and read-only REST tools.

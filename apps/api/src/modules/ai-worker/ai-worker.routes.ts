@@ -1,10 +1,12 @@
 import { z } from 'zod'
 import type { FastifyInstance } from 'fastify'
 import { recordAudit } from '../../core/audit.js'
+import { AppError } from '../../core/errors.js'
 import { withTenant } from '../../db/pool.js'
 import { authenticate } from '../../middleware/authenticate.js'
 import { requirePermission } from '../../middleware/requirePermission.js'
 import { requireTenant } from '../../middleware/requireTenant.js'
+import { authenticateExternalAi } from './external-auth.js'
 import { createTenantAiProvider } from '../ai/settings.js'
 import { createAiProvider } from '../ai/gateway.js'
 import { createWorkerRun, listWorkerRuns, getWorkerRun, cancelWorkerRun, approveWorkerStep, denyWorkerStep, getWorkerRunTimeSeries, WORKER_RUN_STATUSES } from './engine.js'
@@ -24,6 +26,23 @@ const listQuerySchema = z.object({
 export async function aiWorkerRoutes(app: FastifyInstance): Promise<void> {
   const read = [authenticate, requireTenant, requirePermission('ai_agent.read')]
   const manage = [authenticate, requireTenant, requirePermission('ai_agent.manage')]
+
+  app.get('/ai-worker/external/identity', { preHandler: authenticateExternalAi }, async (request) => {
+    if (!request.aiCredential || !request.tenantCtx) throw new AppError(403, 'ai_credential_required', 'This endpoint requires an AI worker credential.')
+    const identity = await withTenant(app.db, request.tenantCtx.tenantId, async (client) => {
+      const result = await client.query(
+        `SELECT c.id, c.name, c.token_prefix, c.status, c.expires_at, c.last_used_at, c.usage_count,
+                p.id AS playbook_id, p.name AS playbook_name, p.category, p.identity_version, p.allowed_tools
+           FROM ai_worker_identity_credentials c
+           JOIN ai_playbooks p ON p.id = c.playbook_id
+          WHERE c.id = $1 AND c.tenant_id = $2`,
+        [request.aiCredential!.id, request.tenantCtx!.tenantId],
+      )
+      return result.rows[0]
+    })
+    if (!identity) throw new AppError(401, 'ai_credential_invalid', 'Credential identity not found.')
+    return { identity: { ...identity, allowed_tools: request.aiCredential.allowedTools } }
+  })
 
   app.get('/ai-worker/metrics', { preHandler: read }, async (request) => {
     const ctx = request.tenantCtx!
