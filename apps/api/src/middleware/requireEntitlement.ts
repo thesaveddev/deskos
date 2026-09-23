@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { AppError } from '../core/errors.js'
+import { withTenant, type DbPool } from '../db/pool.js'
 
 /**
  * Entitlement guard – enforces plan limits (technicians, devices) at the API
@@ -15,7 +16,8 @@ import { AppError } from '../core/errors.js'
  *     has been reached.
  *
  * Paid plans enforce their published limits. Tenants without a subscription
- * use the no-card Free experience and are not blocked by paid-plan guards.
+ * run on the no-card Free experience and are capped at the Free tier
+ * (FREE_CAPS), so marketing and enforcement always agree.
  */
 
 const FREE_CAPS = { technicians: 3, devices: 100 }
@@ -28,17 +30,16 @@ export function requireEntitlement(type: EntitlementType) {
     if (!tenantId) return // requireTenant should run first
 
     const result = await resolvePlan(request.server.db, tenantId)
-    // No subscription is the no-card Free experience. It remains available
-    // without payment and is intentionally uncapped until a paid plan is
-    // selected; paid plans enforce their published limits below.
-    if (!result.hasSubscription) return
     const limit = type === 'technicians' ? result.max_technicians : result.max_devices
     const current = await countUsage(request.server.db, tenantId, type)
 
     if (limit >= 0 && current >= limit) {
-      throw AppError.forbidden(
-        `${type === 'technicians' ? 'Technician' : 'Device'} limit reached (${current}/${limit}) on the ${result.name} plan. Upgrade to add more.`,
+      // AppError.forbidden hard-codes `permission_denied`; entitlement failures
+      // need their own code so clients can offer an upgrade path.
+      throw new AppError(
+        403,
         'plan_limit_exceeded',
+        `${type === 'technicians' ? 'Technician' : 'Device'} limit reached (${current}/${limit}) on the ${result.name} plan. Upgrade to add more.`,
       )
     }
   }
@@ -48,7 +49,7 @@ export function requireEntitlement(type: EntitlementType) {
  * Return current plan info for the subscription overview.
  * Used by the billing settings page and internal checks.
  */
-export async function getEntitlementInfo(db: { query: (sql: string, params: unknown[]) => Promise<{ rows: Record<string, unknown>[] }> }, tenantId: string): Promise<{
+export async function getEntitlementInfo(db: DbPool, tenantId: string): Promise<{
   planName: string
   planSlug: string
   maxTechnicians: number
@@ -105,23 +106,32 @@ async function resolvePlan(
 }
 
 async function countUsage(
-  db: { query: (sql: string, params: unknown[]) => Promise<{ rows: Record<string, unknown>[] }> },
+  db: DbPool,
   tenantId: string,
   type: EntitlementType,
 ): Promise<number> {
   if (type === 'technicians') {
-    // Active members with technician-relevant roles (everything except portal-only 'customer')
+    // Staff members who count toward the cap: active members with
+    // technician-relevant roles (everything except portal-only 'customer')
+    // plus pending invitations — an over-invited workspace must not slip
+    // past the cap by inviting first and accepting later.
     const rows = (await db.query(
       `SELECT count(*)::int AS n FROM memberships
-        WHERE tenant_id = $1 AND status = 'active' AND org_role <> 'customer'`,
+        WHERE tenant_id = $1
+          AND status IN ('active', 'invited')
+          AND org_role <> 'customer'`,
       [tenantId],
     )).rows
     return Number(rows[0]?.n ?? 0)
   }
-  // Devices: non-adhoc enrolled devices
-  const rows = (await db.query(
-    `SELECT count(*)::int AS n FROM devices WHERE tenant_id = $1 AND adhoc = false`,
-    [tenantId],
-  )).rows
-  return Number(rows[0]?.n ?? 0)
+  // Devices: non-adhoc enrolled devices. The devices table uses FORCE row
+  // security with a missing-ok tenant policy, so a plain pool query outside
+  // the tenant transaction sees zero rows — count inside withTenant.
+  return withTenant(db, tenantId, async (client) => {
+    const rows = (await client.query(
+      `SELECT count(*)::int AS n FROM devices WHERE tenant_id = $1 AND adhoc = false`,
+      [tenantId],
+    )).rows
+    return Number(rows[0]?.n ?? 0)
+  })
 }

@@ -13,6 +13,7 @@ import {
     listInvoices, listPaymentMethods, removePaymentMethod, setDefaultPaymentMethod,
     createCheckoutInvoice, confirmGatewayCheckout, activateManualSubscription,
     getBillingSettings, setBillingSettings, makeReference, cancelGatewaySubscription,
+    countBillableSeats,
   } from './billing.service.js'
 import type { BillingConfig } from '../../config.js'
 
@@ -61,7 +62,15 @@ export async function billingRoutes(app: FastifyInstance) {
     const ctx = req.tenantCtx!
     const body = (req.body ?? {}) as { plan?: string; billing_cycle?: string }
     const cycle = body.billing_cycle === 'annual' ? 'annual' : 'monthly'
-    const subscription = await createSubscription(app.db, ctx.tenantId, body.plan || 'free', cycle)
+    const planSlug = body.plan || 'free'
+    // Paid and Enterprise plans activate only through hosted checkout or an
+    // offline invoice — direct activation would bypass payment.
+    if (planSlug !== 'free') {
+      return reply.code(403).send({
+        error: { code: 'upgrade_requires_checkout', message: 'Paid plans are activated through secure checkout or an offline invoice. Start checkout from the Plans tab.' },
+      })
+    }
+    const subscription = await createSubscription(app.db, ctx.tenantId, planSlug, cycle)
     return reply.code(201).send({ subscription })
   })
 
@@ -69,6 +78,11 @@ export async function billingRoutes(app: FastifyInstance) {
     const ctx = req.tenantCtx!
     const body = (req.body ?? {}) as { plan?: string }
     if (!body.plan) return reply.code(400).send({ error: { code: 'plan_required', message: 'plan is required' } })
+    if (body.plan !== 'free') {
+      return reply.code(403).send({
+        error: { code: 'upgrade_requires_checkout', message: 'Paid plans are activated through secure checkout or an offline invoice. Start checkout from the Plans tab.' },
+      })
+    }
     const subscription = await changePlan(app.db, ctx.tenantId, body.plan)
     if (!subscription) return reply.code(404).send({ error: { code: 'no_subscription', message: 'No active subscription found' } })
     return reply.send({ subscription })
@@ -171,14 +185,18 @@ export async function billingRoutes(app: FastifyInstance) {
       return reply.code(503).send({ error: { code: 'gateway_unavailable', message: 'No payment gateway is configured for this region yet. Use offline payment.' } })
     }
 
-    const { amountCents, currency } = convertUsdCents(
+    // Per-seat pricing: convert the per-seat price, then multiply by the
+    // workspace's billable technician count.
+    const seats = await countBillableSeats(app.db, ctx.tenantId)
+    const { amountCents: perSeatCents, currency } = convertUsdCents(
       cycle === 'annual' ? plan.price_annual_cents : plan.price_monthly_cents,
       country,
     )
+    const amountCents = perSeatCents * seats
     const reference = makeReference()
     await createCheckoutInvoice(app.db, ctx.tenantId, {
       planName: plan.name, planSlug: plan.slug, billingCycle: cycle,
-      gateway: gatewaySlug, reference, amountCents, currency,
+      gateway: gatewaySlug, reference, amountCents, seats, currency,
     })
 
     const tenant = (await app.db.query('SELECT name FROM tenants WHERE id = $1', [ctx.tenantId])).rows[0] as { name: string } | undefined
@@ -189,7 +207,8 @@ export async function billingRoutes(app: FastifyInstance) {
       email: req.user!.email,
       planSlug: plan.slug,
       planName: plan.name,
-      amountCents,
+      amountCents: perSeatCents,
+      seats,
       currency,
       billingCycle: cycle,
       country,
@@ -204,10 +223,10 @@ export async function billingRoutes(app: FastifyInstance) {
     // Offline checkout: activate immediately, keep the invoice open for the
     // bank transfer, and tell the web app not to redirect to a gateway.
     if (gatewaySlug === 'manual') {
-      await activateManualSubscription(app.db, ctx.tenantId, plan.slug, cycle)
-      return reply.send({ url: checkout.url, reference, gateway: gatewaySlug, country, currency, confirmed: true })
+      await activateManualSubscription(app.db, ctx.tenantId, plan.slug, cycle, seats)
+      return reply.send({ url: checkout.url, reference, gateway: gatewaySlug, country, currency, seats, confirmed: true })
     }
-    return reply.send({ url: checkout.url, reference, gateway: gatewaySlug, country, currency })
+    return reply.send({ url: checkout.url, reference, gateway: gatewaySlug, country, currency, seats })
   })
 
   // Verify after the customer returns from the hosted checkout.

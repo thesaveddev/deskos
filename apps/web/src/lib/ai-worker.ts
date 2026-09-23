@@ -41,6 +41,26 @@ export interface WorkerRun {
   device_name?: string | null
 }
 
+export interface AiWorkerMetrics {
+  total: number
+  resolved: number
+  escalated: number
+  failed: number
+  resolutionRate: number
+  estimatedManualMinutes: number
+  timeSavedMinutes: number
+  totalCostUsd: number
+  avgCostPerResolution: number
+  avgConfidence: number
+  totalInputTokens: number
+  totalOutputTokens: number
+}
+
+/** Tenant-wide worker outcomes — dashboard and reports summary. */
+export function getAiWorkerMetrics(): Promise<{ metrics: AiWorkerMetrics }> {
+  return api('/ai-worker/metrics')
+}
+
 export function listWorkerRuns(status?: WorkerRunStatus, ticketId?: string): Promise<{ runs: WorkerRun[] }> {
   const params = new URLSearchParams()
   if (status) params.set('status', status)

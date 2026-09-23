@@ -96,7 +96,7 @@ export default function BillingPage() {
   useEffect(() => {
     Promise.allSettled([
       listPlans(), getSubscription(), getEntitlement(), listInvoices(), listPaymentMethods(), getBillingMeta(),
-      fetch('/api/v1/members').then((r) => r.json() as Promise<{ members?: unknown[] }>),
+      fetch('/api/v1/members').then((r) => r.json() as Promise<{ members?: Array<{ org_role?: string; status?: string }> }>),
       fetch('/api/v1/devices?pageSize=1').then((r) => r.json() as Promise<{ total?: number }>),
     ]).then(([p, s, e, i, pm, m, mem, d]) => {
       if (p.status === 'fulfilled') setPlans(p.value.plans)
@@ -105,7 +105,10 @@ export default function BillingPage() {
       if (i.status === 'fulfilled') setInvoices(i.value.invoices)
       if (pm.status === 'fulfilled') setMethods(pm.value.methods)
       if (m.status === 'fulfilled') { setMeta(m.value); setRegionDraft(m.value.country || m.value.detectedCountry || 'US') }
-      if (mem.status === 'fulfilled') setStaffCount(mem.value.members?.length ?? 0)
+      if (mem.status === 'fulfilled') {
+        // Billable seats = active non-customer members (mirrors countBillableSeats).
+        setStaffCount(mem.value.members?.filter((m) => m.status === 'active' && m.org_role !== 'customer').length ?? 0)
+      }
       if (d.status === 'fulfilled') setDeviceCount(d.value.total ?? 0)
     }).finally(() => setLoading(false))
 
@@ -227,18 +230,18 @@ export default function BillingPage() {
             <h2 className="b-hero-plan-name">{currentPlan?.name || 'Free'}</h2>
             <StatusPill status={sub?.status ?? 'active'} />
           </div>
-          <p className="b-hero-desc">{sub ? (currentPlan?.description ?? 'Your organization plan and usage.') : 'No payment is required. Your organization can use ReyDesk without a subscription; paid-plan limits apply only after you choose a paid plan.'}</p>
+          <p className="b-hero-desc">{sub ? (currentPlan?.description ?? 'Your organization plan and usage.') : 'No payment is required to start. The Free plan includes up to 3 technicians and 100 devices; upgrade when your team grows.'}</p>
           <div className="b-hero-meta">
-            {sub && entitlement ? <span><Icon name="check" size={13} />{entitlement.maxTechnicians < 0 ? 'Unlimited' : `${entitlement.maxTechnicians}`} technicians</span> : null}
-            {sub && entitlement ? <span><Icon name="check" size={13} />{entitlement.maxDevices < 0 ? 'Unlimited' : `${entitlement.maxDevices}`} devices</span> : null}
+            {entitlement ? <span><Icon name="check" size={13} />{entitlement.maxTechnicians < 0 ? 'Unlimited' : `${entitlement.maxTechnicians}`} technicians</span> : null}
+            {entitlement ? <span><Icon name="check" size={13} />{entitlement.maxDevices < 0 ? 'Unlimited' : `${entitlement.maxDevices}`} devices</span> : null}
             {!sub ? <span><Icon name="check" size={13} />No paid subscription required</span> : null}
             {sub ? <span><Icon name="clock" size={13} />Renews {new Date(sub.current_period_end).toLocaleDateString()}</span> : null}
             {sub?.trial_ends_at && sub.status === 'trialing' ? <span><Icon name="clock" size={13} />Trial ends {new Date(sub.trial_ends_at!).toLocaleDateString()}</span> : null}
           </div>
         </div>
         <div className="b-hero-usage">
-          <UsageBar label="Technicians" used={staffCount} max={sub ? (entitlement?.maxTechnicians ?? currentPlan?.max_technicians ?? 3) : 0} />
-          <UsageBar label="Devices" used={deviceCount} max={sub ? (entitlement?.maxDevices ?? currentPlan?.max_devices ?? 100) : 0} />
+          <UsageBar label="Technicians" used={staffCount} max={entitlement?.maxTechnicians ?? currentPlan?.max_technicians ?? 3} />
+          <UsageBar label="Devices" used={deviceCount} max={entitlement?.maxDevices ?? currentPlan?.max_devices ?? 100} />
         </div>
         <div className="b-hero-actions">
           {isOwner && <button className="btn btn-primary btn-sm" onClick={() => setTab('plans')}><Icon name="settings" size={14} />Manage plan</button>}
@@ -260,7 +263,7 @@ export default function BillingPage() {
       {tab === 'analytics' && isOwner ? <AnalyticsTab analytics={analytics} loading={analyticsLoading} currency={currency} /> : null}
 
       {/* ── Plans ────────────────────────────────────────── */}
-      {tab === 'plans' && <PlansTab plans={plans} sub={sub} cycle={cycle} setCycle={setCycle} isOwner={isOwner} changing={changing} price={price} localizedPrice={localizedPrice} currency={currency} onChangePlan={handleChangePlan} onCheckout={openCheckout} />}
+      {tab === 'plans' && <PlansTab plans={plans} sub={sub} cycle={cycle} setCycle={setCycle} isOwner={isOwner} changing={changing} price={price} localizedPrice={localizedPrice} currency={currency} onChangePlan={handleChangePlan} onCheckout={openCheckout} seats={Math.max(1, staffCount)} />}
 
       {/* ── Payment ──────────────────────────────────────── */}
       {tab === 'payment' && <PaymentTab methods={methods} meta={meta} isOwner={isOwner} regionDraft={regionDraft} setRegionDraft={setRegionDraft} savingRegion={savingRegion} saveRegion={saveRegion} onRemove={handleRemoveCard} onSetDefault={handleSetDefault} onPlans={() => setTab('plans')} />}
@@ -288,7 +291,7 @@ export default function BillingPage() {
           <div className="modal b-checkout-modal" onClick={(e) => e.stopPropagation()}>
             <h3 className="modal-title">Checkout — {checkoutPlan.name}</h3>
             <p className="modal-desc">
-              {formatCents(localizedPrice(checkoutPlan).amountCents, localizedPrice(checkoutPlan).currency)}/{cycle === 'annual' ? 'mo, billed annually' : 'month'}
+              {formatCents(localizedPrice(checkoutPlan).amountCents, localizedPrice(checkoutPlan).currency)} per tech × {Math.max(1, staffCount)} = {formatCents(localizedPrice(checkoutPlan).amountCents * Math.max(1, staffCount), localizedPrice(checkoutPlan).currency)}/{cycle === 'annual' ? 'mo, billed annually' : 'month'}
               {sub ? ' · plan upgrades on payment.' : ' · starts your subscription today.'}
             </p>
             <div className="b-checkout-region">
@@ -377,10 +380,10 @@ function OverviewTab({ currentPlan, sub, usedFeatures, meta, isOwner, setTab }: 
 
 /* ── Plans tab ─────────────────────────────────────────────────── */
 
-function PlansTab({ plans, sub, cycle, setCycle, isOwner, changing, price, localizedPrice, currency, onChangePlan, onCheckout }: {
+function PlansTab({ plans, sub, cycle, setCycle, isOwner, changing, price, localizedPrice, currency, onChangePlan, onCheckout, seats }: {
   plans: Plan[]; sub: Subscription | null; cycle: 'monthly' | 'annual'; setCycle: (c: 'monthly' | 'annual') => void;
   isOwner: boolean; changing: string | null; price: (p: Plan) => number; localizedPrice: (p: Plan) => { amountCents: number; currency: string }; currency: string;
-  onChangePlan: (slug: string) => void; onCheckout: (plan: Plan) => void;
+  onChangePlan: (slug: string) => void; onCheckout: (plan: Plan) => void; seats: number;
 }) {
   return (
     <div className="b-plans">
@@ -402,8 +405,8 @@ function PlansTab({ plans, sub, cycle, setCycle, isOwner, changing, price, local
               <h3 className="b-plan-name">{plan.name}</h3>
               <p className="b-plan-desc">{plan.description}</p>
               <div className="b-plan-price">
-                {p === 0 ? 'Free' : <><span className="b-plan-amount">{formatCents(localizedPrice(plan).amountCents, localizedPrice(plan).currency)}</span><span className="b-plan-period">/{cycle === 'annual' ? 'mo' : 'month'}</span></>}
-                {p !== 0 && cycle === 'annual' && <span className="b-plan-billed">billed annually</span>}
+                {p === 0 ? 'Free' : <><span className="b-plan-amount">{formatCents(localizedPrice(plan).amountCents, localizedPrice(plan).currency)}</span><span className="b-plan-period">/{cycle === 'annual' ? 'mo' : 'month'} per tech</span></>}
+                {p !== 0 && <span className="b-plan-billed">{seats} × {formatCents(localizedPrice(plan).amountCents, localizedPrice(plan).currency)} = {formatCents(localizedPrice(plan).amountCents * seats, localizedPrice(plan).currency)}/{cycle === 'annual' ? 'mo' : 'month'}{cycle === 'annual' ? ', billed annually' : ''}</span>}
               </div>
               <ul className="b-plan-features">
                 {plan.features.map((f, i) => <li key={i}><Icon name="check" size={13} />{f}</li>)}
@@ -423,7 +426,7 @@ function PlansTab({ plans, sub, cycle, setCycle, isOwner, changing, price, local
           <div className="b-plan-price"><span className="b-plan-amount">Custom</span></div>
           <ul className="b-plan-features">
             <li><Icon name="check" size={13} />Everything in Pro</li>
-            <li><Icon name="check" size={13} />SAML SSO + SCIM</li>
+            <li><Icon name="check" size={13} />Multi-tenant MSP console</li>
             <li><Icon name="check" size={13} />Custom integrations</li>
             <li><Icon name="check" size={13} />Dedicated support</li>
           </ul>

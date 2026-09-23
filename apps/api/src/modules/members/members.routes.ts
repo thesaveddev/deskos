@@ -10,6 +10,7 @@ import { authenticate } from '../../middleware/authenticate.js'
 import { requirePermission } from '../../middleware/requirePermission.js'
 import { requireTenant } from '../../middleware/requireTenant.js'
 import { requireEntitlement } from '../../middleware/requireEntitlement.js'
+import { syncSubscriptionSeats } from '../billing/billing.service.js'
 import '../../types.js'
 
 const inviteSchema = z.object({
@@ -102,6 +103,12 @@ export async function memberRoutes(app: FastifyInstance): Promise<void> {
       [ctx.tenantId, userId, role, membershipStatus, request.user!.id],
     )
 
+    // An invitation that activates an existing user immediately changes the
+    // billable seat count; never let a gateway hiccup fail the invite itself.
+    await syncSubscriptionSeats(app.db, app.config.billing, ctx.tenantId).catch((err: unknown) => {
+      app.log.warn({ err, membershipId: membership.rows[0].id }, 'seat sync after invite failed')
+    })
+
     await withTenant(app.db, ctx.tenantId, async (client) => {
       await recordAudit(client, ctx.tenantId, {
         actorId: request.user!.id,
@@ -169,6 +176,12 @@ export async function memberRoutes(app: FastifyInstance): Promise<void> {
     if (sets.length === 0) throw AppError.badRequest('Nothing to update')
     values.push(membershipId)
     await app.db.query(`UPDATE memberships SET ${sets.join(', ')} WHERE id = $${values.length}`, values)
+
+    // Status/role changes can add or remove a billable seat (disable, restore,
+    // customer ↔ technician) — keep the provider quantity in step.
+    await syncSubscriptionSeats(app.db, app.config.billing, ctx.tenantId).catch((err: unknown) => {
+      app.log.warn({ err, membershipId }, 'seat sync after member update failed')
+    })
 
     await withTenant(app.db, ctx.tenantId, (client) =>
       recordAudit(client, ctx.tenantId, {
@@ -296,6 +309,9 @@ export async function memberRoutes(app: FastifyInstance): Promise<void> {
     }
 
     await app.db.query('DELETE FROM memberships WHERE id = $1', [membershipId])
+    await syncSubscriptionSeats(app.db, app.config.billing, ctx.tenantId).catch((err: unknown) => {
+      app.log.warn({ err, membershipId }, 'seat sync after member removal failed')
+    })
     await withTenant(app.db, ctx.tenantId, (client) =>
       recordAudit(client, ctx.tenantId, {
         actorId: request.user!.id,

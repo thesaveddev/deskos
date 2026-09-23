@@ -86,19 +86,23 @@ export class PaystackGateway implements PaymentGateway {
     return json.data as T
   }
 
-  private planCode(planSlug: string, cycle: 'monthly' | 'annual', currency: string): string {
-    return `reydesk_${planSlug}_${cycle}_${currency.toUpperCase()}`
+  // Paystack plans carry a fixed amount, so the seat count is encoded in the
+  // plan code: each seat count gets its own plan (reydesk_starter_monthly_NGN_s3).
+  private planCode(planSlug: string, cycle: 'monthly' | 'annual', currency: string, seats: number): string {
+    return `reydesk_${planSlug}_${cycle}_${currency.toUpperCase()}_s${Math.max(1, seats)}`
   }
 
   private async ensurePlan(input: CheckoutInput): Promise<string> {
-    const code = this.planCode(input.planSlug, input.billingCycle, input.currency)
+    const seats = Math.max(1, input.seats)
+    const code = this.planCode(input.planSlug, input.billingCycle, input.currency, seats)
+    const totalAmount = input.amountCents * seats
     try {
       const existing = await this.request<{ plan_code: string }>('GET', `/plan/${code}`)
       return existing.plan_code
     } catch {
       const created = await this.request<{ plan_code: string }>('POST', '/plan', {
-        name: `ReyDesk ${input.planName} (${input.billingCycle})`,
-        amount: input.amountCents,
+        name: `ReyDesk ${input.planName} (${input.billingCycle}, ${seats} seat${seats === 1 ? '' : 's'})`,
+        amount: totalAmount,
         interval: input.billingCycle === 'annual' ? 'annually' : 'monthly',
         currency: input.currency,
         plan_code: code,
@@ -109,12 +113,13 @@ export class PaystackGateway implements PaymentGateway {
 
   async createCheckout(input: CheckoutInput): Promise<CheckoutResult> {
     const plan = await this.ensurePlan(input)
+    const seats = Math.max(1, input.seats)
     const data = await this.request<{ authorization_url: string; reference: string }>(
       'POST',
       '/transaction/initialize',
       {
         email: input.email,
-        amount: input.amountCents,
+        amount: input.amountCents * seats,
         currency: input.currency,
         plan,
         reference: input.reference,

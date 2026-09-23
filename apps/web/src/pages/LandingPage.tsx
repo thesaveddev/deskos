@@ -392,11 +392,11 @@ export default function LandingPage() {
           </article>
           <article className="landing-feature gradient-border">
             <h3 style={{ color: 'var(--accent)' }}>Pro — $79/tech/mo</h3>
-            <p>Unlimited technicians and 500 devices. Full RMM, governed AI assistance, patch management, and automations.</p>
+            <p>Unlimited technicians and 5,000 devices. Full RMM, governed AI assistance, patch management, and automations.</p>
           </article>
           <article className="landing-feature">
             <h3>Enterprise</h3>
-            <p>Custom pricing for MSPs and larger teams that need multi-tenant controls, SSO, and dedicated support.</p>
+            <p>Custom pricing for MSPs and larger teams that need multi-tenant controls and dedicated support.</p>
           </article>
         </div>
         <div style={{ textAlign: 'center', marginTop: 28 }}>

@@ -37,8 +37,10 @@ export interface CheckoutInput {
   email: string
   planSlug: string
   planName: string
-  /** Price in local currency cents (already converted). */
+  /** Per-seat price in local currency cents (already converted). */
   amountCents: number
+  /** Billable technician seats. Gateways multiply where the provider prices per-seat. */
+  seats: number
   currency: string
   billingCycle: 'monthly' | 'annual'
   country: string
@@ -85,6 +87,8 @@ export interface PaymentGateway {
   methods(country?: string): GatewayMethodInfo[]
   createCheckout(input: CheckoutInput): Promise<CheckoutResult>
   verify(reference: string): Promise<VerifyResult>
+  /** Keep the provider-side seat quantity in sync after membership changes. */
+  updateSubscriptionSeats?(subscriptionId: string, seats: number): Promise<void>
   /** Validate provider signature and map to a normalized WebhookEvent. */
   handleWebhook(rawBody: string, signature: string): WebhookEvent | null
   cancelSubscription(subscriptionId: string): Promise<void>

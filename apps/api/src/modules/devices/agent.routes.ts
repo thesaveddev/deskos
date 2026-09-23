@@ -128,7 +128,8 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
     const credentialType = tokenRow.rows[0]?.credential_type as 'fleet_token' | 'enrol_code' | undefined
     if (!tenantId || !credentialType) throw AppError.unauthorized('Invalid, expired, or already used enrollment code')
 
-    // Enforce device plan cap (skip for fleet-token re-enrolments and free-tier tenants)
+    // Enforce device plan cap (fleet-token re-enrolments skip; subscription-less
+    // workspaces run on the Free tier's 100-device cap).
     if (credentialType === 'enrol_code') {
       const planRow = (await app.db.query(
         `SELECT p.max_devices FROM tenant_subscriptions s
@@ -137,18 +138,23 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
           ORDER BY s.created_at DESC LIMIT 1`,
         [tenantId],
       )).rows[0]
-      if (planRow) {
-        const deviceCap = Number(planRow.max_devices) || 10
-        const currentCount = (await app.db.query(
+      const rawCap = planRow ? Number(planRow.max_devices) : 100
+      const deviceCap = rawCap < 0 ? Number.POSITIVE_INFINITY : rawCap > 0 ? rawCap : 100
+      // devices has FORCE row security with a missing-ok tenant policy: a
+      // plain pool query outside the tenant transaction sees zero rows.
+      const currentCount = await withTenant(app.db, tenantId, async (client) => {
+        const res = await client.query(
           'SELECT count(*)::int AS n FROM devices WHERE tenant_id = $1 AND adhoc = false',
           [tenantId],
-      )).rows[0]?.n as number
-        if (currentCount >= deviceCap) {
-          throw AppError.forbidden(
-            `Device limit reached (${currentCount}/${deviceCap}) on this plan. Upgrade to add more endpoints.`,
-            'plan_limit_exceeded',
-          )
-        }
+        )
+        return Number(res.rows[0]?.n ?? 0)
+      })
+      if (currentCount >= deviceCap) {
+        throw new AppError(
+          403,
+          'plan_limit_exceeded',
+          `Device limit reached (${currentCount}/${deviceCap}) on this plan. Upgrade to add more endpoints.`,
+        )
       }
     }
 

@@ -21,6 +21,7 @@ export interface Subscription {
   plan_slug: string
   status: string
   billing_cycle: string
+  seats: number
   trial_ends_at: string | null
   current_period_start: string
   current_period_end: string
@@ -35,6 +36,7 @@ export interface Invoice {
   number: string
   status: string
   amount_cents: number
+  seats: number | null
   currency: string
   description: string
   due_date: string | null

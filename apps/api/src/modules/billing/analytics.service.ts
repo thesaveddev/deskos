@@ -104,8 +104,9 @@ async function getMrrSnapshot(db: DbPool): Promise<MrrSnapshot> {
              AND status IN ('active', 'trialing')) AS new_month
     )
     SELECT
-      COALESCE(SUM(CASE WHEN billing_cycle = 'monthly' THEN price_monthly_cents
-                        ELSE price_annual_cents / 12 END), 0)::bigint AS mrr_cents,
+      COALESCE(SUM(CASE WHEN billing_cycle = 'monthly'
+                        THEN price_monthly_cents * COALESCE(seats, 1)
+                        ELSE price_annual_cents * COALESCE(seats, 1) / 12 END), 0)::bigint AS mrr_cents,
       counts.active_count,
       counts.trial_count,
       counts.past_due_count,
@@ -162,8 +163,8 @@ async function getPlanBreakdown(db: DbPool): Promise<PlanBreakdown[]> {
       p.name AS plan_name,
       p.slug AS plan_slug,
       count(s.id)::int AS count,
-      COALESCE(SUM(CASE WHEN s.billing_cycle = 'monthly' THEN p.price_monthly_cents ELSE 0 END), 0)::bigint AS monthly_revenue_cents,
-      COALESCE(SUM(CASE WHEN s.billing_cycle = 'annual' THEN p.price_annual_cents ELSE 0 END), 0)::bigint AS annual_revenue_cents
+      COALESCE(SUM(CASE WHEN s.billing_cycle = 'monthly' THEN p.price_monthly_cents * COALESCE(s.seats, 1) ELSE 0 END), 0)::bigint AS monthly_revenue_cents,
+      COALESCE(SUM(CASE WHEN s.billing_cycle = 'annual' THEN p.price_annual_cents * COALESCE(s.seats, 1) ELSE 0 END), 0)::bigint AS annual_revenue_cents
     FROM subscription_plans p
     LEFT JOIN tenant_subscriptions s ON s.plan_id = p.id AND s.status IN ('active', 'trialing')
     GROUP BY p.id, p.name, p.slug
@@ -190,7 +191,7 @@ async function getMrrTrend(db: DbPool): Promise<MrrTrend[]> {
     mrr AS (
       SELECT
         date_trunc('month', s.created_at)::date AS month,
-        COALESCE(SUM(CASE WHEN s.billing_cycle = 'monthly' THEN p.price_monthly_cents ELSE p.price_annual_cents / 12 END), 0)::bigint AS new_mrr
+        COALESCE(SUM(CASE WHEN s.billing_cycle = 'monthly' THEN p.price_monthly_cents * COALESCE(s.seats, 1) ELSE p.price_annual_cents * COALESCE(s.seats, 1) / 12 END), 0)::bigint AS new_mrr
       FROM tenant_subscriptions s
       JOIN subscription_plans p ON p.id = s.plan_id
       WHERE s.status IN ('active', 'trialing') AND s.created_at >= now() - interval '12 months'
@@ -199,7 +200,7 @@ async function getMrrTrend(db: DbPool): Promise<MrrTrend[]> {
     churn AS (
       SELECT
         date_trunc('month', s.canceled_at)::date AS month,
-        COALESCE(SUM(CASE WHEN s.billing_cycle = 'monthly' THEN p.price_monthly_cents ELSE p.price_annual_cents / 12 END), 0)::bigint AS churned_mrr
+        COALESCE(SUM(CASE WHEN s.billing_cycle = 'monthly' THEN p.price_monthly_cents * COALESCE(s.seats, 1) ELSE p.price_annual_cents * COALESCE(s.seats, 1) / 12 END), 0)::bigint AS churned_mrr
       FROM tenant_subscriptions s
       JOIN subscription_plans p ON p.id = s.plan_id
       WHERE s.status = 'canceled' AND s.canceled_at >= now() - interval '12 months'

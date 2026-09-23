@@ -59,6 +59,7 @@ export default function TermsPage() {
             <li>Free tier: no fees for up to 3 technicians and 100 devices.</li>
             <li>Starter tier: $29 per technician per month (billed annually).</li>
             <li>Pro tier: $79 per technician per month (billed annually).</li>
+            <li>Paid plans are billed per active technician seat; seat changes appear on your next invoice.</li>
             <li>Enterprise tier: custom pricing negotiated individually.</li>
             <li>All fees are non-refundable except as required by applicable law.</li>
           </ul>

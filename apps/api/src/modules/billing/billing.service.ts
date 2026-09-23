@@ -1,6 +1,8 @@
 import { randomBytes } from 'node:crypto'
 import { withTenant, type DbPool, type DbClient } from '../../db/pool.js'
+import type { BillingConfig } from '../../config.js'
 import { currencyForCountry, type VerifyResult } from './gateway.js'
+import { StripeGateway } from './stripe.js'
 
 export interface Plan {
   id: number
@@ -23,6 +25,8 @@ export interface Subscription {
   plan_slug?: string
   status: string
   billing_cycle: string
+  /** Billable technician seats this subscription is charged for. */
+  seats: number
   trial_ends_at: string | null
   current_period_start: string
   current_period_end: string
@@ -37,6 +41,7 @@ export interface Invoice {
   number: string
   status: string
   amount_cents: number
+  seats: number | null
   currency: string
   description: string
   due_date: string | null
@@ -80,17 +85,71 @@ export async function createCheckoutInvoice(
     gateway: string
     reference: string
     amountCents: number
+    seats: number
     currency: string
   },
 ): Promise<number> {
   const number = `RD-${Date.now().toString(36).toUpperCase()}`
+  const seats = Math.max(1, data.seats)
+  const seatSuffix = seats > 1 ? ` — ${seats} technicians` : ''
   const result = await db.query(
-    `INSERT INTO invoices (tenant_id, number, status, amount_cents, currency, description, gateway, gateway_reference, plan_slug, billing_cycle)
-     VALUES ($1, $2, 'open', $3, $4, $5, $6, $7, $8, $9)
+    `INSERT INTO invoices (tenant_id, number, status, amount_cents, seats, currency, description, gateway, gateway_reference, plan_slug, billing_cycle)
+     VALUES ($1, $2, 'open', $3, $4, $5, $6, $7, $8, $9, $10)
      RETURNING id`,
-    [tenantId, number, data.amountCents, data.currency.toLowerCase(), `ReyDesk ${data.planName} (${data.billingCycle}) subscription`, data.gateway, data.reference, data.planSlug, data.billingCycle],
+    [tenantId, number, data.amountCents, seats, data.currency.toLowerCase(), `ReyDesk ${data.planName} (${data.billingCycle}) subscription${seatSuffix}`, data.gateway, data.reference, data.planSlug, data.billingCycle],
   )
   return result.rows[0].id
+}
+
+/**
+ * Billable seats = active non-customer members (pending invitations are not
+ * billed), floor of 1. Shared by checkout and the membership seat-sync hook.
+ */
+export async function countBillableSeats(db: DbPool, tenantId: string): Promise<number> {
+  const rows = (await db.query(
+    `SELECT count(*)::int AS n FROM memberships
+      WHERE tenant_id = $1 AND status = 'active' AND org_role <> 'customer'`,
+    [tenantId],
+  )).rows
+  return Math.max(1, Number(rows[0]?.n ?? 0))
+}
+
+/**
+ * Keep subscription seat counts aligned with membership changes.
+ *
+ * Called after invite/accept/member-update/member-delete. The local `seats`
+ * column is always updated (it drives invoice math and MRR reporting). Stripe
+ * quantities are pushed through immediately with proration onto the next
+ * invoice. Paystack plans are fixed-amount, so provider-side seat changes for
+ * Paystack subscribers take effect on the next hosted checkout/renewal plan
+ * selection — the local count remains the source of truth for what we invoice.
+ */
+export async function syncSubscriptionSeats(
+  db: DbPool,
+  config: BillingConfig,
+  tenantId: string,
+): Promise<void> {
+  const sub = (await db.query(
+    `SELECT id, seats, gateway, gateway_subscription_id
+       FROM tenant_subscriptions
+      WHERE tenant_id = $1 AND status IN ('active', 'trialing')
+      ORDER BY created_at DESC LIMIT 1`,
+    [tenantId],
+  )).rows[0] as { id: number; seats: number; gateway: string; gateway_subscription_id: string | null } | undefined
+  if (!sub) return
+
+  const seats = await countBillableSeats(db, tenantId)
+  if (Number(sub.seats ?? 1) === seats) return
+
+  await db.query(
+    'UPDATE tenant_subscriptions SET seats = $2, updated_at = now() WHERE id = $1',
+    [sub.id, seats],
+  )
+
+  if (sub.gateway === 'stripe' && sub.gateway_subscription_id && config.stripeSecretKey) {
+    const stripe = new StripeGateway(config.stripeSecretKey, config.stripeWebhookSecret)
+    await stripe.updateSubscriptionSeats(sub.gateway_subscription_id, seats)
+  }
 }
 
 /* ── Plans ─────────────────────────────────────────────────── */
@@ -128,11 +187,12 @@ export async function createSubscription(
   if (!plan.rows[0]) throw new Error('Plan not found')
 
   const periodDays = billingCycle === 'annual' ? 365 : 30
+  const seats = await countBillableSeats(db, tenantId)
   const result = await db.query(
-    `INSERT INTO tenant_subscriptions (tenant_id, plan_id, status, billing_cycle, current_period_end)
-     VALUES ($1, $2, 'active', $3, now() + interval '1 day' * $4)
+    `INSERT INTO tenant_subscriptions (tenant_id, plan_id, status, billing_cycle, seats, current_period_end)
+     VALUES ($1, $2, 'active', $3, $4, now() + interval '1 day' * $5)
      RETURNING *`,
-    [tenantId, plan.rows[0].id, billingCycle, periodDays],
+    [tenantId, plan.rows[0].id, billingCycle, seats, periodDays],
   )
   return result.rows[0]
 }
@@ -222,14 +282,15 @@ export async function confirmGatewayCheckout(
   tenantIdOverride?: string,
 ): Promise<{ invoiceId: number; subscriptionId: number; tenantId: string } | null> {
   const pending = (await db.query(
-    `SELECT tenant_id, plan_slug, billing_cycle, id, status FROM invoices
+    `SELECT tenant_id, plan_slug, billing_cycle, seats, id, status FROM invoices
       WHERE gateway_reference = $1 OR gateway_external_id = $1 LIMIT 1`,
     [reference],
-  )).rows[0] as { tenant_id: string; plan_slug: string | null; billing_cycle: string | null; id: number; status: string } | undefined
+  )).rows[0] as { tenant_id: string; plan_slug: string | null; billing_cycle: string | null; seats: number | null; id: number; status: string } | undefined
   if (!pending) return null
   const tenantId = tenantIdOverride ?? pending.tenant_id
   const planSlug = pending.plan_slug ?? 'starter'
   const billingCycle: 'monthly' | 'annual' = pending.billing_cycle === 'annual' ? 'annual' : 'monthly'
+  const seats = Math.max(1, Number(pending.seats ?? 1))
 
   return withTenant(db, tenantId, async (client) => {
     const plan = (await client.query('SELECT id FROM subscription_plans WHERE slug = $1', [planSlug])).rows[0]
@@ -250,20 +311,20 @@ export async function confirmGatewayCheckout(
       const res = await client.query(
         `UPDATE tenant_subscriptions
             SET plan_id = $2, billing_cycle = $3, gateway = $4,
-                gateway_subscription_id = $5, gateway_customer_id = $6,
+                gateway_subscription_id = $5, gateway_customer_id = $6, seats = $8,
                 current_period_start = CASE WHEN current_period_start > now() THEN current_period_start ELSE now() END,
                 current_period_end = now() + interval '1 day' * CASE WHEN $7 = 'annual' THEN 365 ELSE 30 END,
                 status = 'active', canceled_at = NULL, updated_at = now()
           WHERE id = $1 RETURNING id`,
-        [existing.id, plan.id, billingCycle, gateway, result.subscriptionId ?? null, result.customerId ?? null, billingCycle],
+        [existing.id, plan.id, billingCycle, gateway, result.subscriptionId ?? null, result.customerId ?? null, billingCycle, seats],
       )
       subscriptionId = res.rows[0].id
     } else {
       const periodDays = billingCycle === 'annual' ? 365 : 30
       const res = await client.query(
-        `INSERT INTO tenant_subscriptions (tenant_id, plan_id, status, billing_cycle, gateway, gateway_subscription_id, gateway_customer_id, current_period_end)
-         VALUES ($1, $2, 'active', $3, $4, $5, $6, now() + interval '1 day' * $7) RETURNING id`,
-        [tenantId, plan.id, billingCycle, gateway, result.subscriptionId ?? null, result.customerId ?? null, periodDays],
+        `INSERT INTO tenant_subscriptions (tenant_id, plan_id, status, billing_cycle, gateway, gateway_subscription_id, gateway_customer_id, seats, current_period_end)
+         VALUES ($1, $2, 'active', $3, $4, $5, $6, $7, now() + interval '1 day' * $8) RETURNING id`,
+        [tenantId, plan.id, billingCycle, gateway, result.subscriptionId ?? null, result.customerId ?? null, seats, periodDays],
       )
       subscriptionId = res.rows[0].id
     }
@@ -313,11 +374,13 @@ export async function activateManualSubscription(
   tenantId: string,
   planSlug: string,
   billingCycle: 'monthly' | 'annual' = 'monthly',
+  seats = 1,
 ): Promise<Subscription> {
   return withTenant(db, tenantId, async (client) => {
     const plan = (await client.query('SELECT id FROM subscription_plans WHERE slug = $1', [planSlug])).rows[0]
     if (!plan) throw new Error('Plan not found')
     const periodDays = billingCycle === 'annual' ? 365 : 30
+    const seatCount = Math.max(1, seats)
     const existing = (await client.query(
       `SELECT id FROM tenant_subscriptions WHERE tenant_id = $1 AND status IN ('active', 'trialing') ORDER BY created_at DESC LIMIT 1`,
       [tenantId],
@@ -325,18 +388,18 @@ export async function activateManualSubscription(
     if (existing) {
       const res = await client.query(
         `UPDATE tenant_subscriptions
-            SET plan_id = $2, billing_cycle = $3, gateway = 'manual',
+            SET plan_id = $2, billing_cycle = $3, gateway = 'manual', seats = $5,
                 current_period_end = now() + interval '1 day' * $4,
                 status = 'active', canceled_at = NULL, updated_at = now()
           WHERE id = $1 RETURNING *`,
-        [existing.id, plan.id, billingCycle, periodDays],
+        [existing.id, plan.id, billingCycle, periodDays, seatCount],
       )
       return res.rows[0]
     }
     const res = await client.query(
-      `INSERT INTO tenant_subscriptions (tenant_id, plan_id, status, billing_cycle, gateway, current_period_end)
-       VALUES ($1, $2, 'active', $3, 'manual', now() + interval '1 day' * $4) RETURNING *`,
-      [tenantId, plan.id, billingCycle, periodDays],
+      `INSERT INTO tenant_subscriptions (tenant_id, plan_id, status, billing_cycle, gateway, seats, current_period_end)
+       VALUES ($1, $2, 'active', $3, 'manual', $4, now() + interval '1 day' * $5) RETURNING *`,
+      [tenantId, plan.id, billingCycle, seatCount, periodDays],
     )
     return res.rows[0]
   })

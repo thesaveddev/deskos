@@ -95,7 +95,8 @@ export class StripeGateway implements PaymentGateway {
     const query = new URLSearchParams()
     query.set('mode', 'subscription')
     query.set('line_items[0][price]', priceId)
-    query.set('line_items[0][quantity]', '1')
+    // Price is per seat; the subscription quantity carries the seat count.
+    query.set('line_items[0][quantity]', String(Math.max(1, input.seats)))
     query.set('success_url', input.callbackUrl)
     query.set('cancel_url', input.callbackUrl.split('?')[0])
     query.set('client_reference_id', input.tenantId)
@@ -187,5 +188,20 @@ export class StripeGateway implements PaymentGateway {
 
   async cancelSubscription(subscriptionId: string): Promise<void> {
     await this.request('POST', `/subscriptions/${encodeURIComponent(subscriptionId)}`)
+  }
+
+  async updateSubscriptionSeats(subscriptionId: string, seats: number): Promise<void> {
+    const sub = await this.request<{ items?: { data?: Array<{ id: string }> } }>(
+      'GET',
+      `/subscriptions/${encodeURIComponent(subscriptionId)}`,
+    )
+    const item = sub.items?.data?.[0]
+    if (!item) throw new Error('Stripe subscription has no line items to update')
+    const query = new URLSearchParams()
+    query.set('items[0][id]', item.id)
+    query.set('items[0][quantity]', String(Math.max(1, seats)))
+    // Prorated seat changes land on the next invoice — never an immediate charge.
+    query.set('proration_behavior', 'create_prorations')
+    await this.request('POST', `/subscriptions/${encodeURIComponent(subscriptionId)}`, query)
   }
 }

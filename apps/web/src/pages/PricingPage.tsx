@@ -35,8 +35,8 @@ const PLANS = [
     cta: 'Start for free',
     ctaStyle: 'btn btn-ghost btn-block',
     features: [
-      { text: 'Up to 3 technicians', included: true },
-      { text: '100 managed devices', included: true },
+      { text: 'Up to 10 technicians', included: true },
+      { text: '500 managed devices', included: true },
       { text: 'Remote support (attended & unattended)', included: true },
       { text: 'Basic endpoint inventory', included: true },
       { text: 'Ticketing with SLA tracking', included: true },
@@ -61,7 +61,7 @@ const PLANS = [
     ctaStyle: 'btn btn-primary btn-block',
     features: [
       { text: 'Unlimited technicians', included: true },
-      { text: '500 managed devices', included: true },
+      { text: '5,000 managed devices', included: true },
       { text: 'Everything in Starter', included: true },
       { text: 'Full RMM & DEX scoring', included: true },
       { text: 'Security posture evaluation', included: true },
@@ -71,7 +71,7 @@ const PLANS = [
       { text: 'Service catalogue & approvals', included: true },
       { text: 'Problem & change management', included: true },
       { text: 'Session recording', included: true },
-      { text: 'Priority email + chat support', included: true },
+      { text: 'Priority email support', included: true },
     ],
   },
   {
@@ -80,7 +80,7 @@ const PLANS = [
     price: 'Custom',
     period: '',
     billed: 'volume pricing available',
-    desc: 'Multi-tenant MSP, SSO, dedicated support, and custom SLAs for large organizations.',
+    desc: 'Multi-tenant MSP, dedicated support, and custom SLA terms for large organizations.',
     cta: 'Contact sales',
     ctaStyle: 'btn btn-ghost btn-block',
     features: [
@@ -88,8 +88,7 @@ const PLANS = [
       { text: 'Everything in Pro', included: true },
       { text: 'Multi-tenant MSP console', included: true },
       { text: 'Cross-tenant management', included: true },
-      { text: 'SAML SSO + SCIM provisioning', included: true },
-      { text: 'Cross-tenant management', included: true },
+      { text: 'Custom SLA terms', included: true },
       { text: 'Major incident command', included: true },
       { text: 'Compliance scoring dashboard', included: true },
       { text: 'Developer marketplace', included: true },
@@ -110,11 +109,11 @@ const FAQ = [
   },
   {
     q: 'Can I switch plans later?',
-    a: 'Yes. Upgrade instantly — you pay the prorated difference. Downgrade takes effect at your next billing cycle.',
+    a: 'Yes. Upgrades take effect as soon as payment completes — you pay the new plan price at checkout. Downgrades take effect at your next billing cycle.',
   },
   {
     q: 'Do you offer monthly billing?',
-    a: 'Annual billing saves 20%. Monthly billing is available at a slightly higher rate — contact us for details.',
+    a: 'Annual billing saves 17% compared to paying monthly. Monthly billing is available at the standard rate.',
   },
   {
     q: 'What is a "technician"?',
@@ -131,8 +130,8 @@ const FAQ = [
 ]
 
 const COMPARE_ROWS = [
-  { feature: 'Technicians', starter: 'Up to 3', pro: 'Unlimited', enterprise: 'Unlimited' },
-  { feature: 'Managed devices', starter: '100', pro: '500', enterprise: 'Unlimited' },
+  { feature: 'Technicians', starter: 'Up to 10', pro: 'Unlimited', enterprise: 'Unlimited' },
+  { feature: 'Managed devices', starter: '500', pro: '5,000', enterprise: 'Unlimited' },
   { feature: 'Remote support', starter: '✅', pro: '✅', enterprise: '✅' },
   { feature: 'Endpoint inventory', starter: 'Basic', pro: 'Full + DEX', enterprise: 'Full + DEX' },
   { feature: 'Ticketing with SLA', starter: '✅', pro: '✅', enterprise: '✅' },
@@ -148,13 +147,12 @@ const COMPARE_ROWS = [
   { feature: 'Problem & change mgmt', starter: '—', pro: '✅', enterprise: '✅' },
   { feature: 'Session recording', starter: '—', pro: '✅', enterprise: '✅' },
   { feature: 'Multi-tenant MSP', starter: '—', pro: '—', enterprise: '✅' },
-  { feature: 'SAML SSO', starter: '—', pro: '—', enterprise: '✅' },
   { feature: 'Cross-tenant management', starter: '—', pro: '—', enterprise: '✅' },
   { feature: 'JIT privileged access', starter: '—', pro: '—', enterprise: '✅' },
   { feature: 'Compliance scoring', starter: '—', pro: '—', enterprise: '✅' },
   { feature: 'Developer marketplace', starter: '—', pro: '✅', enterprise: '✅' },
   { feature: 'OAuth2 + OpenAPI', starter: '—', pro: '✅', enterprise: '✅' },
-  { feature: 'Support', starter: 'Email', pro: 'Priority email + chat', enterprise: 'Dedicated engineer' },
+  { feature: 'Support', starter: 'Email', pro: 'Priority email', enterprise: 'Dedicated engineer' },
 ]
 
 const pricingJsonLd = {
@@ -168,21 +166,19 @@ const pricingJsonLd = {
       name: 'Starter',
       price: '29',
       priceCurrency: 'USD',
-      description: 'Up to 3 technicians, 100 devices, remote support, ticketing, KB',
+      description: 'Up to 10 technicians, 500 devices, remote support, ticketing, KB',
     },
     {
       '@type': 'Offer',
       name: 'Pro',
       price: '79',
       priceCurrency: 'USD',
-      description: 'Unlimited technicians, 500 devices, full RMM, AI assistant, patches',
+      description: 'Unlimited technicians, 5,000 devices, full RMM, AI assistant, patches',
     },
     {
       '@type': 'Offer',
       name: 'Enterprise',
-      price: '0',
-      priceCurrency: 'USD',
-      description: 'Custom pricing for MSPs and large organizations',
+      description: 'Custom pricing for MSPs and large organizations. Contact us for a quote.',
     },
   ],
 }
@@ -234,7 +230,7 @@ export default function PricingPage() {
                   </li>
                 ))}
               </ul>
-              <Link className={plan.ctaStyle} to={plan.cta === 'Contact sales' ? '/about' : '/signup'}>
+              <Link className={plan.ctaStyle} to={plan.cta === 'Contact sales' ? '/contact' : '/signup'}>
                 {plan.cta}
               </Link>
             </article>

@@ -48,7 +48,7 @@ export default function AboutPage() {
           <ul>
             <li><strong>Consent is mandatory.</strong> No remote session can start without the endpoint user clicking "Allow." This is enforced in the agent code, not just the UI.</li>
             <li><strong>The audit log is tamper-evident.</strong> Each entry includes a hash of the previous entry. You can verify the chain hasn't been broken.</li>
-            <li><strong>Self-hostable.</strong> Run it on your own server with Docker. We don't need to see your data.</li>
+            <li><strong>One database.</strong> Remote sessions, tickets, devices, and assets share the same PostgreSQL schema — no integration seams, no nightly sync jobs.</li>
             <li><strong>No vendor lock-in.</strong> The API is documented. The database is PostgreSQL. You can export everything.</li>
           </ul>
         </div>
@@ -60,16 +60,16 @@ export default function AboutPage() {
         </div>
         <div className="landing-features" style={{ maxWidth: 720, margin: '0 auto' }}>
           <article className="landing-feature">
-            <h3>39 migrations</h3>
+            <h3>100+ migrations</h3>
             <p>The schema is versioned. Every change is tracked. We don't make breaking changes without a migration.</p>
           </article>
           <article className="landing-feature">
-            <h3>365 API tests</h3>
+            <h3>500+ API tests</h3>
             <p>Every endpoint has tests. CI runs them on every push. If a test breaks, we don't merge.</p>
           </article>
           <article className="landing-feature">
-            <h3>Open source</h3>
-            <p>The code is on GitHub. You can read it, fork it, run it yourself. No black boxes.</p>
+            <h3>Same-day setup</h3>
+            <p>Sign up and be running the same day. No implementation project, no professional-services engagement.</p>
           </article>
         </div>
       </section>

@@ -12,6 +12,7 @@ import {
   generateEmailVerificationToken,
   verifyEmailVerificationToken,
 } from './auth.password-reset.js'
+import { syncSubscriptionSeats } from '../billing/billing.service.js'
 import '../../types.js'
 
 const forgotPasswordSchema = z.object({ email: z.string().email() })
@@ -80,6 +81,11 @@ export async function authHardeningRoutes(app: FastifyInstance): Promise<void> {
       await client.query(`UPDATE users SET ${updates.join(', ')}, email_verified = true WHERE id = $${values.length}`, values)
       await client.query(`UPDATE memberships SET status = 'active' WHERE id = $1 AND user_id = $2`, [locked.membership_id, locked.user_id])
       await client.query(`UPDATE organisation_invitations SET accepted_at = now() WHERE id = $1`, [locked.id])
+    })
+
+    // Accepting turns an invitation into an active (billable) seat.
+    await syncSubscriptionSeats(app.db, app.config.billing, invitation.tenant_id).catch((err: unknown) => {
+      app.log.warn({ err, tenantId: invitation.tenant_id }, 'seat sync after invitation accept failed')
     })
 
     return { ok: true, email: invitation.email }

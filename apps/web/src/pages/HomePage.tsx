@@ -12,7 +12,18 @@ import { listMyApprovals, type Approval } from '../lib/catalogue.js'
 import { listIncidents, type MajorIncident } from '../lib/incidents.js'
 import { listWarrantyWatch, type WarrantyWatchItem } from '../lib/assets.js'
 import { getOnboardingStatus } from '../lib/onboarding.js'
+import { listOpenAlerts, type MonitoringAlert } from '../lib/monitoring.js'
+import { getAiWorkerMetrics, type AiWorkerMetrics } from '../lib/ai-worker.js'
 import { OnboardingWizard } from '../components/OnboardingWizard.js'
+
+/* ── Shared shapes ────────────────────────────────────────────── */
+
+interface TicketCounts {
+  mine: number
+  unassigned: number
+  slaRisk: number
+  byStatus: Array<{ status: string; n: number }>
+}
 
 /* ── Role helpers ──────────────────────────────────────────────── */
 
@@ -46,6 +57,17 @@ function StatusDot({ status }: { status: string }) {
   return <span className={`status-dot ${cls}`} />
 }
 
+/* Session states need their own colour mapping — a live session is green,
+   a negotiating one blue, waiting for consent yellow. */
+function SessionStateDot({ state }: { state: string }) {
+  const cls =
+    state === 'active' ? 'dot-resolved'
+      : state === 'connecting' || state === 'reconnecting' ? 'dot-active'
+        : state === 'requested' || state === 'consent_pending' ? 'dot-open'
+          : 'dot-closed'
+  return <span className={`status-dot ${cls}`} />
+}
+
 /* ── Priority badge ────────────────────────────────────────────── */
 
 function PriorityBadge({ p }: { p: string }) {
@@ -58,6 +80,17 @@ function daysUntil(date: string | null | undefined): number | null {
   if (!date) return null
   const ms = new Date(`${date.slice(0, 10)}T00:00:00`).getTime() - Date.now()
   return Math.ceil(ms / 86_400_000)
+}
+
+/* ── Relative time helper ───────────────────────────────────── */
+
+function timeAgo(date: string | null | undefined): string {
+  if (!date) return '—'
+  const seconds = Math.max(0, (Date.now() - new Date(date).getTime()) / 1000)
+  if (seconds < 60) return 'just now'
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`
+  if (seconds < 86_400) return `${Math.floor(seconds / 3600)}h ago`
+  return `${Math.floor(seconds / 86_400)}d ago`
 }
 
 /* ── Upcoming renewals card ────────────────────────────────────── */
@@ -126,15 +159,187 @@ function RenewalsKpi({ renewals }: { renewals: { warranties: WarrantyWatchItem[]
   )
 }
 
+/* ── Needs attention ──────────────────────────────────────── */
+
+function NeedsAttention({ counts, alerts }: {
+  counts: TicketCounts | null
+  alerts: MonitoringAlert[]
+}) {
+  const unassigned = counts?.unassigned ?? 0
+  const slaRisk = counts?.slaRisk ?? 0
+  const openAlerts = alerts.length
+  const clear = unassigned === 0 && slaRisk === 0 && openAlerts === 0
+  return (
+    <div className="dash-card">
+      <div className="dash-card-header">
+        <h3 className="dash-card-title">Needs attention</h3>
+        {clear && <span className="dash-kpi-link" style={{ color: 'var(--ok)' }}>All clear ✓</span>}
+      </div>
+      <div className="dash-metrics-pair">
+        <div className="dash-metric-item">
+          <span className="dash-metric-val">{unassigned}</span>
+          <span className="dash-metric-label">Unassigned tickets</span>
+          <Link to="/tickets" className="dash-kpi-link">Open queue →</Link>
+        </div>
+        <div className="dash-metric-item">
+          <span className={`dash-metric-val${slaRisk > 0 ? ' metric-warn' : ''}`}>{slaRisk}</span>
+          <span className="dash-metric-label">SLA risk (breached or &lt; 1h)</span>
+          <Link to="/tickets" className="dash-kpi-link">Review →</Link>
+        </div>
+        <div className="dash-metric-item">
+          <span className={`dash-metric-val${openAlerts > 0 ? ' metric-warn' : ''}`}>{openAlerts}</span>
+          <span className="dash-metric-label">Open device alerts</span>
+          <Link to="/monitoring" className="dash-kpi-link">Investigate →</Link>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ── Tickets by status ────────────────────────────────────── */
+
+const STATUS_ORDER = ['new', 'open', 'in_progress', 'pending_user', 'pending_vendor', 'waiting_user', 'on_hold', 'resolved', 'closed']
+
+function StatusBreakdown({ counts }: { counts: TicketCounts | null }) {
+  const rows = [...(counts?.byStatus ?? [])].sort((a, b) => {
+    const ai = STATUS_ORDER.indexOf(a.status)
+    const bi = STATUS_ORDER.indexOf(b.status)
+    return (ai === -1 ? STATUS_ORDER.length : ai) - (bi === -1 ? STATUS_ORDER.length : bi)
+  })
+  const total = rows.reduce((sum, r) => sum + r.n, 0)
+  return (
+    <div className="dash-card">
+      <h3 className="dash-card-title">Tickets by status</h3>
+      {rows.length > 0 ? (
+        <div className="dash-workload-list">
+          {rows.map((r) => (
+            <div key={r.status} className="dash-workload-row">
+              <span className="dash-workload-name">{r.status.replace(/_/g, ' ')}</span>
+              <div className="dash-workload-bar-wrap">
+                <div className="dash-workload-bar" style={{ width: `${(r.n / (total || 1)) * 100}%` }} />
+              </div>
+              <span className="dash-workload-count">{r.n}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="dash-empty">No tickets yet</p>
+      )}
+    </div>
+  )
+}
+
+/* ── Open device alerts ──────────────────────────────────── */
+
+function AlertsCard({ alerts }: { alerts: MonitoringAlert[] }) {
+  return (
+    <div className="dash-card">
+      <div className="dash-card-header">
+        <h3 className="dash-card-title">Open device alerts{alerts.length > 0 ? ` (${alerts.length})` : ''}</h3>
+        <Link to="/monitoring" className="btn btn-ghost btn-sm">View all →</Link>
+      </div>
+      {alerts.length > 0 ? (
+        <div className="device-alert-list">
+          {alerts.slice(0, 6).map((a) => (
+            <div key={a.id} className="device-alert-row">
+              <span className={`alert-severity severity-${a.severity}`} />
+              <div className="device-alert-main">
+                <strong>{a.message}</strong>
+                <span className="dash-session-type">
+                  {a.device_name}{a.ticket_number ? ` · #${a.ticket_number}` : ''} · {timeAgo(a.created_at)}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="dash-empty">No open alerts — the fleet is quiet</p>
+      )}
+    </div>
+  )
+}
+
+/* ── AI worker outcomes ──────────────────────────────────── */
+
+function AiWorkerCard({ metrics }: { metrics: AiWorkerMetrics | null }) {
+  return (
+    <div className="dash-card">
+      <div className="dash-card-header">
+        <h3 className="dash-card-title">AI worker</h3>
+        <Link to="/ai-workers" className="btn btn-ghost btn-sm">Workers →</Link>
+      </div>
+      {metrics && metrics.total > 0 ? (
+        <>
+          <div className="dash-metrics-pair">
+            <div className="dash-metric-item">
+              <span className="dash-metric-val">{metrics.resolutionRate}%</span>
+              <span className="dash-metric-label">Auto-resolved</span>
+            </div>
+            <div className="dash-metric-item">
+              <span className="dash-metric-val">{metrics.total}</span>
+              <span className="dash-metric-label">Total runs</span>
+            </div>
+            <div className="dash-metric-item">
+              <span className="dash-metric-val">{formatMinutes(metrics.timeSavedMinutes)}</span>
+              <span className="dash-metric-label">Time saved</span>
+            </div>
+            <div className="dash-metric-item">
+              <span className={`dash-metric-val${metrics.escalated > 0 ? ' metric-warn' : ''}`}>{metrics.escalated}</span>
+              <span className="dash-metric-label">Escalated to human</span>
+            </div>
+          </div>
+          <p className="dash-empty" style={{ padding: '0.25rem 0 0' }}>
+            {metrics.resolved} resolved · {metrics.failed} failed · {Math.round(metrics.avgConfidence * 100)}% avg confidence
+          </p>
+        </>
+      ) : (
+        <p className="dash-empty">
+          No worker runs yet — <Link to="/ai-workers">set up your first worker →</Link>
+        </p>
+      )}
+    </div>
+  )
+}
+
+/* ── Live & recent sessions ───────────────────────────────── */
+
+function SessionsCard({ sessions }: { sessions: RemoteSession[] }) {
+  return (
+    <div className="dash-card">
+      <div className="dash-card-header">
+        <h3 className="dash-card-title">Live &amp; recent sessions</h3>
+        <Link to="/sessions" className="btn btn-ghost btn-sm">View all →</Link>
+      </div>
+      {sessions.length > 0 ? (
+        <div className="dash-session-list">
+          {sessions.slice(0, 6).map((s) => (
+            <div key={s.id} className="dash-session-row">
+              <SessionStateDot state={s.state} />
+              <span className="dash-session-device">{s.device_name || s.device_id}</span>
+              <span className="dash-session-type">{s.state.replace(/_/g, ' ')}</span>
+              <span className="dash-session-type">{timeAgo(s.started_at ?? s.created_at)}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="dash-empty">No remote sessions yet</p>
+      )}
+    </div>
+  )
+}
+
 /* ── Owner / Manager dashboard ─────────────────────────────────── */
 
-function ManagerDashboard({ report, devices, sessions, incidents, myTicketCount, renewals }: {
+function ManagerDashboard({ report, devices, sessions, incidents, myTicketCount, renewals, counts, alerts, aiMetrics }: {
   report: TicketReport | null
   devices: Device[]
   sessions: RemoteSession[]
   incidents: MajorIncident[]
   myTicketCount: number
   renewals: { warranties: WarrantyWatchItem[]; licences: WarrantyWatchItem[] }
+  counts: TicketCounts | null
+  alerts: MonitoringAlert[]
+  aiMetrics: AiWorkerMetrics | null
 }) {
   const onlineDevices = devices.filter((d) => d.status === 'online').length
   const activeSessions = sessions.filter((s) => s.state === 'active' || s.state === 'connecting' || s.state === 'consent_pending').length
@@ -165,6 +370,9 @@ function ManagerDashboard({ report, devices, sessions, incidents, myTicketCount,
         </div>
         <RenewalsKpi renewals={renewals} />
       </div>
+
+      {/* Unassigned / SLA risk / open alerts — the work that can't wait */}
+      <NeedsAttention counts={counts} alerts={alerts} />
 
       {/* Second row */}
       <div className="dash-grid-2">
@@ -238,6 +446,18 @@ function ManagerDashboard({ report, devices, sessions, incidents, myTicketCount,
         </div>
       </div>
 
+      {/* Status breakdown + open device alerts */}
+      <div className="dash-grid-2">
+        <StatusBreakdown counts={counts} />
+        <AlertsCard alerts={alerts} />
+      </div>
+
+      {/* AI worker outcomes + live sessions */}
+      <div className="dash-grid-2">
+        <AiWorkerCard metrics={aiMetrics} />
+        <SessionsCard sessions={sessions} />
+      </div>
+
       {/* Incidents */}
       {incidents.length > 0 && (
         <div className="dash-card">
@@ -264,24 +484,29 @@ function ManagerDashboard({ report, devices, sessions, incidents, myTicketCount,
 
 /* ── Analyst / Engineer dashboard ──────────────────────────────── */
 
-function AnalystDashboard({ myTickets, report, devices, sessions, renewals }: {
+function AnalystDashboard({ myTickets, report, devices, sessions, renewals, counts, alerts, aiMetrics }: {
   myTickets: Ticket[]
   report: TicketReport | null
   devices: Device[]
   sessions: RemoteSession[]
   renewals: { warranties: WarrantyWatchItem[]; licences: WarrantyWatchItem[] }
+  counts: TicketCounts | null
+  alerts: MonitoringAlert[]
+  aiMetrics: AiWorkerMetrics | null
 }) {
   const activeSessions = sessions.filter((s) => s.state === 'active' || s.state === 'connecting' || s.state === 'consent_pending').length
+  const actionable = (t: Ticket) => t.status !== 'resolved' && t.status !== 'closed'
 
   return (
     <>
       <div className="dash-kpi-row">
         <div className="dash-kpi">
-          <span className="dash-kpi-value">{myTickets.length}</span>
+          <span className="dash-kpi-value">{myTickets.filter(actionable).length}</span>
           <span className="dash-kpi-label">Assigned to you</span>
+          <Link to="/tickets" className="dash-kpi-link">View queue →</Link>
         </div>
         <div className="dash-kpi">
-          <span className="dash-kpi-value">{myTickets.filter((t) => t.priority === 'critical' || t.priority === 'high').length}</span>
+          <span className="dash-kpi-value">{myTickets.filter((t) => actionable(t) && (t.priority === 'critical' || t.priority === 'high')).length}</span>
           <span className="dash-kpi-label">High priority</span>
         </div>
         <div className="dash-kpi">
@@ -295,6 +520,9 @@ function AnalystDashboard({ myTickets, report, devices, sessions, renewals }: {
         </div>
         <RenewalsKpi renewals={renewals} />
       </div>
+
+      {/* Unassigned / SLA risk / open alerts — the work that can't wait */}
+      <NeedsAttention counts={counts} alerts={alerts} />
 
       {/* My tickets */}
       <div className="dash-card">
@@ -338,13 +566,20 @@ function AnalystDashboard({ myTickets, report, devices, sessions, renewals }: {
           <div className="dash-session-list">
             {sessions.slice(0, 6).map((s) => (
               <div key={s.id} className="dash-session-row">
-                <StatusDot status={s.state} />
+                <SessionStateDot state={s.state} />
                 <span className="dash-session-device">{s.device_name || s.device_id}</span>
-                <span className="dash-session-type">{s.type}</span>
+                <span className="dash-session-type">{s.state.replace(/_/g, ' ')}</span>
+                <span className="dash-session-type">{timeAgo(s.started_at ?? s.created_at)}</span>
               </div>
             ))}
           </div>
         </div>
+      </div>
+
+      {/* Open device alerts + AI worker outcomes */}
+      <div className="dash-grid-2">
+        <AlertsCard alerts={alerts} />
+        <AiWorkerCard metrics={aiMetrics} />
       </div>
 
       {/* Upcoming warranty / licence renewals */}
@@ -435,6 +670,8 @@ export default function HomePage() {
   const [incidents, setIncidents] = useState<MajorIncident[]>([])
   const [approvals, setApprovals] = useState<Approval[]>([])
   const [renewals, setRenewals] = useState<{ warranties: WarrantyWatchItem[]; licences: WarrantyWatchItem[] }>({ warranties: [], licences: [] })
+  const [alerts, setAlerts] = useState<MonitoringAlert[]>([])
+  const [aiMetrics, setAiMetrics] = useState<AiWorkerMetrics | null>(null)
   const [loading, setLoading] = useState(true)
   const [quickTicketOpen, setQuickTicketOpen] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
@@ -445,8 +682,11 @@ export default function HomePage() {
 
   const isMgr = isManager(myRole)
   const isAnalystRole = isAnalyst(myRole)
-  // Renewals need asset read permission; end users never see the panel.
-  const canSeeAssets = auth.memberships.find((m) => m.tenant.id === auth.activeTenantId)?.permissions.includes('asset.read') ?? false
+  const perms = auth.memberships.find((m) => m.tenant.id === auth.activeTenantId)?.permissions ?? []
+  // Renewals need asset read permission; end users never see the panels.
+  const canSeeAssets = perms.includes('asset.read')
+  const canSeeDevices = perms.includes('device.read')
+  const canSeeAi = perms.includes('ai_agent.read')
 
   useEffect(() => {
     if (!auth.user) return
@@ -457,12 +697,16 @@ export default function HomePage() {
         const results = await Promise.allSettled([
           ticketCounts(),
           getTicketReport(),
-          listTickets({ status: 'open', assignee: 'me', limit: '10' }),
+          // All of my tickets (any status) — each dashboard derives its own
+          // open/resolved slices so the KPIs aren't stuck at zero.
+          listTickets({ assignee: 'me', limit: '25' }),
           listDevices({ limit: 10 }),
           listSessions({ limit: 10 }),
           listIncidents(),
           listMyApprovals(),
           canSeeAssets ? listWarrantyWatch(90).catch(() => ({ warranties: [], licences: [] })) : Promise.resolve({ warranties: [], licences: [] }),
+          canSeeDevices ? listOpenAlerts().catch(() => ({ alerts: [] as MonitoringAlert[] })) : Promise.resolve({ alerts: [] as MonitoringAlert[] }),
+          canSeeAi ? getAiWorkerMetrics().catch(() => ({ metrics: null as AiWorkerMetrics | null })) : Promise.resolve({ metrics: null as AiWorkerMetrics | null }),
         ])
 
         if (results[0].status === 'fulfilled') setCounts(results[0].value as any)
@@ -478,6 +722,12 @@ export default function HomePage() {
         if (results[7].status === 'fulfilled') {
           const watchValue = results[7].value as { warranties?: WarrantyWatchItem[]; licences?: WarrantyWatchItem[] } | null
           setRenewals({ warranties: watchValue?.warranties ?? [], licences: watchValue?.licences ?? [] })
+        }
+        if (results[8].status === 'fulfilled') {
+          setAlerts(((results[8].value as { alerts?: MonitoringAlert[] })?.alerts) ?? [])
+        }
+        if (results[9].status === 'fulfilled') {
+          setAiMetrics(((results[9].value as { metrics?: AiWorkerMetrics | null })?.metrics) ?? null)
         }
 
         // Check onboarding status
@@ -533,6 +783,9 @@ export default function HomePage() {
           incidents={incidents}
           myTicketCount={counts?.mine ?? 0}
           renewals={renewals}
+          counts={counts}
+          alerts={alerts}
+          aiMetrics={aiMetrics}
         />
       ) : isAnalystRole ? (
         <AnalystDashboard
@@ -541,6 +794,9 @@ export default function HomePage() {
           devices={devices}
           sessions={sessions}
           renewals={renewals}
+          counts={counts}
+          alerts={alerts}
+          aiMetrics={aiMetrics}
         />
       ) : (
         <EndUserDashboard myTickets={myTickets} onNewTicket={() => setQuickTicketOpen(true)} />

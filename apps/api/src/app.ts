@@ -75,6 +75,7 @@ import { adhocSessionRoutes, connectRoutes } from './modules/remote/adhoc.routes
 import { probeRoutes } from './modules/remote/probe.routes.js'
 import { marketplaceRoutes } from './modules/marketplace/marketplace.routes.js'
 import { supportRoutes } from './modules/support/support.routes.js'
+import { registerContactRoutes } from './modules/contact/contact.routes.js'
 import { notesRoutes } from './modules/notes/notes.routes.js'
 import { onboardingRoutes } from './modules/onboarding/onboarding.routes.js'
 import { billingRoutes } from './modules/billing/billing.routes.js'
@@ -428,6 +429,7 @@ export async function buildApp(config: AppConfig): Promise<FastifyInstance> {
     await v1.register(probeRoutes)
     await v1.register(marketplaceRoutes)
     await v1.register(supportRoutes)
+    await v1.register(registerContactRoutes)
     await v1.register(notesRoutes)
     await v1.register(onboardingRoutes)
     await v1.register(billingRoutes)

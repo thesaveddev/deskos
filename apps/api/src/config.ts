@@ -53,6 +53,7 @@ export interface AppConfig {
   webauthn: WebauthnConfig
   push: PushConfig
   billing: BillingConfig
+  contact: ContactConfig
   storage: StorageConfig
 }
 
@@ -82,6 +83,11 @@ export interface BillingConfig {
   stripeSecretKey: string
   /** Stripe webhook signing secret — required to trust Stripe events. */
   stripeWebhookSecret: string
+}
+
+export interface ContactConfig {
+  /** Inbox that receives public contact-form enquiries. */
+  contactEmail: string
 }
 
 export interface SentryConfig {
@@ -344,6 +350,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       paystackPublicKey: value('REYDESK_PAYSTACK_PUBLIC_KEY') ?? '',
       stripeSecretKey: value('REYDESK_STRIPE_SECRET_KEY') ?? '',
       stripeWebhookSecret: value('REYDESK_STRIPE_WEBHOOK_SECRET') ?? '',
+    },
+    contact: {
+      contactEmail: value('REYDESK_CONTACT_EMAIL') ?? 'hello@reydesk.com',
     },
     storage: {
       driver: (value('REYDESK_STORAGE_DRIVER') as 'local' | 's3') ?? 'local',

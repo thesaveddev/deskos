@@ -160,6 +160,11 @@ export function acknowledgeDeviceAlert(id: string): Promise<unknown> {
   return api(`/device-alerts/${id}/acknowledge`, { method: 'POST', body: {} })
 }
 
+/** Open (unresolved) alerts with device + ticket context — dashboard feed. */
+export function listOpenAlerts(): Promise<{ alerts: MonitoringAlert[] }> {
+  return api('/device-alerts?open=true')
+}
+
 export function snoozeDeviceAlert(id: string, minutes: number): Promise<unknown> {
   return api(`/device-alerts/${id}/snooze`, { method: 'POST', body: { minutes } })
 }

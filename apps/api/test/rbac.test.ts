@@ -13,6 +13,18 @@ describe('RBAC', () => {
     app = await createTestApp()
     owner = await signupOwner(app)
     const tenantId = owner.tenantId!
+
+    // This file seeds four members and invites more; that only fits on a paid
+    // plan (the Free tier caps technicians at 3). Subscribe so the assertions
+    // below exercise RBAC, not billing entitlements.
+    const checkout = await app.inject({
+      method: 'POST',
+      url: '/api/v1/billing/checkout',
+      headers: authHeaders(owner),
+      payload: { plan: 'starter', billing_cycle: 'monthly' },
+    })
+    if (checkout.statusCode !== 200) throw new Error(`starter checkout failed (${checkout.statusCode}): ${checkout.body}`)
+
     analyst = await seedActiveMember(app, tenantId, 'analyst')
     auditor = await seedActiveMember(app, tenantId, 'auditor')
     endUser = await seedActiveMember(app, tenantId, 'end_user')
