@@ -175,6 +175,59 @@ describe('team chat', () => {
     expect(blank.statusCode).toBe(400)
   })
 
+  it('returns the newest 200 messages when a room exceeds the window', async () => {
+    const created = await app.inject({ method: 'POST', url: '/api/v1/chat/rooms', headers: authHeaders(owner), payload: { name: 'Burst room' } })
+    expect(created.statusCode).toBe(201)
+    const burstRoomId = created.json().room.id as string
+    for (let i = 0; i < 205; i++) {
+      const sent = await app.inject({ method: 'POST', url: `/api/v1/chat/rooms/${burstRoomId}/messages`, headers: authHeaders(analyst), payload: { body: `msg ${i}` } })
+      expect(sent.statusCode).toBe(201)
+    }
+    const list = await app.inject({ method: 'GET', url: `/api/v1/chat/rooms/${burstRoomId}/messages`, headers: authHeaders(owner) })
+    expect(list.statusCode).toBe(200)
+    const messages = list.json().messages as Array<{ body: string }>
+    expect(messages).toHaveLength(200)
+    expect(messages[0].body).toBe('msg 5')
+    expect(messages[messages.length - 1].body).toBe('msg 204')
+  })
+
+  it('lets the author delete a recent message but not other members', async () => {
+    const sent = await app.inject({ method: 'POST', url: `/api/v1/chat/rooms/${roomId}/messages`, headers: authHeaders(analyst), payload: { body: 'delete me soon' } })
+    expect(sent.statusCode).toBe(201)
+    const messageId = sent.json().message.id as number
+
+    const foreignDelete = await app.inject({ method: 'DELETE', url: `/api/v1/chat/messages/${messageId}`, headers: authHeaders(engineer) })
+    expect(foreignDelete.statusCode).toBe(403)
+    expect(foreignDelete.json().error.code).toBe('permission_denied')
+
+    const deleted = await app.inject({ method: 'DELETE', url: `/api/v1/chat/messages/${messageId}`, headers: authHeaders(analyst) })
+    expect(deleted.statusCode).toBe(200)
+
+    const list = await app.inject({ method: 'GET', url: `/api/v1/chat/rooms/${roomId}/messages`, headers: authHeaders(owner) })
+    expect((list.json().messages as Array<{ body: string }>).some((m) => m.body === 'delete me soon')).toBe(false)
+  })
+
+  it('lets a manager delete another member message in a restricted room', async () => {
+    const created = await app.inject({ method: 'POST', url: '/api/v1/chat/rooms', headers: authHeaders(engineer), payload: { name: 'Engineer bridge' } })
+    expect(created.statusCode).toBe(201)
+    const bridgeRoomId = created.json().room.id as string
+
+    const sent = await app.inject({ method: 'POST', url: `/api/v1/chat/rooms/${bridgeRoomId}/messages`, headers: authHeaders(analyst), payload: { body: 'manager cleanup' } })
+    expect(sent.statusCode).toBe(201)
+    const messageId = sent.json().message.id as number
+
+    const moderated = await app.inject({ method: 'DELETE', url: `/api/v1/chat/messages/${messageId}`, headers: authHeaders(owner) })
+    expect(moderated.statusCode).toBe(200)
+  })
+
+  it('reports last activity per room for sorting', async () => {
+    const rooms = await app.inject({ method: 'GET', url: '/api/v1/chat/rooms', headers: authHeaders(owner) })
+    expect(rooms.statusCode).toBe(200)
+    for (const room of rooms.json().rooms as Array<{ last_message_at: string | null }>) {
+      expect('last_message_at' in room).toBe(true)
+    }
+  })
+
   it('isolates rooms and messages between tenants', async () => {
     const list = await app.inject({ method: 'GET', url: `/api/v1/chat/rooms/${roomId}/messages`, headers: authHeaders(foreign) })
     expect(list.statusCode).toBe(404)

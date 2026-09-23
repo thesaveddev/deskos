@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Shell } from '../components/Shell.js'
 import { Alert, Modal } from '../components/ui.js'
 import { Icon } from '../components/Icons.js'
-import { addChatRoomMember, createChatRoom, downloadChatAttachment, listChatMessages, listChatRoomMembers, listChatRooms, removeChatRoomMember, sendChatMessage, sendChatMessageWithFile, type ChatMessage, type ChatRoom, type ChatRoomMember, type ChatRoomMembershipInfo } from '../lib/chat.js'
+import { addChatRoomMember, createChatRoom, deleteChatMessage, downloadChatAttachment, listChatMessages, listChatRoomMembers, listChatRooms, removeChatRoomMember, sendChatMessage, sendChatMessageWithFile, type ChatMessage, type ChatRoom, type ChatRoomMember, type ChatRoomMembershipInfo } from '../lib/chat.js'
 import { connectChatWebSocket, type ChatRealtimeMessage } from '../lib/chatRealtime.js'
 import { api } from '../lib/api.js'
 import { useAuth } from '../lib/auth.js'
@@ -20,6 +20,23 @@ function formatBytes(bytes: number): string {
 
 function isImage(mime: string): boolean {
   return mime.startsWith('image/')
+}
+
+function formatRelative(iso?: string | null): string {
+  if (!iso) return 'no activity'
+  const diff = Date.now() - new Date(iso).getTime()
+  if (Number.isNaN(diff)) return ''
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  return `${Math.floor(hours / 24)}d ago`
+}
+
+function withinDeleteWindow(iso: string): boolean {
+  const created = new Date(iso).getTime()
+  return !Number.isNaN(created) && Date.now() - created <= 60 * 60 * 1000
 }
 
 export default function ChatPage() {
@@ -84,13 +101,18 @@ export default function ChatPage() {
     void loadMessages(activeRoomId)
   }, [activeRoomId, loadMessages])
 
-  // WebSocket connection for real-time chat delivery
+  // WebSocket connection for real-time chat delivery. A (re)connect triggers
+  // a message re-sync so anything sent while the socket was down is not lost.
   useEffect(() => {
     if (!tenantId || !activeRoomId) return
 
     const unsub = connectChatWebSocket({
       roomId: activeRoomId,
       tenantId,
+      onConnected: () => {
+        const roomId = activeRoomRef.current
+        if (roomId) void loadMessages(roomId)
+      },
       onMessage: (msg: ChatRealtimeMessage) => {
         if (msg.type === 'chat.message' && msg.message) {
           // Append the new message to state (avoid duplicate by id)
@@ -99,13 +121,13 @@ export default function ChatPage() {
             if (exists) return prev
             return [...prev, msg.message!]
           })
-          // Refresh room list to update message count
+          // Refresh room list to update message count and activity
           void loadRooms()
         }
       },
     })
     return unsub
-  }, [tenantId, activeRoomId, loadRooms])
+  }, [tenantId, activeRoomId, loadRooms, loadMessages])
 
   useEffect(() => {
     threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: 'smooth' })
@@ -176,14 +198,36 @@ export default function ChatPage() {
     setBusy(true)
     setError(null)
     try {
-      if (selectedFile) await sendChatMessageWithFile(activeRoomId, draft.trim(), selectedFile)
-      else await sendChatMessage(activeRoomId, draft.trim())
+      const result = selectedFile
+        ? await sendChatMessageWithFile(activeRoomId, draft.trim(), selectedFile)
+        : await sendChatMessage(activeRoomId, draft.trim())
+      // The REST response is authoritative — render immediately instead of
+      // waiting for the WebSocket broadcast (which dedupes by id).
+      setMessages((prev) => {
+        if (prev.some((m) => String(m.id) === String(result.message.id))) return prev
+        return [...prev, { ...result.message, sender_name: result.message.sender_name ?? user?.name ?? null }]
+      })
       setDraft('')
       setSelectedFile(null)
       if (fileInputRef.current) fileInputRef.current.value = ''
-      // WebSocket will deliver the message instantly; no need to reload
+      void loadRooms()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Send failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const deleteMessage = async (messageId: string | number) => {
+    if (!activeRoomId || busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      await deleteChatMessage(activeRoomId, messageId)
+      setMessages((prev) => prev.filter((m) => String(m.id) !== String(messageId)))
+      void loadRooms()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Message could not be deleted')
     } finally {
       setBusy(false)
     }
@@ -256,7 +300,10 @@ export default function ChatPage() {
                     className={`chat-room-item${room.id === activeRoomId ? ' active' : ''}`}
                     onClick={() => setActiveRoomId(room.id)}
                   >
-                    <span className="chat-room-name"><span aria-hidden="true">#</span>{room.name}</span>
+                    <span className="chat-room-copy">
+                      <span className="chat-room-name"><span aria-hidden="true">#</span>{room.name}</span>
+                      <small className="muted">{formatRelative(room.last_message_at)}</small>
+                    </span>
                     <span className="muted mono">{room.message_count}</span>
                   </button>
                 </li>
@@ -294,6 +341,11 @@ export default function ChatPage() {
                           </button>
                         ))}
                       </div>
+                    ) : null}
+                    {m.sender_id === user?.id && withinDeleteWindow(m.created_at) ? (
+                      <button type="button" className="chat-message-delete" aria-label="Delete message" title="Delete message" disabled={busy} onClick={() => void deleteMessage(m.id)}>
+                        <Icon name="delete" size={12} />
+                      </button>
                     ) : null}
                   </div>
                 ))}

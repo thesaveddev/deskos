@@ -8,6 +8,7 @@ export interface ChatRoom {
   created_by?: string | null
   created_at: string
   message_count: number
+  last_message_at?: string | null
 }
 
 export interface ChatAttachment {
@@ -65,6 +66,10 @@ export function removeChatRoomMember(roomId: string, userId: string): Promise<{ 
 
 export function listChatMessages(roomId: string): Promise<{ messages: ChatMessage[] }> {
   return api(`/chat/rooms/${roomId}/messages`)
+}
+
+export function deleteChatMessage(roomId: string, messageId: string | number): Promise<{ ok: boolean }> {
+  return api(`/chat/messages/${messageId}`, { method: 'DELETE' })
 }
 
 export function sendChatMessage(roomId: string, body: string): Promise<{ message: ChatMessage }> {

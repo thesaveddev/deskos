@@ -8,41 +8,18 @@ import { withTenant } from '../../db/pool.js'
 import { authenticate } from '../../middleware/authenticate.js'
 import { requirePermission } from '../../middleware/requirePermission.js'
 import { requireTenant } from '../../middleware/requireTenant.js'
+import { publishChatMessage } from './chat.realtime.js'
+import { assertRoomAccess, TEAM_CHAT_ADMIN_ROLES, type ChatRoomRow } from './chat.access.js'
 import '../../types.js'
 
 const roomSchema = z.object({ name: z.string().trim().min(1).max(80) })
 const roomMemberSchema = z.object({ userId: z.string().uuid() })
 const messageSchema = z.object({ body: z.string().trim().min(1).max(4000) })
-const TEAM_CHAT_ADMIN_ROLES = new Set(['owner', 'it_manager', 'service_desk_manager'])
 const CHAT_FILE_MAX_BYTES = 10 * 1024 * 1024
 
 function sanitizeFilename(name: string): string {
   const base = path.basename(name).replace(/[^\w.\- ()[\]]+/g, '_').slice(0, 180)
   return base || 'attachment'
-}
-
-type ChatRoomRow = { id: string; name: string; team_id: string | null; created_by: string | null }
-
-async function assertRoomAccess(client: import('../../db/pool.js').DbClient, roomId: string, userId: string, orgRole: string): Promise<ChatRoomRow> {
-  const room = (await client.query('SELECT id, name, team_id, created_by FROM chat_rooms WHERE id = $1', [roomId])).rows[0] as ChatRoomRow | undefined
-  if (!room) throw AppError.notFound('Room not found')
-  if (TEAM_CHAT_ADMIN_ROLES.has(orgRole) || room.created_by === userId) return room
-  if (room.team_id) {
-    const member = (await client.query(
-      'SELECT 1 FROM team_members WHERE team_id = $1 AND user_id = $2',
-      [room.team_id, userId],
-    )).rows[0]
-    if (!member) throw AppError.forbidden('You are not a member of this team chat', 'team_chat_membership_required')
-    return room
-  }
-  const explicitMembers = await client.query('SELECT 1 FROM chat_room_members WHERE room_id = $1 AND ($2::uuid IS NULL OR user_id <> $2) LIMIT 1', [roomId, room.created_by])
-  if (explicitMembers.rows.length === 0) return room
-  const member = (await client.query(
-    'SELECT 1 FROM chat_room_members WHERE room_id = $1 AND user_id = $2',
-    [roomId, userId],
-  )).rows[0]
-  if (!member) throw AppError.forbidden('You are not a member of this chat room', 'chat_room_membership_required')
-  return room
 }
 
 async function assertRoomManagement(client: import('../../db/pool.js').DbClient, roomId: string, userId: string, orgRole: string): Promise<ChatRoomRow> {
@@ -61,6 +38,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       const { rows } = await client.query(
         `SELECT r.id, r.name, r.team_id, r.created_by, r.created_at,
                 (SELECT count(*) FROM chat_messages m WHERE m.room_id = r.id) AS message_count,
+                (SELECT max(m.created_at) FROM chat_messages m WHERE m.room_id = r.id) AS last_message_at,
                 t.name AS team_name
            FROM chat_rooms r
            LEFT JOIN teams t ON t.id = r.team_id
@@ -76,7 +54,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
              OR ($1 IN (SELECT tm.user_id FROM team_members tm WHERE tm.team_id = r.team_id))
              OR $2 IN ('owner', 'it_manager', 'service_desk_manager')
              OR r.created_by = $1
-          ORDER BY r.created_at ASC`,
+          ORDER BY COALESCE((SELECT max(m.created_at) FROM chat_messages m WHERE m.room_id = r.id), r.created_at) DESC`,
         [request.user!.id, ctx.orgRole],
       )
       return { rooms: rows }
@@ -220,24 +198,27 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     return withTenant(app.db, ctx.tenantId, async (client) => {
       await assertRoomAccess(client, id, request.user!.id, ctx.orgRole)
       const { rows } = await client.query(
-        `SELECT m.id, m.body, m.created_at, m.sender_id, u.name AS sender_name,
-                COALESCE((
-                  SELECT json_agg(json_build_object(
-                    'id', a.id,
-                    'filename', a.filename,
-                    'mime', a.mime,
-                    'size_bytes', a.size_bytes,
-                    'uploaded_by', a.uploaded_by,
-                    'created_at', a.created_at
-                  ) ORDER BY a.created_at, a.id)
-                    FROM chat_attachments a
-                   WHERE a.message_id = m.id
-                ), '[]'::json) AS attachments
-           FROM chat_messages m
-           LEFT JOIN users u ON u.id = m.sender_id
-          WHERE m.room_id = $1
-          ORDER BY m.created_at ASC, m.id ASC
-          LIMIT 200`,
+        `SELECT * FROM (
+          SELECT m.id, m.body, m.created_at, m.sender_id, u.name AS sender_name,
+                 COALESCE((
+                   SELECT json_agg(json_build_object(
+                     'id', a.id,
+                     'filename', a.filename,
+                     'mime', a.mime,
+                     'size_bytes', a.size_bytes,
+                     'uploaded_by', a.uploaded_by,
+                     'created_at', a.created_at
+                   ) ORDER BY a.created_at, a.id)
+                     FROM chat_attachments a
+                    WHERE a.message_id = m.id
+                 ), '[]'::json) AS attachments
+            FROM chat_messages m
+            LEFT JOIN users u ON u.id = m.sender_id
+           WHERE m.room_id = $1
+           ORDER BY m.created_at DESC, m.id DESC
+           LIMIT 200
+        ) latest
+        ORDER BY latest.created_at ASC, latest.id ASC`,
         [id],
       )
       return { messages: rows }
@@ -354,10 +335,47 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
         })
         return { ...messageRow, attachments: attachment ? [attachment] : [] }
       })
+      await publishChatMessage(app.db, ctx.tenantId, id, message)
       return reply.code(201).send({ message })
     } catch (error) {
       if (storedFile?.storageKey) await app.storage.delete(storedFile.storageKey)
       throw error
     }
   })
+
+  app.delete('/chat/messages/:id', { preHandler: write }, async (request) => {
+    const ctx = request.tenantCtx!
+    const { id } = request.params as { id: string }
+    return withTenant(app.db, ctx.tenantId, async (client) => {
+      const row = (await client.query(
+        `SELECT m.id, m.room_id, m.sender_id, m.created_at
+           FROM chat_messages m
+          WHERE m.id = $1`,
+        [id],
+      )).rows[0] as { id: string; room_id: string; sender_id: string | null; created_at: string } | undefined
+      if (!row) throw AppError.notFound('Message not found')
+      await assertRoomAccess(client, row.room_id, request.user!.id, ctx.orgRole)
+      const isModerator = TEAM_CHAT_ADMIN_ROLES.has(ctx.orgRole) || (await isRoomCreator(client, row.room_id, request.user!.id))
+      const isAuthor = row.sender_id === request.user!.id
+      const withinWindow = Date.now() - new Date(row.created_at).getTime() <= 60 * 60 * 1000
+      if ((!isAuthor || !withinWindow) && !isModerator) {
+        throw AppError.forbidden('Messages can only be deleted by their author within an hour, or by a manager at any time', 'chat_message_delete_forbidden')
+      }
+      await client.query('DELETE FROM chat_messages WHERE id = $1', [id])
+      await recordAudit(client, ctx.tenantId, {
+        actorType: 'user',
+        actorId: request.user!.id,
+        action: 'chat.message_deleted',
+        objectType: 'chat_message',
+        objectId: id,
+        ip: request.ip,
+        payload: { roomId: row.room_id, author: row.sender_id },
+      })
+      return { ok: true }
+    })
+  })
+}
+
+function isRoomCreator(client: import('../../db/pool.js').DbClient, roomId: string, userId: string): Promise<boolean> {
+  return client.query('SELECT 1 FROM chat_rooms WHERE id = $1 AND created_by = $2', [roomId, userId]).then((r) => r.rows.length > 0)
 }
