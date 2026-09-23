@@ -17,6 +17,7 @@
 - Daily automated Postgres backups,30-day retention, each run verified non-empty (cron at 02:00 UTC; script tested manually)
 - Docker container log rotation (daily, 100 MB cap, 7 generations) plus the existing nginx/logrotate coverage
 - **14-day Pro trial live:** every signup starts a `trialing` Pro subscription (lazy expiry plus checkout/downgrade conversion verified by API tests)
+- **TURN relay live on production:** `ICE_TURN_URLS=turn:reydesk.com:3478` + shared secret in `.env.prod`, coturn container running, ufw opens3478/udp+tcp and49160-49200/udp relay range, API probe reports `configured: true`
 
 **Owner actions still required before taking money:**
 - [ ] Stripe **live** keys + webhook signing secret set in VPS env; verify webhook → checkout end-to-end

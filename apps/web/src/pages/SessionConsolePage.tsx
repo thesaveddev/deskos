@@ -170,6 +170,18 @@ export default function SessionConsolePage() {
     })
   }
 
+  // The NotAllowedError branch above tells the technician to click the video
+  // area — this is that click target. Retries play() from the user gesture and
+  // clears the playback notice once the screen actually starts.
+  const startPlayback = () => {
+    const video = videoRef.current
+    if (!video || !video.paused) return
+    void video
+      .play()
+      .then(() => setError((current) => (typeof current === 'string' && current.includes('playback') ? null : current)))
+      .catch(() => undefined)
+  }
+
   useEffect(() => {
     attachRemoteVideo()
     // The video element is recreated when the stream arrives.
@@ -889,7 +901,7 @@ export default function SessionConsolePage() {
             </div> : null}
             {monitorStatus ? <span className="session-display-status" role="status">{monitorStatus}</span> : null}
           </div></div> : null}
-          {remoteStream ? <div ref={videoWrapRef} className="session-video-wrap">
+          {remoteStream ? <div ref={videoWrapRef} className="session-video-wrap" onClick={startPlayback}>
             <video
               ref={videoRef}
               autoPlay
