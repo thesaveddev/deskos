@@ -17,3 +17,4 @@ apps/api/.recordings/
 artifacts/
 deskos-agent.json
 .freebuff/
+test-results/

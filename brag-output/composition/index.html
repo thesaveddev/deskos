@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1280, height=720" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      :root { --bg: #0e1114; --panel: #14181d; --panel-2: #1a2027; --line: #303a45; --text: #e6e9ec; --muted: #b7c0c9; --dim: #8f9aa5; --accent: #e8a33d; --ok: #3fb27f; --warn: #d9a03c; --crit: #f07c75; --info: #5b9dd6; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; width: 1280px; height: 720px; overflow: hidden; background: var(--bg); }
+      body { color: var(--text); font-family: Arial, sans-serif; }
+      #root { position: relative; width: 1280px; height: 720px; overflow: hidden; background: radial-gradient(circle at 70% 18%, rgba(232,163,61,.08), transparent 34%), var(--bg); }
+      #root::before { content: ''; position: absolute; inset: 0; background: linear-gradient(115deg, rgba(255,255,255,.025), transparent 32%, rgba(255,255,255,.012)); pointer-events: none; }
+      .scene { position: absolute; inset: 0; padding: 54px 68px; opacity: 0; }
+      .scene.visible { opacity: 1; }
+      .eyebrow { color: var(--accent); font: 600 13px monospace; letter-spacing: .16em; text-transform: uppercase; }
+      h1, h2, p { margin: 0; }
+      h1 { margin-top: 20px; max-width: 680px; font-size: 60px; line-height: 1.02; letter-spacing: -.055em; font-weight: 600; }
+      h2 { font-size: 34px; letter-spacing: -.035em; font-weight: 600; }
+      .sub { margin-top: 16px; max-width: 550px; color: var(--muted); font-size: 19px; line-height: 1.45; }
+      .mono { font-family: monospace; }
+      .console { position: absolute; left: 68px; right: 68px; top: 300px; height: 330px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--panel); box-shadow: 0 22px 70px rgba(0,0,0,.34); }
+      .console-bar { display: flex; align-items: center; gap: 7px; height: 36px; padding: 0 14px; border-bottom: 1px solid var(--line); background: #11151a; }
+      .dot { width: 7px; height: 7px; border-radius: 50%; }
+      .console-title { margin-left: 8px; color: var(--dim); font-size: 11px; }
+      .console-body { display: flex; height: calc(100% - 36px); }
+      .rail { width: 150px; flex: 0 0 150px; padding: 20px 12px; border-right: 1px solid var(--line); }
+      .rail-item { padding: 10px 12px; color: var(--muted); font-size: 12px; border-radius: 5px; }
+      .rail-item.active { color: var(--text); background: var(--panel-2); border-left: 2px solid var(--accent); }
+      .main { flex: 1; min-width: 0; padding: 22px; }
+      .main-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+      .main-title { font-size: 18px; font-weight: 600; }
+      .main-meta { color: var(--dim); font: 11px monospace; }
+      .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
+      .stat { padding: 13px; border: 1px solid var(--line); background: #11151a; border-radius: 6px; }
+      .stat strong { display: block; font-size: 20px; }
+      .stat span { color: var(--muted); font-size: 11px; }
+      .table { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+      .row { display: grid; grid-template-columns: 70px 1fr 130px 110px; align-items: center; min-height: 48px; padding: 0 14px; border-bottom: 1px solid var(--line); font-size: 12px; }
+      .row:last-child { border-bottom: 0; }
+      .row.head { min-height: 32px; color: var(--dim); background: #11151a; font: 10px monospace; text-transform: uppercase; }
+      .pill { display: inline-flex; width: max-content; padding: 4px 7px; border-radius: 4px; font-size: 10px; }
+      .pill.ok { color: var(--ok); background: rgba(63,178,127,.1); }
+      .pill.warn { color: var(--warn); background: rgba(217,160,60,.1); }
+      .pill.crit { color: var(--crit); background: rgba(224,86,79,.1); }
+      .callout { position: absolute; left: 68px; bottom: 46px; color: var(--muted); font: 12px monospace; }
+      .callout b { color: var(--accent); font-weight: 500; }
+      .context-panel { position: absolute; left: 340px; right: 68px; top: 286px; height: 370px; display: grid; grid-template-columns: 1fr 300px; gap: 14px; }
+      .ticket, .side-panel { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: 0 22px 70px rgba(0,0,0,.24); }
+      .ticket { padding: 24px; }
+      .ticket-top { display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
+      .ticket-id { color: var(--accent); font: 12px monospace; }
+      .ticket h2 { margin-top: 8px; font-size: 25px; }
+      .ticket p { margin-top: 10px; color: var(--muted); font-size: 14px; }
+      .detail-row { display: flex; justify-content: space-between; gap: 12px; padding: 16px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+      .detail-row span:first-child { color: var(--dim); }
+      .side-panel { padding: 22px; }
+      .side-title { margin-bottom: 18px; color: var(--muted); font: 11px monospace; letter-spacing: .08em; text-transform: uppercase; }
+      .device { padding: 14px; border: 1px solid var(--line); border-radius: 6px; background: #11151a; }
+      .device strong { display: block; font-size: 15px; }
+      .device span { display: block; margin-top: 5px; color: var(--muted); font: 11px monospace; }
+      .signal { display: flex; align-items: center; gap: 7px; margin-top: 18px; color: var(--warn); font-size: 12px; }
+      .signal i { width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }
+      .action { margin-top: 22px; display: inline-flex; padding: 11px 14px; border-radius: 5px; background: var(--accent); color: #1b1408; font-size: 12px; font-weight: 600; }
+      .consent { position: absolute; left: 142px; right: 142px; top: 274px; height: 380px; display: grid; grid-template-columns: 1fr 340px; gap: 16px; }
+      .session-screen, .consent-card { border: 1px solid var(--line); border-radius: 9px; background: var(--panel); box-shadow: 0 22px 70px rgba(0,0,0,.34); }
+      .session-screen { padding: 24px; background: linear-gradient(135deg, #151b20, #101418); }
+      .session-screen h2 { margin-top: 14px; font-size: 29px; }
+      .session-screen p { margin-top: 10px; color: var(--muted); font-size: 14px; }
+      .screen-placeholder { margin-top: 30px; height: 150px; display: flex; align-items: center; justify-content: center; border: 1px dashed var(--line); border-radius: 6px; color: var(--dim); font: 12px monospace; }
+      .consent-card { padding: 24px; }
+      .consent-card h2 { font-size: 23px; }
+      .code { margin: 18px 0; padding: 15px; border: 1px solid rgba(232,163,61,.35); border-radius: 6px; color: var(--accent); text-align: center; font: 600 25px monospace; letter-spacing: .12em; }
+      .permission { display: flex; gap: 9px; margin: 12px 0; color: var(--muted); font-size: 12px; }
+      .check { color: var(--ok); }
+      .approved { display: inline-flex; margin-top: 16px; padding: 9px 12px; border-radius: 5px; color: var(--ok); background: rgba(63,178,127,.1); font: 12px monospace; }
+      .audit { position: absolute; left: 158px; right: 158px; top: 276px; height: 350px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); box-shadow: 0 22px 70px rgba(0,0,0,.3); padding: 25px; }
+      .audit-head { display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
+      .audit-head h2 { margin-top: 8px; font-size: 26px; }
+      .resolved { color: var(--ok); font: 12px monospace; }
+      .event { display: grid; grid-template-columns: 120px 1fr auto; align-items: center; min-height: 48px; border-bottom: 1px solid var(--line); font-size: 13px; }
+      .event time { color: var(--dim); font: 11px monospace; }
+      .event span { color: var(--muted); }
+      .event b { color: var(--ok); font: 11px monospace; font-weight: 500; }
+      .brand-lockup { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+      .brand-lockup .mark { width: 58px; height: 58px; margin-bottom: 18px; border: 2px solid var(--accent); border-radius: 16px 16px 16px 4px; transform: rotate(-8deg); position: relative; }
+      .brand-lockup .mark::after { content: ''; position: absolute; width: 16px; height: 16px; left: 19px; top: 19px; border-radius: 50%; background: var(--accent); }
+      .brand-lockup h2 { font-size: 46px; letter-spacing: -.06em; }
+      .brand-lockup p { margin-top: 12px; color: var(--muted); font-size: 15px; }
+      .brand-lockup .cta { margin-top: 24px; padding: 12px 18px; border-radius: 5px; background: var(--accent); color: #1b1408; font-size: 12px; font-weight: 600; }
+      [data-start] { will-change: transform, opacity; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="20" data-width="1280" data-height="720">
+      <section class="scene clip" id="scene-1" data-start="0" data-duration="3" data-track-index="0">
+        <div class="eyebrow">ReyDesk · technician console</div>
+        <h1>From alert to resolved — without changing tools.</h1>
+        <p class="sub">One workspace for remote support, ITSM, endpoint health, and the record of what happened.</p>
+        <div class="console" id="console-1">
+          <div class="console-bar"><i class="dot" style="background:#e0564f"></i><i class="dot" style="background:#d9a03c"></i><i class="dot" style="background:#3fb27f"></i><span class="console-title mono">ReyDesk — technician console</span></div>
+          <div class="console-body"><nav class="rail"><div class="rail-item active">Tickets</div><div class="rail-item">Devices</div><div class="rail-item">Sessions</div><div class="rail-item">Endpoints</div></nav><main class="main"><div class="main-head"><span class="main-title">Support queue</span><span class="main-meta">LIVE · 3 signals</span></div><div class="stats"><div class="stat"><strong>42</strong><span>open tickets</span></div><div class="stat"><strong>318</strong><span>devices online</span></div><div class="stat"><strong>3</strong><span>live sessions</span></div><div class="stat"><strong style="color:var(--ok)">98.6%</strong><span>SLA compliance</span></div></div><div class="table"><div class="row head"><span>#</span><span>Subject</span><span>Status</span><span>SLA</span></div><div class="row"><span class="mono">1042</span><span>Printer on floor 3 offline</span><span class="pill ok">in progress</span><span class="mono" style="color:var(--ok)">on time</span></div><div class="row"><span class="mono">1041</span><span>VPN access for contractor</span><span class="pill warn">pending user</span><span class="mono" style="color:var(--warn)">2h left</span></div><div class="row" id="alert-row"><span class="mono">1040</span><span>High CPU on YEMIS-LAPTOP</span><span class="pill crit">escalated</span><span class="mono" style="color:var(--crit)">overdue</span></div></div></main></div>
+        </div>
+        <div class="callout">signal detected <b>→</b> ticket ready</div>
+      </section>
+
+      <section class="scene clip" id="scene-2" data-start="3" data-duration="4" data-track-index="1">
+        <div class="eyebrow">01 · keep the context</div>
+        <h1 style="font-size:48px">The ticket carries the signal with it.</h1>
+        <div class="context-panel"><article class="ticket"><div class="ticket-top"><div><span class="ticket-id">TICKET #1040</span><h2>High CPU on YEMIS-LAPTOP</h2><p>Device performance alert received from endpoint monitoring.</p></div><span class="pill crit">escalated</span></div><div class="detail-row"><span>Assigned to</span><strong>Opeyemi · Support</strong></div><div class="detail-row"><span>Next action</span><strong style="color:var(--accent)">Open remote session</strong></div><div class="detail-row"><span>SLA</span><strong style="color:var(--crit)">Overdue · 18m</strong></div></article><aside class="side-panel"><div class="side-title">Affected device</div><div class="device"><strong>YEMIS-LAPTOP</strong><span>Windows 11 · online</span><span>Last check-in · 24 sec ago</span></div><div class="signal"><i></i> CPU usage · 94%</div><div class="action">Start consented session</div></aside></div>
+      </section>
+
+      <section class="scene clip" id="scene-3" data-start="7" data-duration="5" data-track-index="2">
+        <div class="eyebrow">02 · consent first</div>
+        <h1 style="font-size:46px">Remote support starts with consent.</h1>
+        <div class="consent"><article class="session-screen"><span class="ticket-id">REMOTE SESSION · WAITING FOR APPROVAL</span><h2>YEMIS-LAPTOP</h2><p>The endpoint user reviews access before the technician can see or control the device.</p><div class="screen-placeholder">SCREEN PREVIEW APPEARS AFTER CONSENT</div></article><aside class="consent-card"><h2>Support request</h2><div class="code">895 069 438 804</div><div class="permission"><span class="check">✓</span><span>View the user's screen</span></div><div class="permission"><span class="check">✓</span><span>Move the mouse and type</span></div><div class="permission"><span class="check">✓</span><span>Send and receive files</span></div><div class="approved">✓ user approved access</div></aside></div>
+      </section>
+
+      <section class="scene clip" id="scene-4" data-start="12" data-duration="4" data-track-index="3">
+        <div class="eyebrow">03 · leave the record</div>
+        <h1 style="font-size:46px">Every action leaves a record.</h1>
+        <div class="audit"><div class="audit-head"><div><span class="ticket-id">TICKET #1040</span><h2>High CPU on YEMIS-LAPTOP</h2></div><span class="resolved">RESOLVED</span></div><div class="event"><time>14:32:08</time><span>Remote session ended by technician</span><b>RECORDED</b></div><div class="event"><time>14:31:44</time><span>CPU returned to normal range</span><b>VERIFIED</b></div><div class="event"><time>14:30:12</time><span>User approved screen and input access</span><b>CONSENT</b></div><div class="event"><time>14:29:57</time><span>Technician added resolution note</span><b>RECORDED</b></div></div>
+      </section>
+
+      <section class="scene clip" id="scene-5" data-start="16" data-duration="4" data-track-index="4">
+        <div class="brand-lockup"><div class="mark"></div><h2>ReyDesk</h2><p>Remote support · ITSM · endpoint health</p><span class="cta">Start your free workspace</span></div>
+      </section>
+    </div>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      const scenes = [
+        ['#scene-1', 0, 3], ['#scene-2', 3, 4], ['#scene-3', 7, 5], ['#scene-4', 12, 4], ['#scene-5', 16, 4]
+      ];
+      scenes.forEach(([selector, start, duration], index) => {
+        tl.to(selector, { opacity: 1, duration: .45, ease: 'power2.out' }, start);
+        if (index < scenes.length - 1) tl.to(selector, { opacity: 0, duration: .35, ease: 'power2.in' }, start + duration - .35);
+      });
+      tl.fromTo('#alert-row', { backgroundColor: 'rgba(224,86,79,0)' }, { backgroundColor: 'rgba(224,86,79,.12)', duration: .35, yoyo: true, repeat: 1 }, .7);
+      tl.fromTo('#console-1', { y: 24, opacity: 0 }, { y: 0, opacity: 1, duration: .6, ease: 'power3.out' }, .15);
+      tl.fromTo('.context-panel', { x: 28, opacity: 0 }, { x: 0, opacity: 1, duration: .55, ease: 'power3.out' }, 3.15);
+      tl.fromTo('.consent', { y: 24, opacity: 0 }, { y: 0, opacity: 1, duration: .55, ease: 'power3.out' }, 7.15);
+      tl.fromTo('.audit', { scale: .97, opacity: 0 }, { scale: 1, opacity: 1, duration: .55, ease: 'power3.out' }, 12.15);
+      tl.fromTo('.brand-lockup', { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: .65, ease: 'power3.out' }, 16.15);
+      window.__timelines.main = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>
