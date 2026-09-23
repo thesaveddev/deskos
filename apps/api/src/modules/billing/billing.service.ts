@@ -165,7 +165,42 @@ export async function listPlans(db: DbPool): Promise<Plan[]> {
 
 /* ── Subscription ──────────────────────────────────────────── */
 
+/** Every new workspace rides the Pro plan for this long before the Free tier applies. */
+export const TRIAL_DAYS = 14
+
+/**
+ * Start the14-day Pro trial for a brand-new workspace. Signup treats this as
+ * best-effort, so a billing hiccup never blocks account creation — the tenant
+ * simply stays on Free.
+ */
+export async function startProTrial(db: DbPool, tenantId: string): Promise<void> {
+  await db.query(
+    `INSERT INTO tenant_subscriptions (tenant_id, plan_id, status, trial_ends_at, current_period_start, current_period_end)
+     SELECT $1, id, 'trialing', now() + interval '1 day' * $2, now(), now() + interval '1 day' * $2
+       FROM subscription_plans WHERE slug = 'pro'
+     ON CONFLICT (tenant_id) WHERE status IN ('active', 'trialing') DO NOTHING`,
+    [tenantId, TRIAL_DAYS],
+  )
+}
+
+/**
+ * Lazily end a trial that has run out: flips it to 'canceled' so entitlement
+ * resolution and the billing page both fall back to the Free tier. Called on
+ * every subscription read; the guarded UPDATE makes concurrent calls
+ * idempotent and costs one index lookup when no trial exists.
+ */
+export async function expireTrialIfDue(db: DbPool, tenantId: string): Promise<boolean> {
+  const res = await db.query(
+    `UPDATE tenant_subscriptions
+        SET status = 'canceled', canceled_at = COALESCE(canceled_at, now()), updated_at = now()
+      WHERE tenant_id = $1 AND status = 'trialing' AND trial_ends_at IS NOT NULL AND trial_ends_at <= now()`,
+    [tenantId],
+  )
+  return (res.rowCount ?? 0) > 0
+}
+
 export async function getSubscription(db: DbPool, tenantId: string): Promise<Subscription | null> {
+  await expireTrialIfDue(db, tenantId)
   const result = await db.query(
     `SELECT s.*, p.name AS plan_name, p.slug AS plan_slug
      FROM tenant_subscriptions s
@@ -188,6 +223,13 @@ export async function createSubscription(
 
   const periodDays = billingCycle === 'annual' ? 365 : 30
   const seats = await countBillableSeats(db, tenantId)
+  // One live row per tenant (partial unique index): convert whatever is
+  // running — a 14-day trial or a paid plan — before inserting the new one.
+  await db.query(
+    `UPDATE tenant_subscriptions SET status = 'canceled', canceled_at = now(), updated_at = now()
+      WHERE tenant_id = $1 AND status IN ('active', 'trialing')`,
+    [tenantId],
+  )
   const result = await db.query(
     `INSERT INTO tenant_subscriptions (tenant_id, plan_id, status, billing_cycle, seats, current_period_end)
      VALUES ($1, $2, 'active', $3, $4, now() + interval '1 day' * $5)

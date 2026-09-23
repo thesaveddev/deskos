@@ -159,7 +159,7 @@ const pricingJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'WebPage',
   name: 'ReyDesk Pricing',
-  description: 'Simple, transparent pricing for ReyDesk. Start free for up to 3 technicians.',
+  description: 'Simple, transparent pricing for ReyDesk. 14-day Pro trial, then free for up to 3 technicians.',
   offers: [
     {
       '@type': 'Offer',
@@ -187,7 +187,7 @@ export default function PricingPage() {
   return (
     <LandingLayout
       title="Pricing — ReyDesk | IT Support OS Plans"
-      description="Simple, transparent pricing for ReyDesk. Start free for up to 3 technicians. Pro plan from $79/tech/month. Enterprise with custom pricing."
+      description="Simple, transparent pricing for ReyDesk. 14-day Pro trial, then free for up to 3 technicians. Pro plan from $79/tech/month. Enterprise with custom pricing."
       structuredData={pricingJsonLd}
     >
       {/* hero */}
@@ -196,7 +196,7 @@ export default function PricingPage() {
           <span className="landing-kicker">Pricing</span>
           <h1 className="landing-title">Simple, transparent pricing.</h1>
           <p className="landing-sub">
-            Start free for up to 3 technicians. Scale to unlimited with the Pro plan. Enterprise pricing for MSPs and large organizations.
+            Start with a 14-day Pro trial — no card required. When the trial ends, stay free for up to 3 technicians or scale to unlimited with the Pro plan. Enterprise pricing for MSPs and large organizations.
           </p>
         </div>
       </section>
@@ -288,7 +288,7 @@ export default function PricingPage() {
       <section className="landing-cta-band">
         <h2 className="landing-h2">Ready to get started?</h2>
         <p className="landing-sub">
-          Create your workspace in under a minute — no sales call, no credit card, no install.
+          Create your workspace in under a minute — no sales call, no credit card, no install. A 14-day Pro trial starts with it.
         </p>
         <div className="landing-cta">
           <Link className="btn btn-primary" to="/signup">Start for free</Link>

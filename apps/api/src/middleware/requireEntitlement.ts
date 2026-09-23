@@ -1,6 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { AppError } from '../core/errors.js'
 import { withTenant, type DbPool } from '../db/pool.js'
+import { expireTrialIfDue } from '../modules/billing/billing.service.js'
 
 /**
  * Entitlement guard – enforces plan limits (technicians, devices) at the API
@@ -84,6 +85,9 @@ async function resolvePlan(
   db: { query: (sql: string, params: unknown[]) => Promise<{ rows: Record<string, unknown>[] }> },
   tenantId: string,
 ): Promise<{ name: string; slug: string; max_technicians: number; max_devices: number; hasSubscription: boolean }> {
+  // A trial that has run out must not keep granting Pro limits: settle it
+  // before reading, so this path always sees the true post-trial state.
+  await expireTrialIfDue(db as unknown as DbPool, tenantId)
   const rows = (await db.query(
     `SELECT p.name, p.slug, p.max_technicians, p.max_devices
        FROM tenant_subscriptions s

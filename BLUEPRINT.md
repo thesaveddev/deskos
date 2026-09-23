@@ -355,6 +355,15 @@ Market driver: Atlassian now invokes Rovo agents directly inside JSM work items,
 - [ ] Expand natural-language parsing with an AI provider and broader workflow/action coverage
 - [ ] Agent identity hardening: least-privilege machine identity per worker, per-agent access review view (enterprise security signal)
 
+### Phase 8: SSO & Provisioning — Microsoft / Google (OIDC, SAML, SCIM)
+Market driver: enterprise security questionnaires treat "Do you support SAML 2.0?" and "Does deprovisioning revoke access automatically?" as standard gates above ~250 seats. Freshservice gates SCIM behind Pro ($99/agent/month); HaloITSM ships SCIM on no plan — so this closes an enterprise gap *and* creates an Enterprise-tier revenue feature. Estimates are calendar time, sequential: **~3-5 weeks total**.
+- [ ] **Phase 1 — OIDC "Sign in with Microsoft / Google"** (3-5 days): authorization code + PKCE, per-tenant admin connection (Entra ID / Google Workspace app), JIT provisioning into users + memberships, optional "SSO required" tenant lockout
+- [ ] **Phase 2 — SAML 2.0 service provider** (1.5-2.5 weeks): `@node-saml/node-saml` (never hand-roll XML signatures), SP metadata + ACS endpoints, IdP metadata upload, attribute mapping, JIT provisioning bridged to the existing JWT auth, per-tenant config UI, audit events, test matrix against Entra ID, Okta, and Google Workspace
+- [ ] **Phase 3 — SCIM 2.0 inbound provisioning** (1-2 weeks): `/scim/v2/Users` + `/Groups` (create/activate/deactivate/delete, filtering, pagination), per-tenant bearer tokens, IdP group → org-role mapping, deprovisioning revokes memberships *and* live sessions, tested against Entra ID's provisioning job (the fuzziest implementer)
+- [ ] Gate SAML + SCIM behind the Enterprise tier — matches Freshservice's monetisation; do not ship them free
+- [ ] Ship a public security/trust page first with the honest line: "SSO via Microsoft/Google today; SAML 2.0 and SCIM on the Enterprise roadmap" — a truthful roadmap answer passes most questionnaires; a missing answer fails them
+- [ ] Pricing/compare-table claims only land when each phase is actually live (the current marketing copy correctly makes no SSO/SCIM claims)
+
 ---
 
 ## Part 6: Competitive Positioning

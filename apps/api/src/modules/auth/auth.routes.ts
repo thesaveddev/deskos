@@ -11,6 +11,7 @@ import { isAccountLocked, recordFailedLogin, resetFailedLoginCount } from './aut
 import { AppError } from '../../core/errors.js'
 import { ADMIN_OR_OWNER_ROLES, permissionsForRole, isOrgRole } from '../../core/permissions.js'
 import { withTenant } from '../../db/pool.js'
+import { startProTrial } from '../billing/billing.service.js'
 import { authenticate } from '../../middleware/authenticate.js'
 import '../../types.js'
 
@@ -140,6 +141,14 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       }
     }
     if (!tenantId) throw AppError.conflict('Could not allocate a unique organisation slug', 'slug_taken')
+
+    //14-day Pro trial for every new workspace. Best-effort: a billing
+    // hiccup must never block account creation (the tenant just stays Free).
+    try {
+      await startProTrial(app.db, tenantId)
+    } catch (err) {
+      app.log.warn({ err }, 'could not start the signup trial; tenant stays on Free')
+    }
 
     const passwordHash = await hashPassword(body.password, app.config.bcryptRounds)
     const userRes = await app.db.query(

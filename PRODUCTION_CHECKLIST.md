@@ -12,6 +12,11 @@
 - SEO: apex-domain canonicals, PNG OG image, www→apex 301, refreshed sitemap, JSON-LD
 - Marketing copy audited: no SAML/SCIM, self-host, open-source, or SLA claims we cannot honour
 - Team chat realtime delivery hardened (LISTEN retry, per-connection subscriptions, sender names)
+- Public `/security` trust page answering vendor questionnaires (SSO status, audit chain, tenancy, consent, backups) — footer-linked and in the sitemap
+- fail2ban active on the VPS with the sshd jail enabled (11 brute-force IPs banned within minutes of enabling)
+- Daily automated Postgres backups,30-day retention, each run verified non-empty (cron at 02:00 UTC; script tested manually)
+- Docker container log rotation (daily, 100 MB cap, 7 generations) plus the existing nginx/logrotate coverage
+- **14-day Pro trial live:** every signup starts a `trialing` Pro subscription (lazy expiry plus checkout/downgrade conversion verified by API tests)
 
 **Owner actions still required before taking money:**
 - [ ] Stripe **live** keys + webhook signing secret set in VPS env; verify webhook → checkout end-to-end
@@ -19,9 +24,10 @@
 - [ ] Windows helper code-signing certificate (SmartScreen trust on the core conversion path)
 - [ ] macOS helper signing + notarization (only if shipping the Mac helper)
 - [ ] S3 storage driver env vars (or accept local-disk storage and its quota)
-- [ ] Automated DB backups enabled + one restore test
-- [ ] Monitoring/alerting + log rotation confirmed on the VPS
-- [ ] fail2ban confirmed active on the VPS (installation was requested — verify it is running)
+- [ ] One backup **restore drill** — backups are live and verified non-empty; prove an actual restore
+- [ ] External uptime monitor (e.g., UptimeRobot) pointed at `/healthz` — needs an account
+- [ ] Register Plausible (or GA) and set `VITE_ANALYTICS_DOMAIN` in the build env — the cookieless analytics hook ships inert until the ID exists
+
 
 ---
 

@@ -28,6 +28,10 @@ const SITE_NAME = BRAND.name
 const SITE_URL = BRAND.siteUrl
 const DEFAULT_DESCRIPTION = 'Remote support, ticketing, device management, and governed AI assistance in one technician console. Start free with no credit card.'
 const OG_IMAGE = `${SITE_URL}${BRAND.ogImagePath}`
+// Conversion analytics (Plausible — cookieless, so no consent banner needed).
+// Active only when the build provides VITE_ANALYTICS_DOMAIN, so builds
+// without a registered account make no third-party requests at all.
+const ANALYTICS_DOMAIN = import.meta.env.VITE_ANALYTICS_DOMAIN as string | undefined
 
 export default function LandingLayout({ children, title, description, structuredData, canonical }: Props) {
   const location = useLocation()
@@ -107,6 +111,17 @@ export default function LandingLayout({ children, title, description, structured
 
     return () => { document.title = SITE_NAME }
   }, [fullTitle, pageDescription, canonicalUrl, ogTitle, theme])
+
+  useEffect(() => {
+    if (!ANALYTICS_DOMAIN) return
+    if (document.querySelector('script[data-reydesk-analytics]')) return
+    const script = document.createElement('script')
+    script.defer = true
+    script.setAttribute('data-reydesk-analytics', 'true')
+    script.setAttribute('data-domain', ANALYTICS_DOMAIN)
+    script.src = 'https://plausible.io/js/script.js'
+    document.head.appendChild(script)
+  }, [])
 
   // Default organization structured data
   const orgJsonLd = {
@@ -209,6 +224,7 @@ export default function LandingLayout({ children, title, description, structured
             <h4>Company</h4>
             <Link to="/about">About Us</Link>
             <Link to="/contact">Contact</Link>
+            <Link to="/security">Security &amp; Trust</Link>
             <Link to="/privacy">Privacy Policy</Link>
             <Link to="/terms">Terms of Service</Link>
           </div>

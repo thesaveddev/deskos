@@ -45,7 +45,7 @@ export interface Session {
 
 export async function signupOwner(
   app: FastifyInstance,
-  opts?: { email?: string; tenantName?: string; password?: string; name?: string },
+  opts?: { email?: string; tenantName?: string; password?: string; name?: string; trial?: boolean },
 ): Promise<Session & { email: string }> {
   const email = opts?.email ?? uniqueEmail('owner')
   const password = opts?.password ?? 'correct-horse-battery-9'
@@ -61,6 +61,15 @@ export async function signupOwner(
     throw new Error(`signup failed (${res.statusCode}): ${res.body}`)
   }
   const body = res.json()
+  // Signup starts a14-day Pro trial by default. Most tests model the
+  // steady-state Free tier, so cancel the trial unless the test opts in.
+  if (!opts?.trial) {
+    await app.db.query(
+      `UPDATE tenant_subscriptions SET status = 'canceled', canceled_at = now(), updated_at = now()
+        WHERE tenant_id = $1 AND status = 'trialing'`,
+      [body.tenant.id],
+    )
+  }
   return {
     email,
     accessToken: body.accessToken,

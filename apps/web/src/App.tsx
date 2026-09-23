@@ -37,6 +37,7 @@ const PricingPage = lazy(() => import('./pages/PricingPage.js'))
 const PrivacyPage = lazy(() => import('./pages/PrivacyPage.js'))
 const TermsPage = lazy(() => import('./pages/TermsPage.js'))
 const AboutPage = lazy(() => import('./pages/AboutPage.js'))
+const SecurityPage = lazy(() => import('./pages/SecurityPage.js'))
 const AcceptInvitationPage = lazy(() => import('./pages/AcceptInvitationPage.js'))
 const ContactPage = lazy(() => import('./pages/ContactPage.js'))
 const ApiDocsPage = lazy(() => import('./pages/ApiDocsPage.js'))
@@ -251,6 +252,7 @@ export default function App() {
       <Route path="/privacy" element={<PrivacyPage />} />
       <Route path="/terms" element={<TermsPage />} />
       <Route path="/about" element={<AboutPage />} />
+      <Route path="/security" element={<SecurityPage />} />
       <Route path="/contact" element={<ContactPage />} />
       <Route path="/api-docs" element={<ApiDocsPage />} />
       <Route path="/support" element={<SupportPage />} />
