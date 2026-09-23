@@ -242,7 +242,7 @@ const featuresJsonLd = {
     'Knowledge base with AI drafting',
     'Patch management with ring rollout',
   ],
-  url: 'https://www.reydesk.com/features',
+  url: 'https://reydesk.com/features',
 }
 
 export default function FeaturesPage() {

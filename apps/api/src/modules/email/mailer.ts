@@ -303,7 +303,7 @@ export class Mailer {
     return {
       to: ctx.to,
       subject: `${label} · ${ctx.tenantName}`,
-      text: [`${label} from ${ctx.tenantName}`, '', ctx.body, '', ctx.action ? `${ctx.action.label}: ${ctx.action.url}` : '', '', `Manage notification preferences: ${ctx.settingsUrl ?? 'https://www.reydesk.com/settings/notifications'}`].join('\n'),
+      text: [`${label} from ${ctx.tenantName}`, '', ctx.body, '', ctx.action ? `${ctx.action.label}: ${ctx.action.url}` : '', '', `Manage notification preferences: ${ctx.settingsUrl ?? 'https://reydesk.com/settings/notifications'}`].join('\n'),
       html: renderBrandedEmail({
         tenantName: ctx.tenantName,
         eyebrow: label,
