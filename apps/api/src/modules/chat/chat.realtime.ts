@@ -25,6 +25,9 @@ type ChatSubscriber = {
 const TYPING_MIN_INTERVAL_MS = 1_500
 
 const subscribers = new Map<string, ChatSubscriber>()
+// Connections are keyed per socket, not per user: the same user in two
+// tabs must keep two live subscriptions that close independently.
+let subscriberSeq = 0
 
 function chatKey(tenantId: string, roomId: string, userId: string): string {
   return `${tenantId}:${roomId}:${userId}`
@@ -60,6 +63,7 @@ export async function publishChatMessage(
 export async function chatRealtimeRoutes(app: FastifyInstance): Promise<void> {
   let pgListener: import('../../db/pool.js').DbClient | null = null
   let heartbeat: ReturnType<typeof setInterval> | null = null
+  let listenerRetry: ReturnType<typeof setTimeout> | null = null
 
   function fanOut(tenantId: string, roomId: string, payload: string, excludeUserId?: string): void {
     for (const [, sub] of subscribers) {
@@ -71,21 +75,43 @@ export async function chatRealtimeRoutes(app: FastifyInstance): Promise<void> {
     }
   }
 
+  // The LISTEN connection is what makes delivery real-time. It used to be
+  // attempted once at boot with no error handler: a single transient failure
+  // (or a later connection drop) left every publish fanning out to nobody
+  // until the next restart. Retry until it is back, and recover if the
+  // connection dies at runtime.
+  function scheduleListenerRetry(): void {
+    if (listenerRetry) return
+    listenerRetry = setTimeout(() => {
+      listenerRetry = null
+      void ensurePgListener()
+    }, 5_000)
+  }
+
   async function ensurePgListener(): Promise<void> {
     if (pgListener) return
+    let client: import('../../db/pool.js').DbClient | null = null
     try {
-      pgListener = await (app.db as DbPool).connect()
-      await pgListener.query(`LISTEN ${CHAT_CHANNEL}`)
-      pgListener.on('notification', (msg) => {
+      client = await (app.db as DbPool).connect()
+      client.on('error', (err: Error) => {
+        app.log.warn({ err }, 'chat realtime listener connection lost')
+        if (pgListener === client) pgListener = null
+        try { client?.release() } catch { /* already released */ }
+        scheduleListenerRetry()
+      })
+      await client.query(`LISTEN ${CHAT_CHANNEL}`)
+      client.on('notification', (msg) => {
         if (msg.channel !== CHAT_CHANNEL || !msg.payload) return
         try {
           const parsed = JSON.parse(msg.payload) as { tenantId: string; roomId: string; message: unknown; type?: string }
           fanOut(parsed.tenantId, parsed.roomId, JSON.stringify({ ...parsed, type: parsed.type ?? 'chat.message' }))
         } catch { /* malformed payload */ }
       })
+      pgListener = client
     } catch (err) {
       app.log.warn({ err }, 'chat realtime listener unavailable')
-      pgListener = null
+      try { client?.release() } catch { /* never acquired */ }
+      scheduleListenerRetry()
     }
   }
 
@@ -169,7 +195,8 @@ export async function chatRealtimeRoutes(app: FastifyInstance): Promise<void> {
             ping: () => { socket.ping() },
             isAlive: () => socket.readyState === 1,
           }
-          subscribers.set(chatKey(tenantId, roomId, userId), sub)
+          const connKey = `${chatKey(tenantId, roomId, userId)}#${++subscriberSeq}`
+          subscribers.set(connKey, sub)
 
           socket.on('pong', () => { sub.alive = true })
           if (socket.readyState === 1) {
@@ -223,7 +250,7 @@ export async function chatRealtimeRoutes(app: FastifyInstance): Promise<void> {
             } catch { /* malformed message */ }
           })
 
-          socket.on('close', () => { subscribers.delete(chatKey(tenantId, roomId, userId)) })
+          socket.on('close', () => { subscribers.delete(connKey) })
         }).catch(() => socket.close(4005))
       })
       .catch(() => {
@@ -232,6 +259,10 @@ export async function chatRealtimeRoutes(app: FastifyInstance): Promise<void> {
   })
 
   app.addHook('onClose', async () => {
+    if (listenerRetry) {
+      clearTimeout(listenerRetry)
+      listenerRetry = null
+    }
     if (heartbeat) {
       clearInterval(heartbeat)
       heartbeat = null

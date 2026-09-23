@@ -131,6 +131,9 @@ describe('team chat', () => {
     const sent = await app.inject({ method: 'POST', url: `/api/v1/chat/rooms/${roomId}/messages`, headers: authHeaders(analyst), payload: { body: 'Hello team' } })
     expect(sent.statusCode).toBe(201)
     expect(sent.json().message.body).toBe('Hello team')
+    // The POST response doubles as the live socket broadcast payload:
+    // without sender_name, recipients render the author as "Unknown".
+    expect(sent.json().message.sender_name).toBe('analyst user')
 
     const list = await app.inject({ method: 'GET', url: `/api/v1/chat/rooms/${roomId}/messages`, headers: authHeaders(owner) })
     expect(list.statusCode).toBe(200)

@@ -364,7 +364,9 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
           ip: request.ip,
           payload: storedFile ? { roomId: id, filename: storedFile.filename, sizeBytes: storedFile.sizeBytes } : { roomId: id },
         })
-        return { ...messageRow, attachments: attachment ? [attachment] : [] }
+        // sender_name rides the response AND the live socket broadcast:
+        // without it, recipients render the author as "Unknown" until reload.
+        return { ...messageRow, sender_name: sender?.name ?? null, attachments: attachment ? [attachment] : [] }
       })
       await publishChatMessage(app.db, ctx.tenantId, id, message)
       return reply.code(201).send({ message })

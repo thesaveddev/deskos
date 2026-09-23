@@ -381,7 +381,10 @@ export function Shell({ children }: { children: ReactNode }) {
       onNotification: (notification) => {
         setNotifications((items) => [notification, ...items.filter((item) => item.id !== notification.id)].slice(0, 100))
         void showReminderAlert(notification)
-        if (notification.kind === 'chat.message') void loadChatUnread()
+        // Dispatch the app-wide event instead of only refreshing the nav
+        // badge locally: ChatPage listens for the same event so the room
+        // sidebar updates live for messages arriving in other rooms.
+        if (notification.kind === 'chat.message') window.dispatchEvent(new Event(CHAT_UNREAD_REFRESH_EVENT))
       },
     })
     // Safety nets on top of the SSE stream: a slow refresh keeps the badge

@@ -138,6 +138,15 @@ export default function ChatPage() {
 
   useEffect(() => { void loadRooms() }, [loadRooms])
 
+  // Keep the sidebar honest while messages arrive in *other* rooms: the
+  // app-wide chat refresh event fires whenever a chat.message notification
+  // streams in over SSE (or read state changes anywhere in the app).
+  useEffect(() => {
+    const onChatRefresh = () => void loadRooms()
+    window.addEventListener(CHAT_UNREAD_REFRESH_EVENT, onChatRefresh)
+    return () => window.removeEventListener(CHAT_UNREAD_REFRESH_EVENT, onChatRefresh)
+  }, [loadRooms])
+
   useEffect(() => {
     activeRoomRef.current = activeRoomId
     if (!activeRoomId) {
@@ -409,11 +418,9 @@ export default function ChatPage() {
                       <span className="chat-room-name"><span aria-hidden="true">#</span>{room.name}</span>
                       <small className="muted">{formatRelative(room.last_message_at)}</small>
                     </span>
-                    {Number(room.unread_count ?? 0) > 0 && room.id !== activeRoomId ? (
+                    {Number(room.unread_count ?? 0) > 0 ? (
                       <span className="chat-room-badge" aria-label={`${Number(room.unread_count)} unread messages`}>{Number(room.unread_count)}</span>
-                    ) : (
-                      <span className="muted mono">{room.message_count}</span>
-                    )}
+                    ) : null}
                   </button>
                 </li>
               ))}
@@ -436,7 +443,7 @@ export default function ChatPage() {
                 {messages.map((m) => (
                   <div key={String(m.id)} className={`chat-message${m.sender_id === user?.id ? ' mine' : ''}`}>
                     <div className="chat-message-meta mono">
-                      <span className="chat-message-author">{m.sender_name ?? 'Unknown'}</span>
+                      <span className="chat-message-author">{m.sender_name ?? (m.sender_id === user?.id ? user?.name : null) ?? 'Unknown'}</span>
                       <span>{formatTime(m.created_at)}{m.edited_at ? ' · edited' : ''}</span>
                     </div>
                     {m.body ? (
@@ -450,7 +457,10 @@ export default function ChatPage() {
                             autoFocus
                             onChange={(event) => setEditDraft(event.target.value)}
                             onKeyDown={(event) => {
-                              if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') void saveEdit()
+                              if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                                event.preventDefault()
+                                void saveEdit()
+                              }
                               if (event.key === 'Escape') cancelEdit()
                             }}
                           />
@@ -520,14 +530,19 @@ export default function ChatPage() {
                     }
                   }}
                   onKeyDown={(e) => {
-                    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') void send()
+                    // Enter sends; Shift+Enter is the newline. Ctrl/Cmd+Enter
+                    // still sends for muscle memory. isComposing guards IME.
+                    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                      e.preventDefault()
+                      void send()
+                    }
                   }}
                 />
                 <div className="chat-composer-foot">
                   <div className="chat-composer-tools">
                     <input ref={fileInputRef} type="file" className="visually-hidden" onChange={(event) => chooseFile(event.target.files?.[0])} />
                     <button type="button" className="btn btn-ghost btn-sm" onClick={() => fileInputRef.current?.click()} title="Attach a file"><Icon name="paperclip" size={15} />Attach file</button>
-                    <span className="muted chat-composer-hint">Up to 10 MB · Ctrl/Cmd + Enter to send</span>
+                    <span className="muted chat-composer-hint">Up to 10 MB · Enter to send · Shift+Enter for a new line</span>
                   </div>
                   <button className="btn btn-primary btn-sm" disabled={busy || (!draft.trim() && !selectedFile)} onClick={() => void send()}>
                     <Icon name="send" size={14} />{busy ? 'Sending…' : 'Send'}
