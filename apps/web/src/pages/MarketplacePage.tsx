@@ -12,6 +12,7 @@ import {
   type AppInstall,
 } from '../lib/marketplace.js'
 import { PageHeader, Panel, Modal, useConfirm } from '../components/ui.js'
+import { Shell } from '../components/Shell.js'
 
 export default function MarketplacePage() {
   const perms = new Set(useAuth((s) => s.memberships).flatMap((m: any) => m.permissions))
@@ -117,7 +118,7 @@ export default function MarketplacePage() {
   }))
 
   return (
-    <div>
+    <Shell>
       <PageHeader
         title="Marketplace"
         subtitle={`${apps.length} apps available · ${installs.length} installed`}
@@ -300,6 +301,6 @@ export default function MarketplacePage() {
           </div>
         </Modal>
       )}
-    </div>
+    </Shell>
   )
 }

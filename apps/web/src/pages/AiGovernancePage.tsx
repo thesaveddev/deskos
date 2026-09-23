@@ -6,7 +6,7 @@ import {
   getGovernanceSummary, getGovernanceActivity,
   getToolPermissions, updateToolPermission,
   getCostSummary,
-  listUsageAlerts, createUsageAlert, deleteUsageAlert,
+  listUsageAlerts, createUsageAlert, deleteUsageAlert, checkUsageAlerts,
   type ActivityLogEntry, type ActivitySummary, type ToolPermission, type CostSummary, type UsageAlert,
 } from '../lib/governance.js'
 import { useAuth } from '../lib/auth.js'
@@ -34,6 +34,7 @@ export default function AiGovernancePage() {
   const [costs, setCosts] = useState<CostSummary | null>(null)
   const [alerts, setAlerts] = useState<UsageAlert[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   // Activity filters
@@ -113,6 +114,26 @@ export default function AiGovernancePage() {
     }
   }
 
+  // Manual trigger for the alert sweep — same endpoint the scheduler uses.
+  const runCheck = async () => {
+    if (alertBusy) return
+    setAlertBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      const { fired } = await checkUsageAlerts()
+      const { alerts: al } = await listUsageAlerts()
+      setAlerts(al)
+      setNotice(fired.length
+        ? `Check complete — ${fired.length} alert${fired.length === 1 ? '' : 's'} fired and notifications sent.`
+        : 'Check complete — no thresholds crossed.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not run the alert check')
+    } finally {
+      setAlertBusy(false)
+    }
+  }
+
   const successRate = summary && summary.totalActions > 0
     ? Math.round((summary.successfulActions / summary.totalActions) * 100)
     : 0
@@ -135,6 +156,7 @@ export default function AiGovernancePage() {
       </div>
 
       {error && <Alert kind="error">{error}</Alert>}
+      {notice && <Alert kind="info">{notice}</Alert>}
       {loading && <p style={{ color: 'var(--text-3)', fontSize: 13 }}>Loading governance data...</p>}
 
       {!loading && summary && (
@@ -372,6 +394,9 @@ export default function AiGovernancePage() {
                     <input className="field-input" type="number" min={0} step="any" placeholder="Threshold value" value={alertThreshold} onChange={e => setAlertThreshold(e.target.value)} />
                     <button className="btn btn-primary btn-sm" disabled={alertBusy || !alertThreshold.trim()} onClick={() => void addAlert()}>
                       {alertBusy ? 'Adding...' : 'Add Alert'}
+                    </button>
+                    <button className="btn btn-ghost btn-sm" disabled={alertBusy} onClick={() => void runCheck()}>
+                      {alertBusy ? 'Checking…' : 'Run check now'}
                     </button>
                   </div>
                 </div>
