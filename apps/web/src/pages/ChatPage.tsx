@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Shell } from '../components/Shell.js'
 import { Alert, Modal } from '../components/ui.js'
 import { Icon } from '../components/Icons.js'
-import { addChatRoomMember, createChatRoom, deleteChatMessage, downloadChatAttachment, listChatMessages, listChatRoomMembers, listChatRooms, removeChatRoomMember, sendChatMessage, sendChatMessageWithFile, type ChatMessage, type ChatRoom, type ChatRoomMember, type ChatRoomMembershipInfo } from '../lib/chat.js'
+import { addChatRoomMember, createChatRoom, deleteChatMessage, downloadChatAttachment, editChatMessage, listChatMessages, listChatRoomMembers, listChatRooms, markChatRoomRead, removeChatRoomMember, sendChatMessage, sendChatMessageWithFile, type ChatMessage, type ChatRoom, type ChatRoomMember, type ChatRoomMembershipInfo } from '../lib/chat.js'
 import { connectChatWebSocket, type ChatRealtimeMessage } from '../lib/chatRealtime.js'
 import { api } from '../lib/api.js'
 import { useAuth } from '../lib/auth.js'
@@ -60,6 +60,8 @@ export default function ChatPage() {
   const [memberSearch, setMemberSearch] = useState('')
   const [membersLoading, setMembersLoading] = useState(false)
   const [memberBusy, setMemberBusy] = useState<string | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editDraft, setEditDraft] = useState('')
   const threadRef = useRef<HTMLDivElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const activeRoomRef = useRef<string | null>(null)
@@ -90,6 +92,14 @@ export default function ChatPage() {
     }
   }, [])
 
+  // Clear the unread badge locally and persist the read marker server-side.
+  const markRoomRead = useCallback(async (roomId: string) => {
+    setRooms((prev) => prev ? prev.map((room) => room.id === roomId ? { ...room, unread_count: 0 } : room) : prev)
+    try {
+      await markChatRoomRead(roomId)
+    } catch { /* retried the next time the room is viewed */ }
+  }, [])
+
   useEffect(() => { void loadRooms() }, [loadRooms])
 
   useEffect(() => {
@@ -98,8 +108,10 @@ export default function ChatPage() {
       setMessages([])
       return
     }
-    void loadMessages(activeRoomId)
-  }, [activeRoomId, loadMessages])
+    setEditingId(null)
+    setEditDraft('')
+    void loadMessages(activeRoomId).then(() => markRoomRead(activeRoomId))
+  }, [activeRoomId, loadMessages, markRoomRead])
 
   // WebSocket connection for real-time chat delivery. A (re)connect triggers
   // a message re-sync so anything sent while the socket was down is not lost.
@@ -121,13 +133,22 @@ export default function ChatPage() {
             if (exists) return prev
             return [...prev, msg.message!]
           })
+          // The room is on screen, so its unread state is already cleared.
+          void markRoomRead(activeRoomRef.current ?? activeRoomId)
           // Refresh room list to update message count and activity
           void loadRooms()
+        } else if (msg.type === 'chat.message.updated' && msg.message) {
+          // An edit replaces the message in place without a reload.
+          setMessages((prev) => prev.map((m) => (
+            String(m.id) === String(msg.message!.id)
+              ? { ...msg.message!, sender_name: msg.message!.sender_name ?? m.sender_name, attachments: msg.message!.attachments ?? m.attachments }
+              : m
+          )))
         }
       },
     })
     return unsub
-  }, [tenantId, activeRoomId, loadRooms, loadMessages])
+  }, [tenantId, activeRoomId, loadRooms, loadMessages, markRoomRead])
 
   useEffect(() => {
     threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: 'smooth' })
@@ -210,6 +231,7 @@ export default function ChatPage() {
       setDraft('')
       setSelectedFile(null)
       if (fileInputRef.current) fileInputRef.current.value = ''
+      void markRoomRead(activeRoomId)
       void loadRooms()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Send failed')
@@ -228,6 +250,37 @@ export default function ChatPage() {
       void loadRooms()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Message could not be deleted')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const startEdit = (message: ChatMessage) => {
+    setEditingId(String(message.id))
+    setEditDraft(message.body)
+  }
+
+  const cancelEdit = () => {
+    setEditingId(null)
+    setEditDraft('')
+  }
+
+  const saveEdit = async () => {
+    if (!activeRoomId || editingId === null || busy) return
+    const trimmed = editDraft.trim()
+    if (!trimmed) return
+    setBusy(true)
+    setError(null)
+    try {
+      const result = await editChatMessage(activeRoomId, editingId, trimmed)
+      setMessages((prev) => prev.map((m) => (
+        String(m.id) === editingId
+          ? { ...result.message, sender_name: result.message.sender_name ?? m.sender_name }
+          : m
+      )))
+      cancelEdit()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Message could not be edited')
     } finally {
       setBusy(false)
     }
@@ -304,7 +357,11 @@ export default function ChatPage() {
                       <span className="chat-room-name"><span aria-hidden="true">#</span>{room.name}</span>
                       <small className="muted">{formatRelative(room.last_message_at)}</small>
                     </span>
-                    <span className="muted mono">{room.message_count}</span>
+                    {Number(room.unread_count ?? 0) > 0 && room.id !== activeRoomId ? (
+                      <span className="chat-room-badge" aria-label={`${Number(room.unread_count)} unread messages`}>{Number(room.unread_count)}</span>
+                    ) : (
+                      <span className="muted mono">{room.message_count}</span>
+                    )}
                   </button>
                 </li>
               ))}
@@ -328,9 +385,32 @@ export default function ChatPage() {
                   <div key={String(m.id)} className={`chat-message${m.sender_id === user?.id ? ' mine' : ''}`}>
                     <div className="chat-message-meta mono">
                       <span className="chat-message-author">{m.sender_name ?? 'Unknown'}</span>
-                      <span>{formatTime(m.created_at)}</span>
+                      <span>{formatTime(m.created_at)}{m.edited_at ? ' · edited' : ''}</span>
                     </div>
-                    {m.body ? <div className="chat-message-body">{m.body}</div> : null}
+                    {m.body ? (
+                      editingId === String(m.id) ? (
+                        <div className="chat-message-edit">
+                          <textarea
+                            className="composer-input"
+                            rows={2}
+                            value={editDraft}
+                            aria-label="Edit message"
+                            autoFocus
+                            onChange={(event) => setEditDraft(event.target.value)}
+                            onKeyDown={(event) => {
+                              if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') void saveEdit()
+                              if (event.key === 'Escape') cancelEdit()
+                            }}
+                          />
+                          <div className="chat-message-edit-actions">
+                            <button type="button" className="btn btn-ghost btn-sm" onClick={cancelEdit}>Cancel</button>
+                            <button type="button" className="btn btn-primary btn-sm" disabled={busy || !editDraft.trim()} onClick={() => void saveEdit()}>Save</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="chat-message-body">{m.body}</div>
+                      )
+                    ) : null}
                     {m.attachments?.length ? (
                       <div className="chat-attachments">
                         {m.attachments.map((attachment) => (
@@ -342,10 +422,15 @@ export default function ChatPage() {
                         ))}
                       </div>
                     ) : null}
-                    {m.sender_id === user?.id && withinDeleteWindow(m.created_at) ? (
-                      <button type="button" className="chat-message-delete" aria-label="Delete message" title="Delete message" disabled={busy} onClick={() => void deleteMessage(m.id)}>
-                        <Icon name="delete" size={12} />
-                      </button>
+                    {m.sender_id === user?.id && withinDeleteWindow(m.created_at) && editingId !== String(m.id) ? (
+                      <>
+                        <button type="button" className="chat-message-edit-btn" aria-label="Edit message" title="Edit message" disabled={busy} onClick={() => startEdit(m)}>
+                          <Icon name="edit" size={12} />
+                        </button>
+                        <button type="button" className="chat-message-delete" aria-label="Delete message" title="Delete message" disabled={busy} onClick={() => void deleteMessage(m.id)}>
+                          <Icon name="delete" size={12} />
+                        </button>
+                      </>
                     ) : null}
                   </div>
                 ))}

@@ -41,9 +41,15 @@ type BroadcastMessage = {
  * subscribers exactly once. This avoids the double-delivery of the previous
  * local-loop-plus-NOTIFY approach and keeps multi-instance deploys correct.
  */
-export async function publishChatMessage(pool: DbPool, tenantId: string, roomId: string, message: BroadcastMessage): Promise<void> {
+export async function publishChatMessage(
+  pool: DbPool,
+  tenantId: string,
+  roomId: string,
+  message: BroadcastMessage,
+  type: 'chat.message' | 'chat.message.updated' = 'chat.message',
+): Promise<void> {
   await pool
-    .query('SELECT pg_notify($1, $2)', [CHAT_CHANNEL, JSON.stringify({ tenantId, roomId, message })])
+    .query('SELECT pg_notify($1, $2)', [CHAT_CHANNEL, JSON.stringify({ tenantId, roomId, type, message })])
     .catch(() => { /* delivery falls back to polling on reconnect */ })
 }
 
@@ -69,8 +75,8 @@ export async function chatRealtimeRoutes(app: FastifyInstance): Promise<void> {
       pgListener.on('notification', (msg) => {
         if (msg.channel !== CHAT_CHANNEL || !msg.payload) return
         try {
-          const parsed = JSON.parse(msg.payload) as { tenantId: string; roomId: string; message: unknown }
-          fanOut(parsed.tenantId, parsed.roomId, JSON.stringify({ type: 'chat.message', ...parsed }))
+          const parsed = JSON.parse(msg.payload) as { tenantId: string; roomId: string; message: unknown; type?: string }
+          fanOut(parsed.tenantId, parsed.roomId, JSON.stringify({ ...parsed, type: parsed.type ?? 'chat.message' }))
         } catch { /* malformed payload */ }
       })
     } catch (err) {

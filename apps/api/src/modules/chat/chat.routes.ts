@@ -15,7 +15,9 @@ import '../../types.js'
 const roomSchema = z.object({ name: z.string().trim().min(1).max(80) })
 const roomMemberSchema = z.object({ userId: z.string().uuid() })
 const messageSchema = z.object({ body: z.string().trim().min(1).max(4000) })
+const readMarkerSchema = z.object({ messageId: z.union([z.string(), z.number()]).optional() })
 const CHAT_FILE_MAX_BYTES = 10 * 1024 * 1024
+const MESSAGE_AUTHOR_WINDOW_MS = 60 * 60 * 1000
 
 function sanitizeFilename(name: string): string {
   const base = path.basename(name).replace(/[^\w.\- ()[\]]+/g, '_').slice(0, 180)
@@ -39,9 +41,15 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
         `SELECT r.id, r.name, r.team_id, r.created_by, r.created_at,
                 (SELECT count(*) FROM chat_messages m WHERE m.room_id = r.id) AS message_count,
                 (SELECT max(m.created_at) FROM chat_messages m WHERE m.room_id = r.id) AS last_message_at,
+                COALESCE((
+                  SELECT count(*) FROM chat_messages m
+                   WHERE m.room_id = r.id
+                     AND m.created_at > COALESCE(cr.last_read_at, '-infinity'::timestamptz)
+                ), 0) AS unread_count,
                 t.name AS team_name
            FROM chat_rooms r
            LEFT JOIN teams t ON t.id = r.team_id
+           LEFT JOIN chat_room_reads cr ON cr.room_id = r.id AND cr.user_id = $1
           WHERE (
             r.team_id IS NULL
             AND (
@@ -199,7 +207,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       await assertRoomAccess(client, id, request.user!.id, ctx.orgRole)
       const { rows } = await client.query(
         `SELECT * FROM (
-          SELECT m.id, m.body, m.created_at, m.sender_id, u.name AS sender_name,
+          SELECT m.id, m.body, m.created_at, m.edited_at, m.sender_id, u.name AS sender_name,
                  COALESCE((
                    SELECT json_agg(json_build_object(
                      'id', a.id,
@@ -357,7 +365,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       await assertRoomAccess(client, row.room_id, request.user!.id, ctx.orgRole)
       const isModerator = TEAM_CHAT_ADMIN_ROLES.has(ctx.orgRole) || (await isRoomCreator(client, row.room_id, request.user!.id))
       const isAuthor = row.sender_id === request.user!.id
-      const withinWindow = Date.now() - new Date(row.created_at).getTime() <= 60 * 60 * 1000
+      const withinWindow = Date.now() - new Date(row.created_at).getTime() <= MESSAGE_AUTHOR_WINDOW_MS
       if ((!isAuthor || !withinWindow) && !isModerator) {
         throw AppError.forbidden('Messages can only be deleted by their author within an hour, or by a manager at any time', 'chat_message_delete_forbidden')
       }
@@ -373,6 +381,71 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       })
       return { ok: true }
     })
+  })
+
+  app.patch('/chat/messages/:id', { preHandler: write }, async (request) => {
+    const ctx = request.tenantCtx!
+    const { id } = request.params as { id: string }
+    const body = messageSchema.parse(request.body)
+    const result = await withTenant(app.db, ctx.tenantId, async (client) => {
+      const row = (await client.query(
+        `SELECT m.id, m.room_id, m.sender_id, m.created_at
+           FROM chat_messages m
+          WHERE m.id = $1`,
+        [id],
+      )).rows[0] as { id: string; room_id: string; sender_id: string | null; created_at: string } | undefined
+      if (!row) throw AppError.notFound('Message not found')
+      await assertRoomAccess(client, row.room_id, request.user!.id, ctx.orgRole)
+      // Editing rewrites someone's words, so it stays author-only even for
+      // managers — moderation of other people's messages is delete-only.
+      const isAuthor = row.sender_id === request.user!.id
+      const withinWindow = Date.now() - new Date(row.created_at).getTime() <= MESSAGE_AUTHOR_WINDOW_MS
+      if (!isAuthor || !withinWindow) {
+        throw AppError.forbidden('Messages can only be edited by their author within an hour', 'chat_message_edit_forbidden')
+      }
+      const updated = (await client.query(
+        `UPDATE chat_messages SET body = $2, edited_at = now()
+          WHERE id = $1
+          RETURNING id, body, created_at, edited_at, sender_id`,
+        [id, body.body],
+      )).rows[0]
+      const sender = (await client.query('SELECT name FROM users WHERE id = $1', [request.user!.id])).rows[0]
+      const attachments = (await client.query(
+        `SELECT id, filename, mime, size_bytes, uploaded_by, created_at
+           FROM chat_attachments WHERE message_id = $1 ORDER BY created_at, id`,
+        [id],
+      )).rows
+      await recordAudit(client, ctx.tenantId, {
+        actorType: 'user',
+        actorId: request.user!.id,
+        action: 'chat.message_edited',
+        objectType: 'chat_message',
+        objectId: id,
+        ip: request.ip,
+        payload: { roomId: row.room_id },
+      })
+      return { roomId: row.room_id, message: { ...updated, sender_name: sender?.name ?? null, attachments } }
+    })
+    // Let every open socket in the room see the edit without a reload.
+    await publishChatMessage(app.db, ctx.tenantId, result.roomId, result.message, 'chat.message.updated')
+    return { message: result.message }
+  })
+
+  app.post('/chat/rooms/:id/read', { preHandler: read }, async (request) => {
+    const ctx = request.tenantCtx!
+    const { id } = request.params as { id: string }
+    const marker = readMarkerSchema.parse(request.body ?? {})
+    await withTenant(app.db, ctx.tenantId, async (client) => {
+      await assertRoomAccess(client, id, request.user!.id, ctx.orgRole)
+      await client.query(
+        `INSERT INTO chat_room_reads (tenant_id, room_id, user_id, last_read_at, last_read_message_id)
+         VALUES ($1, $2, $3, now(), $4)
+         ON CONFLICT (room_id, user_id)
+         DO UPDATE SET last_read_at = now(), last_read_message_id = EXCLUDED.last_read_message_id, updated_at = now()`,
+        [ctx.tenantId, id, request.user!.id, marker.messageId ?? null],
+      )
+    })
+    return { ok: true }
   })
 }
 

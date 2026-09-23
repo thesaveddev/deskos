@@ -228,6 +228,73 @@ describe('team chat', () => {
     }
   })
 
+  it('lets the author edit a message and marks it edited', async () => {
+    const sent = await app.inject({ method: 'POST', url: `/api/v1/chat/rooms/${roomId}/messages`, headers: authHeaders(analyst), payload: { body: 'typo heer' } })
+    expect(sent.statusCode).toBe(201)
+    const messageId = sent.json().message.id as number
+
+    const edited = await app.inject({ method: 'PATCH', url: `/api/v1/chat/messages/${messageId}`, headers: authHeaders(analyst), payload: { body: 'typo here' } })
+    expect(edited.statusCode).toBe(200)
+    expect(edited.json().message.body).toBe('typo here')
+    expect(edited.json().message.edited_at).toBeTruthy()
+
+    const list = await app.inject({ method: 'GET', url: `/api/v1/chat/rooms/${roomId}/messages`, headers: authHeaders(analyst) })
+    const stored = (list.json().messages as Array<{ id: number; body: string; edited_at: string | null }>).find((m) => m.id === messageId)
+    expect(stored?.body).toBe('typo here')
+    expect(stored?.edited_at).toBeTruthy()
+  })
+
+  it('rejects edits from other members and blank edits', async () => {
+    const sent = await app.inject({ method: 'POST', url: `/api/v1/chat/rooms/${roomId}/messages`, headers: authHeaders(analyst), payload: { body: 'mine only' } })
+    expect(sent.statusCode).toBe(201)
+    const messageId = sent.json().message.id as number
+
+    const foreignEdit = await app.inject({ method: 'PATCH', url: `/api/v1/chat/messages/${messageId}`, headers: authHeaders(engineer), payload: { body: 'rewritten by someone else' } })
+    expect(foreignEdit.statusCode).toBe(403)
+    expect(foreignEdit.json().error.denied_reason).toBe('chat_message_edit_forbidden')
+
+    // Managers moderate by deleting, not by rewriting other people's words.
+    const managerEdit = await app.inject({ method: 'PATCH', url: `/api/v1/chat/messages/${messageId}`, headers: authHeaders(owner), payload: { body: 'manager rewrite' } })
+    expect(managerEdit.statusCode).toBe(403)
+
+    const blankEdit = await app.inject({ method: 'PATCH', url: `/api/v1/chat/messages/${messageId}`, headers: authHeaders(analyst), payload: { body: '   ' } })
+    expect(blankEdit.statusCode).toBe(400)
+  })
+
+  it('tracks unread counts per room until the room is marked read', async () => {
+    const created = await app.inject({ method: 'POST', url: '/api/v1/chat/rooms', headers: authHeaders(owner), payload: { name: 'Unread room' } })
+    expect(created.statusCode).toBe(201)
+    const unreadRoomId = created.json().room.id as string
+
+    const unreadFor = async (): Promise<number> => {
+      const rooms = await app.inject({ method: 'GET', url: '/api/v1/chat/rooms', headers: authHeaders(owner) })
+      const room = (rooms.json().rooms as Array<{ id: string; unread_count: number | string }>).find((r) => r.id === unreadRoomId)
+      return Number(room?.unread_count ?? -1)
+    }
+
+    // The creator has never opened the room: both messages are unread.
+    await app.inject({ method: 'POST', url: `/api/v1/chat/rooms/${unreadRoomId}/messages`, headers: authHeaders(analyst), payload: { body: 'first heads-up' } })
+    await app.inject({ method: 'POST', url: `/api/v1/chat/rooms/${unreadRoomId}/messages`, headers: authHeaders(analyst), payload: { body: 'second heads-up' } })
+    expect(await unreadFor()).toBe(2)
+
+    const marked = await app.inject({ method: 'POST', url: `/api/v1/chat/rooms/${unreadRoomId}/read`, headers: authHeaders(owner), payload: {} })
+    expect(marked.statusCode).toBe(200)
+    expect(await unreadFor()).toBe(0)
+
+    // A new arrival after the marker counts as exactly one unread again.
+    await app.inject({ method: 'POST', url: `/api/v1/chat/rooms/${unreadRoomId}/messages`, headers: authHeaders(analyst), payload: { body: 'third heads-up' } })
+    expect(await unreadFor()).toBe(1)
+
+    // The analyst's own read state is independent of the owner's.
+    const analystRooms = await app.inject({ method: 'GET', url: '/api/v1/chat/rooms', headers: authHeaders(analyst) })
+    const analystRoom = (analystRooms.json().rooms as Array<{ id: string; unread_count: number | string }>).find((r) => r.id === unreadRoomId)
+    expect(Number(analystRoom?.unread_count ?? -1)).toBe(3)
+
+    // End users cannot read chat, so they cannot mark rooms read either.
+    const denied = await app.inject({ method: 'POST', url: `/api/v1/chat/rooms/${unreadRoomId}/read`, headers: authHeaders(endUser), payload: {} })
+    expect(denied.statusCode).toBe(403)
+  })
+
   it('isolates rooms and messages between tenants', async () => {
     const list = await app.inject({ method: 'GET', url: `/api/v1/chat/rooms/${roomId}/messages`, headers: authHeaders(foreign) })
     expect(list.statusCode).toBe(404)

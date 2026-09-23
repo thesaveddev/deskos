@@ -9,6 +9,7 @@ export interface ChatRoom {
   created_at: string
   message_count: number
   last_message_at?: string | null
+  unread_count?: number | string
 }
 
 export interface ChatAttachment {
@@ -26,6 +27,7 @@ export interface ChatMessage {
   sender_id: string | null
   sender_name: string | null
   created_at: string
+  edited_at?: string | null
   attachments?: ChatAttachment[]
 }
 
@@ -70,6 +72,14 @@ export function listChatMessages(roomId: string): Promise<{ messages: ChatMessag
 
 export function deleteChatMessage(roomId: string, messageId: string | number): Promise<{ ok: boolean }> {
   return api(`/chat/messages/${messageId}`, { method: 'DELETE' })
+}
+
+export function editChatMessage(roomId: string, messageId: string | number, body: string): Promise<{ message: ChatMessage }> {
+  return api(`/chat/messages/${messageId}`, { method: 'PATCH', body: { body } })
+}
+
+export function markChatRoomRead(roomId: string, messageId?: string | number): Promise<{ ok: boolean }> {
+  return api(`/chat/rooms/${roomId}/read`, { method: 'POST', body: messageId === undefined ? {} : { messageId } })
 }
 
 export function sendChatMessage(roomId: string, body: string): Promise<{ message: ChatMessage }> {

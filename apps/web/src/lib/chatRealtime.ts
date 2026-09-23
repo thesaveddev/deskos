@@ -1,7 +1,7 @@
 import { getAccessToken } from './api.js'
 
 export interface ChatRealtimeMessage {
-  type: 'chat.message' | 'chat.file_shared' | 'connected' | 'disconnected'
+  type: 'chat.message' | 'chat.message.updated' | 'connected' | 'disconnected'
   roomId?: string
   message?: {
     id: string | number
@@ -9,6 +9,7 @@ export interface ChatRealtimeMessage {
     sender_id: string | null
     sender_name: string | null
     created_at: string
+    edited_at?: string | null
     attachments?: Array<{
       id: string
       filename: string
@@ -18,7 +19,6 @@ export interface ChatRealtimeMessage {
       created_at: string
     }>
   }
-  filename?: string
   userId?: string
 }
 
