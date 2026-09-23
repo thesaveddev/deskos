@@ -730,11 +730,16 @@ export default function HomePage() {
           setAiMetrics(((results[9].value as { metrics?: AiWorkerMetrics | null })?.metrics) ?? null)
         }
 
-        // Check onboarding status
-        try {
-          const onboarding = await getOnboardingStatus()
-          if (!onboarding.completed) setShowOnboarding(true)
-        } catch { /* ignore */ }
+        // Check onboarding status. The wizard walks through inviting staff,
+        // deploying the helper, and configuring AI workers — staff-only
+        // actions, so end users never see it.
+        if (isMgr || isAnalystRole) {
+          try {
+            const onboarding = await getOnboardingStatus()
+            if (!onboarding.completed) setShowOnboarding(true)
+          } catch { /* ignore */
+          }
+        }
       } catch {
         /* partial load is fine */
       } finally {

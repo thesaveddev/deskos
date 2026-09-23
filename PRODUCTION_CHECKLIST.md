@@ -1,5 +1,30 @@
 # ReyDesk — Production Readiness Checklist
 
+## Status — 23 September 2026 (audit-verified)
+
+**Verified working in production:**
+- CI, E2E, and Deploy pipelines green on every push (typecheck, lint, full API suite, E2E suite)
+- Contact form persists + emails enquiries (POST /api/v1/contact)
+- Free-tier caps enforced (invites incl. pending, device cap inside RLS)
+- Paid plans only activate through hosted checkout (no revenue bypass)
+- Per-seat billing with seat sync on membership changes (Stripe quantity, Paystack seat encoding)
+- New-workspace onboarding wizard shown to staff roles until dismissed
+- SEO: apex-domain canonicals, PNG OG image, www→apex 301, refreshed sitemap, JSON-LD
+- Marketing copy audited: no SAML/SCIM, self-host, open-source, or SLA claims we cannot honour
+- Team chat realtime delivery hardened (LISTEN retry, per-connection subscriptions, sender names)
+
+**Owner actions still required before taking money:**
+- [ ] Stripe **live** keys + webhook signing secret set in VPS env; verify webhook → checkout end-to-end
+- [ ] Paystack **live** keys + webhook secret set in VPS env; verify webhook → checkout end-to-end
+- [ ] Windows helper code-signing certificate (SmartScreen trust on the core conversion path)
+- [ ] macOS helper signing + notarization (only if shipping the Mac helper)
+- [ ] S3 storage driver env vars (or accept local-disk storage and its quota)
+- [ ] Automated DB backups enabled + one restore test
+- [ ] Monitoring/alerting + log rotation confirmed on the VPS
+- [ ] fail2ban confirmed active on the VPS (installation was requested — verify it is running)
+
+---
+
 ## 1. Infrastructure & Deployment
 
 ### CI/CD Pipeline
